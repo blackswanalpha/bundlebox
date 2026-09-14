@@ -4,17 +4,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bb-learn-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-buckmaster-")));
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox", "var"), { recursive: true });
 // A low re-read threshold so one synthetic transcript fires a rule; written
 // before import because config is cached per process.
-fs.writeFileSync(path.join(root, ".bundlebox", "config.json"), JSON.stringify({ learn: { thresholds: { reread_ratio: 0.01 } } }));
+fs.writeFileSync(path.join(root, ".bundlebox", "config.json"), JSON.stringify({ buckmaster: { thresholds: { reread_ratio: 0.01 } } }));
 process.env.BB_ROOT = root;
 process.env.HOME = tmp;
-const episodes = await import("../src/learn/episodes.js");
-const outcomes = await import("../src/learn/outcomes.js");
-const learn = await import("../src/learn/index.js");
+const episodes = await import("../src/buckmaster/episodes.js");
+const outcomes = await import("../src/buckmaster/outcomes.js");
+const buckmaster = await import("../src/buckmaster/index.js");
 const expert = await import("../src/core/expert.js");
 const store = await import("../src/core/store.js");
 const { slug } = await import("../src/adapters/claude.js");
@@ -114,7 +114,7 @@ test("outcomes: record splits spend by finding share; history and backlog read i
 });
 
 const py = expert.available();
-test("learn signals + rules end-to-end on a synthetic transcript", { skip: py ? false : "python3 >= 3.9 not found; expert verbs untested on this box" }, async () => {
+test("buckmaster signals + rules end-to-end on a synthetic transcript", { skip: py ? false : "python3 >= 3.9 not found; expert verbs untested on this box" }, async () => {
   const dir = path.join(tmp, ".claude", "projects", slug(root));
   fs.mkdirSync(dir, { recursive: true });
   const usage = (i, o) => ({ input_tokens: i, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: o });
@@ -125,27 +125,27 @@ test("learn signals + rules end-to-end on a synthetic transcript", { skip: py ? 
   lines.push(line("m9", [{ type: "tool_use", name: "Grep", input: { pattern: "x" } }]), result);
   fs.writeFileSync(path.join(dir, "syn.jsonl"), lines.join("\n") + "\n");
 
-  const rc = await learn.commands.learn.run({ _: ["signals"], flags: { quiet: true } });
+  const rc = await buckmaster.commands.buckmaster.run({ _: ["signals"], flags: { quiet: true } });
   assert.equal(rc, 0);
   const sig = store.get("signals");
   assert.equal(sig.sessions.length, 1);
   assert.ok(sig.aggregate.reread_ratio > 0.5, `reread_ratio ${sig.aggregate.reread_ratio}`);
   assert.equal(sig.aggregate.retry_ratio, null);          // no errors: null, not 0
 
-  const rc2 = await learn.commands.learn.run({ _: ["recommend"], flags: { quiet: true } });
+  const rc2 = await buckmaster.commands.buckmaster.run({ _: ["recommend"], flags: { quiet: true } });
   assert.equal(rc2, 0);
   const rules = store.get("rules");
   assert.ok(rules.recommendations.some((r) => r.id === "snapgen-hot"), JSON.stringify(rules.recommendations));
   assert.equal(rules.thresholds.reread_ratio, 0.01);
-  const md = fs.readFileSync(learn.recommendationsPath(), "utf8");
+  const md = fs.readFileSync(buckmaster.recommendationsPath(), "utf8");
   assert.match(md, /## snapgen-hot/);
   assert.match(md, /rereads-want-a-table/);
 
-  const rc3 = await learn.commands.learn.run({ _: ["graph"], flags: { quiet: true } });
+  const rc3 = await buckmaster.commands.buckmaster.run({ _: ["graph"], flags: { quiet: true } });
   assert.equal(rc3, 0);
   assert.ok(Array.isArray(store.get("graph").edges));
-  const rc4 = await learn.commands.learn.run({ _: ["model"], flags: { quiet: true, train: true } });
+  const rc4 = await buckmaster.commands.buckmaster.run({ _: ["model"], flags: { quiet: true, train: true } });
   assert.equal(rc4, 0);
-  const m = JSON.parse(fs.readFileSync(learn.modelPath(), "utf8"));
+  const m = JSON.parse(fs.readFileSync(buckmaster.modelPath(), "utf8"));
   assert.equal(m.useful, false);                           // too few labelled rows to steer
 });

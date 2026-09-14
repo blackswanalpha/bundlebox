@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-pinpoint-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-pinpoint-")));
 process.env.BB_ROOT = root;
 const w = (p, s) => { fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true }); fs.writeFileSync(path.join(root, p), s); };
 
@@ -22,7 +22,7 @@ w("src/session.js", `${filler(220, "s")}\nexport function refreshSession(id) {\n
 w("src/token.js", `${filler(220, "t")}\nexport function loginToken(id) {\n  return "tok-" + id;\n}\n${filler(220, "u")}\n`);
 w("src/unrelated.js", "export function nothing() { return 0; }\n");
 w("docs/edge-cases.md", "| id | when | then |\n|---|---|---|\n| E1 | refreshSession is called twice | the second token wins |\n| E2 | printing | irrelevant |\n");
-w(".bundlebox/out/learn/recommendations.md", "# recs\n\n```\n- batch independent calls\n- read the region\n```\n");
+w(".bundlebox/out/buckmaster/recommendations.md", "# recs\n\n```\n- batch independent calls\n- read the region\n```\n");
 
 const PKG = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const BBK = path.join(PKG, "kernel", "target", "release", "bbk");

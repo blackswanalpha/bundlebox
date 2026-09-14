@@ -6,3 +6,16 @@ node_modules/
 .DS_Store
 kernel/target/
 expert/**/__pycache__/
+
+# A workspace's own corpora, world models and service list are INPUTS, not
+# derived artefacts, so they are meant to be committed in the repo they describe.
+# This repo is the tool, not a workspace: what is under .bundlebox/ here is a
+# fixture from developing it, and committing it would ship one machine's local
+# state as if it were part of the package.
+.bundlebox/cookbook/
+.bundlebox/genesis/
+.bundlebox/runbook/
+.bundlebox/simulate/
+.bundlebox/frames/
+.bundlebox/failsafe/
+.bundlebox/blackice/

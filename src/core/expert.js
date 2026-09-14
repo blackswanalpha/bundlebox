@@ -13,19 +13,29 @@ const PKG_DIR = path.join(PKG_ROOT, "expert");
 let _py;
 export function python() {
   if (_py !== undefined) return _py;
-  for (const cand of [process.env.BB_PYTHON, "python3", "python"].filter(Boolean)) {
-    const r = spawnSync(cand, ["-c", "import sys; print(sys.version_info[0]*100+sys.version_info[1])"], { encoding: "utf8", timeout: 5000 });
-    if (r.status === 0 && Number(r.stdout.trim()) >= 309) { _py = cand; return _py; }
+  // Windows has no `python3` unless a launcher made one, and the name is often
+  // a Microsoft Store stub that exits non-zero; `py -3` is the supported way in.
+  // Each candidate is a full argv because the launcher needs its version flag.
+  const cands = process.platform === "win32"
+    ? [process.env.BB_PYTHON && [process.env.BB_PYTHON], ["py", "-3"], ["python"], ["python3"]]
+    : [process.env.BB_PYTHON && [process.env.BB_PYTHON], ["python3"], ["python"]];
+  for (const cand of cands.filter(Boolean)) {
+    const r = spawnSync(cand[0], [...cand.slice(1), "-c", "import sys; print(sys.version_info[0]*100+sys.version_info[1])"],
+      { encoding: "utf8", timeout: 5000, shell: process.platform === "win32" });
+    if (r.status === 0 && Number(String(r.stdout).trim()) >= 309) { _py = cand; return _py; }
   }
   _py = null;
   return _py;
 }
+/** The display name of the interpreter, e.g. "py -3". */
+export const pythonName = () => { const p = python(); return p ? p.join(" ") : null; };
 export const available = () => Boolean(python());
 export let lastError = null;
 export function call(verb, payload = {}, { timeout = 600000 } = {}) {
   const py = python();
   if (!py) { lastError = "python3 >= 3.9 not found"; return null; }
-  const r = spawnSync(py, ["-m", "bundlebox_expert", verb], { input: JSON.stringify(payload), encoding: "utf8", timeout,
+  const r = spawnSync(py[0], [...py.slice(1), "-m", "bundlebox_expert", verb], { input: JSON.stringify(payload), encoding: "utf8", timeout,
+    shell: process.platform === "win32",
     env: { ...process.env, PYTHONPATH: PKG_DIR + (process.env.PYTHONPATH ? path.delimiter + process.env.PYTHONPATH : ""), PYTHONDONTWRITEBYTECODE: "1" },
     maxBuffer: 256 * 1024 * 1024 });
   if (r.error || r.status !== 0) { lastError = `${verb}: ${r.error ? r.error.message : (r.stderr || "").trim().split("\n").slice(-3).join(" | ") || `rc ${r.status}`}`; return null; }

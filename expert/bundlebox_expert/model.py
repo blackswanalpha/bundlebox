@@ -75,15 +75,35 @@ def train(episodes: list, lift: dict | None = None, epochs: int = 60, lr: float 
     acc = sum(1 for s, y in zip(ho_scores, ho_labels) if (s >= 0.5) == (y == 1)) / len(ho) if ho else 0.0
     majority = 1 if base_p >= 0.5 else 0
     base_acc = sum(1 for y in ho_labels if y == majority) / len(ho) if ho else 0.0
+
     auc = _auc(ho_scores, ho_labels)
-    beats = acc > base_acc + 0.02 and (auc is None or auc > 0.55)
+    # C32: the label used to be a function of the verb, and the verb is a
+    # feature — a model can score well by memorising the gear chain and steer
+    # nothing. So the verb gets its own baseline: predict each holdout row with
+    # the majority label of its verb in training. If the real model cannot beat
+    # THAT, it has learned the chain, not the work, and it does not get to vote.
+    verb_major: dict = {}
+    for e in tr:
+        v = e.get("verb") or "?"
+        c = verb_major.setdefault(v, [0, 0])
+        c[e["useful"]] += 1
+    def verb_guess(e):
+        c = verb_major.get(e.get("verb") or "?")
+        return majority if c is None else (1 if c[1] > c[0] else 0)
+    verb_acc = sum(1 for e, y in zip(ho, ho_labels) if verb_guess(e) == y) / len(ho) if ho else 0.0
+    beats = acc > base_acc + 0.02 and acc > verb_acc + 0.02 and (auc is None or auc > 0.55)
     # collinearity: ≥3 features sharing an identical weight are one column wearing three names
     groups = Counter(round(v, 6) for v in w.values())
     collinear = [[k for k, v in w.items() if round(v, 6) == val] for val, c in groups.items() if c >= 3 and val != 0.0]
+    why = ""
+    if not beats:
+        why = ("does not beat a verb-only guess on the time-split holdout: the label is still a function of the verb"
+               if acc <= verb_acc + 0.02 else "does not beat the base rate on the time-split holdout")
     return {"useful": beats, "n": n, "train": len(tr), "holdout": len(ho), "accuracy": round(acc, 3), "base_accuracy": round(base_acc, 3),
+            "verb_accuracy": round(verb_acc, 3),
             "auc": round(auc, 3) if auc is not None else None, "base_rate": round(base_p, 3),
             "weights": {k: round(v, 4) for k, v in sorted(w.items(), key=lambda kv: -abs(kv[1]))},
-            "collinear": collinear, "why": "" if beats else "does not beat the base rate on the time-split holdout"}
+            "collinear": collinear, "why": why}
 
 
 def predict(model: dict, ep: dict, lift: dict | None = None) -> dict:

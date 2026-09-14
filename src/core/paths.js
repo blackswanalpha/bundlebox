@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export function findRoot(start = process.cwd()) {
   if (process.env.BB_ROOT) return path.resolve(process.env.BB_ROOT);
@@ -21,7 +22,11 @@ export const BB_DIR = path.join(ROOT, ".bundlebox");
 export const VAR = path.join(BB_DIR, "var");
 export const OUT = path.join(BB_DIR, "out");
 export const HOME = path.join(os.homedir(), ".bundlebox");
-export const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+// `new URL(...).pathname` is a URL path, not a filesystem path: on Windows it
+// is "/C:/Users/..." with a leading slash and percent-escapes, so path.resolve
+// produced a root that did not exist and every module path derived from it was
+// wrong. fileURLToPath is the only correct decoder on both.
+export const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Workspace-relative paths are ALWAYS forward-slash: they are finding ids,
 // store keys and brief text, and a key that differs by OS is two findings.

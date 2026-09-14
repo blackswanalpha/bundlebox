@@ -1,0 +1,22 @@
+{
+  "id": "board-red-share",
+  "source": "board",
+  "metric": {
+    "fn": "ratio",
+    "num": "red",
+    "den": "steps"
+  },
+  "threshold": {
+    "op": "<=",
+    "value": 0.1
+  },
+  "severity": "high",
+  "evidence_cols": [
+    "corpus",
+    "id",
+    "surface",
+    "red",
+    "steps"
+  ],
+  "why": "The share of scenario steps the running system fails. Above a tenth, the corpus and the service disagree about what the product is."
+}

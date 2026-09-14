@@ -15,16 +15,17 @@
 //
 // Nothing here spends. A stage that cannot run is an `error` row; the gear
 // keeps going and its verdict says `partial`.
+import fs from "node:fs";
 import path from "node:path";
 import * as store from "../core/store.js";
 import * as expert from "../core/expert.js";
 import { git } from "../core/exec.js";
 import { readJson } from "../core/config.js";
-import { VAR } from "../core/paths.js";
+import { VAR, BB_DIR } from "../core/paths.js";
 import { setMode, isJson, warn } from "../core/log.js";
 import { now, stamp, shortId, slug, human, pad, sum } from "../core/util.js";
 import { fingerprint, inputsOf, readMeta, writeMeta } from "../kit/cache.js";
-import * as episodes from "../learn/episodes.js";
+import * as episodes from "../buckmaster/episodes.js";
 import { evaluate, verbKey, load as loadGears } from "./spec.js";
 
 /** Below this predicted usefulness an OPTIONAL stage is skipped. 0.35, not 0.5:
@@ -37,8 +38,10 @@ const round2 = (x) => Math.round(x * 100) / 100;
 /** What is true before the gear runs. Each field is null when its source could
  *  not be read (doctrine 2): a store that does not parse is not "0 findings". */
 export function context(gearName) {
-  const ctx = { gear: gearName, at: now(), open_findings: null, open_high: null, dirty: null, since_min: null, units_ready: null };
+  const ctx = { gear: gearName, at: now(), open_findings: null, open_high: null, dirty: null, since_min: null, units_ready: null,
+    corpora: null, corpus_base: null, scenarios: null, world: null, services: null };
   Object.assign(ctx, storeFacts());
+  Object.assign(ctx, scenarioFacts());
   const st = git(["status", "--porcelain"]);
   if (st.rc === 0) ctx.dirty = st.out.split("\n").filter((l) => l.trim()).length;
   const last = store.rows("gear_runs").filter((r) => r.gear === gearName).pop();
@@ -47,6 +50,33 @@ export function context(gearName) {
     if (Number.isFinite(t)) ctx.since_min = Math.max(0, Math.round((Date.now() - t) / 60000));
   }
   return ctx;
+}
+
+/** What the scenario half of the pipeline can act on, read straight off disk.
+ *  Deliberately not by importing those modules: the context is built before a
+ *  gear runs, and a partial install where one feature module does not import
+ *  must still be able to gate on the others. Each stays null when its source
+ *  could not be read, so a gate over it evaluates to NULL and the runner RUNS
+ *  the stage — a gate that cannot be evaluated is not a reason to skip.
+ */
+function scenarioFacts() {
+  const out = { corpora: null, corpus_base: null, scenarios: null, world: null, services: null };
+  const dirs = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return null; } };
+  const countJson = (p) => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const q = path.join(d, x.name); if (x.isDirectory()) walk(q); else if (x.name.endsWith(".json")) n++; } }; walk(p); return n; };
+
+  const cb = path.join(BB_DIR, "cookbook");
+  const corpora = dirs(cb);
+  if (corpora) {
+    const withPersona = corpora.filter((d) => fs.existsSync(path.join(cb, d, "persona.json")));
+    out.corpora = withPersona.length;
+    out.scenarios = withPersona.reduce((a, d) => a + countJson(path.join(cb, d, "scenarios")), 0);
+    out.corpus_base = withPersona.some((d) => (readJson(path.join(cb, d, "persona.json"), {}) || {}).base) ? 1 : 0;
+  }
+  const gen = dirs(path.join(BB_DIR, "genesis"));
+  if (gen) out.world = gen.filter((d) => fs.existsSync(path.join(BB_DIR, "genesis", d, "world.json"))).length;
+  const svc = readJson(path.join(BB_DIR, "runbook", "services.json"), null);
+  if (svc) out.services = (Array.isArray(svc) ? svc : svc.services || []).length;
+  return out;
 }
 
 function storeFacts() {
@@ -77,11 +107,11 @@ const YIELD = {
   "oversight scan": () => ({ produced: null, produces: ["oversight"], reads: ["findings"], turns: 0 }),
   "oversight guidelines": () => ({ produced: null, produces: ["guidelines"], reads: ["oversight"], turns: 0 }),
   "snapgen build": () => ({ produced: null, produces: ["snapgen"], reads: [], turns: 0 }),
-  "learn signals": () => { const s = store.get("signals", {}) || {}; const n = (s.sessions || []).length; return { produced: n, produces: ["signals"], reads: ["transcripts"], turns: episodes.turns({ files_read: Math.min(30, n), commands: 2 }) }; },
-  "learn rules": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["rules"], reads: ["signals"], turns: episodes.turns({ commands: 1 }) }; },
-  "learn recommend": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["recommendations"], reads: ["rules", "signals"], turns: episodes.turns({ commands: 1 }) }; },
-  "learn memory": () => { const m = store.get("memory", []); return { produced: Array.isArray(m) ? m.length : null, produces: ["memory"], reads: ["signals", "episodes", "scripts"], turns: episodes.turns({ files_read: 4 }) }; },
-  "learn episodes": () => ({ produced: store.rows("episodes").length, produces: ["episode-report"], reads: ["episodes"], turns: episodes.turns({ commands: 1 }) }),
+  "buckmaster signals": () => { const s = store.get("signals", {}) || {}; const n = (s.sessions || []).length; return { produced: n, produces: ["signals"], reads: ["transcripts"], turns: episodes.turns({ files_read: Math.min(30, n), commands: 2 }) }; },
+  "buckmaster rules": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["rules"], reads: ["signals"], turns: episodes.turns({ commands: 1 }) }; },
+  "buckmaster recommend": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["recommendations"], reads: ["rules", "signals"], turns: episodes.turns({ commands: 1 }) }; },
+  "buckmaster memory": () => { const m = store.get("memory", []); return { produced: Array.isArray(m) ? m.length : null, produces: ["memory"], reads: ["signals", "episodes", "scripts"], turns: episodes.turns({ files_read: 4 }) }; },
+  "buckmaster episodes": () => ({ produced: store.rows("episodes").length, produces: ["episode-report"], reads: ["episodes"], turns: episodes.turns({ commands: 1 }) }),
   "tokens ledger": () => { const n = store.rows("usage").length; return { produced: n, produces: ["usage"], reads: ["transcripts"], turns: episodes.turns({ files_read: Math.min(20, n ? 1 + Math.floor(n / 50) : 0) }) }; },
   "session list": () => ({ produced: null, produces: ["sessions"], reads: ["usage"], turns: 0 }),
   "scripts scan": () => { const s = store.get("scripts", []); return { produced: s.length, produces: ["scripts"], reads: [], turns: episodes.turns({ files_read: s.length, searches: 2 }) }; },
@@ -121,7 +151,7 @@ export async function runGear(name, opts = {}) {
 
   for (const st of g.stages) {
     const key = verbKey(st);
-    const row = { stage: st.name, verb: key, state: "", why: "", rc: 0, seconds: 0, produced: null, turns: 0, p_useful: null };
+    const row = { stage: st.name, verb: key, state: "", why: "", rc: 0, seconds: 0, produced: null, changed: null, turns: 0, p_useful: null };
     let inputCount = null, fp = null, fpKey = null;
 
     const gate = evaluate(st.when, ctx);
@@ -156,6 +186,10 @@ export async function runGear(name, opts = {}) {
 
     if (!row.state) {
       const cmd = cmdTable[st.verb];
+      // What this stage's artefact held BEFORE it ran. Without it the label is
+      // a function of the verb (C32): every `scan` claims to produce findings
+      // whether or not this run found any, and the model memorises the verb.
+      const before = yieldOf(st).produced;
       const t1 = Date.now();
       if (!cmd) { row.state = "error"; row.rc = 2; row.why = `no verb \`${st.verb}\` on this install`; }
       else {
@@ -172,6 +206,9 @@ export async function runGear(name, opts = {}) {
       if (row.state === "ran") {
         const y = yieldOf(st);
         row.produced = y.produced; row.turns = y.turns; row.reads = y.reads; row.produces = y.produces;
+        // null on either side means nothing counted it: unknown, not unchanged.
+        row.changed = before == null || y.produced == null ? null : (y.produced === before ? 0 : 1);
+        row.before = before;
         // rc 2 is "could not run": its inputs were not consumed, so nothing is fresh.
         if (fpKey && row.rc !== 2) writeMeta(fpKey, { fingerprint: fp, at: now(), gear: g.name, stage: st.name, inputs: inputCount });
         Object.assign(ctx, storeFacts());
@@ -179,8 +216,8 @@ export async function runGear(name, opts = {}) {
     }
 
     eps.push(episodes.write({ kind: "stage", verb: key, stage: st.name, gear: g.name, prev, features: feats, rc: row.rc, seconds: row.seconds,
-      produced: row.produced, reads: row.reads || [], produces: row.produces || [], turns_saved: row.turns, run_id, useful: -1, state: row.state,
-      detail: { why: row.why, p_useful: row.p_useful, gate_note: row.gate_note || "" } }));
+      produced: row.produced, changed: row.changed, reads: row.reads || [], produces: row.produces || [], turns_saved: row.turns, run_id, useful: -1, state: row.state,
+      detail: { why: row.why, p_useful: row.p_useful, gate_note: row.gate_note || "", produced_before: row.before ?? null } }));
     rows.push(row);
     prev = key;
   }

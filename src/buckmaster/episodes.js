@@ -1,6 +1,6 @@
 // episodes.js — the one row every subsystem writes when it does anything.
 //
-// `learn signals` reads transcripts: what a SESSION did, seen from outside.
+// `buckmaster signals` reads transcripts: what a SESSION did, seen from outside.
 // This is the other half: what the FACTORY did, recorded by the thing that did
 // it. A pipeline stage, a script run and a bridge call land here in one shape,
 // which is the only reason one model can train across them.
@@ -46,6 +46,7 @@ export function normalise(row = {}) {
     features: feats,
     rc: int(row.rc), seconds: Math.round(num(row.seconds) * 1000) / 1000,
     produced: row.produced == null ? null : int(row.produced),
+    changed: [0, 1].includes(row.changed) ? row.changed : null,
     reads: list(row.reads), produces: list(row.produces),
     turns_saved: int(row.turns_saved), tokens: int(row.tokens),
     run_id: row.run_id || "", useful: [0, 1].includes(row.useful) ? row.useful : -1,
@@ -90,13 +91,23 @@ export function relabel(labels) {
 
 /** Labels for the episodes of ONE run, in run order.
  *
- *    1   a LATER stage read an artefact this one produced
- *    0   nothing later read it and the gear completed: the run proved it unnecessary
+ *    1   a LATER stage read an artefact this one CHANGED
+ *    0   it ran and the gear completed, but nothing later read it, or what it
+ *        wrote was identical to what was already there
  *   -1   otherwise: unknown, and an unknown label is a row the model does not get
  *
  *  Order-aware on purpose: a read that happened BEFORE the produce is not
  *  evidence of anything. A stage never self-certifies: its own reads, and the
- *  reads of stages that did not run, count for nothing. */
+ *  reads of stages that did not run, count for nothing.
+ *
+ *  `changed` is what closes C32. "A later stage reads what this verb produces"
+ *  is a fact about the GEAR, identical on every run, so a label built from it
+ *  alone is a function of the verb — and the verb is also a model feature, so
+ *  the model could score well by memorising the chain and steer nothing. What
+ *  a stage actually changed differs run to run: a `scan` that finds nothing new
+ *  is labelled 0 while the same verb on a dirty tree is labelled 1. Where
+ *  nothing counted the output (`changed === null`) the old contract-only rule
+ *  stands, because the alternative is discarding the row. */
 export function autolabel(runEpisodes, { completed = true, apply = true } = {}) {
   const eps = Array.isArray(runEpisodes) ? runEpisodes : [];
   const labels = {};
@@ -109,7 +120,8 @@ export function autolabel(runEpisodes, { completed = true, apply = true } = {}) 
       if (!later || later.id === e.id || (later.state || "ran") !== "ran") continue;
       read = (later.reads || []).some((r) => made.has(r));
     }
-    labels[e.id] = read ? 1 : completed ? 0 : -1;
+    const contributed = e.changed == null ? true : e.changed === 1;
+    labels[e.id] = read && contributed ? 1 : completed ? 0 : -1;
   });
   if (apply) relabel(labels);
   return labels;

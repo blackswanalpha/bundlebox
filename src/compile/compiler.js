@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { load } from "../core/config.js";
+import * as throttle from "./throttle.js";
 import { ROOT, abs } from "../core/paths.js";
 import { git, gitOk } from "../core/exec.js";
 import { human, sha1 } from "../core/util.js";
@@ -102,7 +103,12 @@ export function priorArt(detector, cwd = ROOT) {
 const stripText = (a) => { const { text, ...rest } = a; return rest; };
 const uid = (s) => `u-${sha1(s).slice(0, 8)}`;
 
-/** Group, triage, pack, split. Returns units ready for the router. */
+/** What the throttle held back on the last compile, so `bb compile` can say so
+ *  instead of silently shrinking the plan. */
+let lastDeferred = [];
+export const deferred = () => lastDeferred;
+
+/** Group, triage, throttle, pack, split. Returns units ready for the router. */
 export async function compileUnits(findings, { maxUnits = 0 } = {}) {
   const cfg = load();
   const triage = await triageFn();
@@ -110,14 +116,18 @@ export async function compileUnits(findings, { maxUnits = 0 } = {}) {
 
   // Triage first: a finding the rule engine declines never becomes a unit, and
   // a finding an actuator can close becomes a zero-token unit.
-  const triaged = [];
+  const decisions = [];
   for (const f of findings || []) {
     if (f.status && f.status !== "open") continue;
     let d;
     try { d = triage(f, cfg) || {}; } catch { d = {}; }
-    if (!d.promote) continue;
-    triaged.push({ ...f, _t: d });
+    decisions.push({ id: f.id, detector: f.detector, promote: !!d.promote, priority: d.priority, ev: d.ev, est_tokens: f.est_tokens, _f: f, _t: d });
   }
+  // The throttle sees the whole run: how many promotions, whose, and at what
+  // estimated cost. A deferred finding is not declined, it is next in line.
+  const gate = throttle.apply(decisions, cfg);
+  const triaged = gate.promoted.map((d) => ({ ...d._f, _t: d._t }));
+  lastDeferred = gate.deferred.map((d) => ({ id: d.id, detector: d.detector, reason: d.throttle_reason }));
 
   const groups = new Map();
   for (const f of triaged) {
@@ -203,7 +213,8 @@ export function repoOf(relPath) {
 }
 
 export function summary(units) {
-  if (!units.length) return "  no work units — nothing promoted";
+  const back = lastDeferred.length ? `\n  ${lastDeferred.length} finding(s) deferred by the throttle: ${lastDeferred[0].reason}` : "";
+  if (!units.length) return "  no work units — nothing promoted" + back;
   const p = (s, w, r) => (r ? String(s).padStart(w) : String(s).padEnd(w));
   const lines = [`  ${p("unit", 11)} ${p("model", 8)} ${p("ctx", 7, 1)} ${p("files", 5, 1)} ${p("saved", 7, 1)} ${p("ev", 5, 1)}  title`];
   let savedTotal = 0;
@@ -217,5 +228,6 @@ export function summary(units) {
   lines.push(`  ${"-".repeat(66)}`);
   lines.push(`  ${units.length} units, ${human(total)} projected context total (ESTIMATE)`
     + (savedTotal ? `, ${human(savedTotal)} of payload skipped by anchoring` : ""));
+  if (back) lines.push(back.slice(1));
   return lines.join("\n");
 }

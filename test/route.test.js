@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-route-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-route-")));
 process.env.BB_ROOT = root;
 fs.mkdirSync(path.join(root, "src"), { recursive: true });
 fs.writeFileSync(path.join(root, "src/a.js"), "export const a = 1;\n");

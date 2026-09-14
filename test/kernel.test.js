@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-kernel-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-kernel-")));
 process.env.BB_ROOT = root;
 fs.mkdirSync(path.join(root, "src"), { recursive: true });
 const block = Array.from({ length: 14 }, (_, i) => `  const value${i} = compute(${i}, "str ${i}"); // c`).join("\n");
@@ -79,4 +79,41 @@ test("gate: exit code is the verdict, pipefail holds, timeout kills, output is c
   const big = kernel.call("gate", { cmd: "seq 1 100000", cwd: root, cap_bytes: 500 });
   assert.ok(big.output_tail.length <= 500 && big.output_bytes > 500);
   assert.equal(kernel.call("gate", { cmd: "", cwd: root }).verdict, "unproven");
+});
+
+// The kernel implements a documented SUBSET of the pattern language, so there
+// are two engines for one fact and they are pinned here. A pattern the kernel
+// refuses must be refused for a reason it can name, never answered wrongly —
+// `bb cookbook check` routes a corpus using one to the JS engine.
+const RX_SUPPORTED = [
+  ["^it-[0-9]+$", ["it-12", "it-", "xit-1", ""]],
+  ["^bb/[a-z0-9-]+$", ["bb/fix-the-thing", "bb/UPPER", "bb/"]],
+  ["err(or)?s?", ["error", "errs", "err", "nope"]],
+  ["\\d+ items", ["12 items", "items", "1 item"]],
+  ["^(GET|POST) /\\w+", ["GET /items", "PUT /items", "GET items"]],
+  ["a.c", ["abc", "ac", "a\nc"]],
+  ["^[^x]+$", ["abc", "axc", ""]],
+  ["colou?r", ["color", "colour", "colr"]],
+  ["\\s+$", ["a ", "a", "a\t"]],
+  ["^$", ["", "a"]],
+];
+const RX_OUTSIDE = ["^[a-f0-9]{8}$", "(?=x)", "(?!x)", "\\bword\\b", "(a)\\1", "a*?"];
+
+test("rx: the kernel's subset answers exactly what JavaScript answers", { skip: !have }, () => {
+  for (const [pattern, subjects] of RX_SUPPORTED) {
+    for (const subject of subjects) {
+      const k = kernel.call("rx", { pattern, subject });
+      assert.equal(k.supported, true, `/${pattern}/ should be inside the subset: ${k.why || ""}`);
+      assert.equal(k.match, new RegExp(pattern).test(subject), `/${pattern}/ against ${JSON.stringify(subject)}`);
+    }
+  }
+});
+
+test("rx: a construct outside the subset is refused with its name, never answered", { skip: !have }, () => {
+  for (const pattern of RX_OUTSIDE) {
+    const k = kernel.call("rx", { pattern, subject: "abcdefgh" });
+    assert.equal(k.supported, false, `/${pattern}/ must be refused, not answered ${k.match}`);
+    assert.ok(k.why && k.why.length, `/${pattern}/ was refused without saying why`);
+    assert.equal(k.match, undefined, "a refused pattern must not also carry an answer");
+  }
 });

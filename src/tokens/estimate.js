@@ -16,6 +16,8 @@ import * as kernel from "../core/kernel.js";
 import { PROSE_SUFFIX } from "../core/fs.js";
 
 const WORD = /\w+/g, PUNCT = /[^\w\s]/g, INDENT = /[ \t]{2,}|\n/g;
+/** Where the kernel starts being the cheaper way to count. Measured, not guessed. */
+export const KERNEL_AT = 10;
 const count = (re, s) => { let n = 0; re.lastIndex = 0; while (re.exec(s)) n++; return n; };
 
 function coef(kind, base = false) {
@@ -34,21 +36,42 @@ export function file(p) {
   try { if (!fs.statSync(a).isFile()) return 0; } catch { return 0; }
   return text(readText(a), kindOf(a));
 }
+/** A directory argument means every source file under it. `bb tokens estimate src`
+ *  used to report `missing: src` and a total of 0 — a silent zero is the worst
+ *  answer a token estimator can give. A path that is neither file nor directory
+ *  is still reported missing. */
+export function expand(paths) {
+  const out = [], missing = [];
+  for (const raw of paths) {
+    const a = abs(raw);
+    let st; try { st = fs.statSync(a); } catch { missing.push(raw); continue; }
+    if (st.isDirectory()) { const found = walk(a); if (!found.length) missing.push(raw); out.push(...found); continue; }
+    if (st.isFile()) { out.push(a); continue; }
+    missing.push(raw);
+  }
+  return { paths: [...new Set(out)], missing };
+}
+
 /** Per-file estimates plus total; the router bin-packs on the per-file numbers. */
 export function files(paths) {
-  // Over a few hundred files the kernel reads and counts in one process; the
-  // coefficients travel with the call so both sides use the calibrated set.
-  const list = [...paths];
-  if (list.length > 150) {
+  // Past the crossover (measured at ~10 files on this box: 3.6ms vs 4.2ms at 8,
+  // 71ms vs 19ms at 151) the kernel reads and counts in one process instead of
+  // one syscall pair per file. The coefficients travel with the call so both
+  // sides use the calibrated set.
+  const { paths: expanded, missing: gone } = expand(paths);
+  const list = expanded;
+  if (list.length > KERNEL_AT) {
     const t = load().tokens;
     const k = kernel.call("estimate", { paths: list.map(abs), prose_suffix: PROSE_SUFFIX, ...t });
     if (k && k.files) {
-      const out = { files: {}, total: k.total, bytes: k.bytes, missing: k.missing || [], via: "kernel" };
+      const out = { files: {}, total: k.total, bytes: k.bytes, missing: [...gone, ...(k.missing || [])], via: "kernel" };
       for (const [p, n] of Object.entries(k.files)) out.files[rel(p)] = n;
       return out;
     }
   }
-  return filesJs(list);
+  const js = filesJs(list);
+  js.missing = [...gone, ...js.missing];
+  return js;
 }
 export function filesJs(paths) {
   const out = { files: {}, total: 0, bytes: 0, missing: [] };

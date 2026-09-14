@@ -20,7 +20,7 @@ import { walk } from "../core/fs.js";
 import { out, emit, warn } from "../core/log.js";
 import { now, pad } from "../core/util.js";
 import { fingerprint } from "../kit/cache.js";
-import * as episodes from "../learn/episodes.js";
+import * as episodes from "../buckmaster/episodes.js";
 
 export const TAGS = new Set(["tag", "title", "needs", "produces", "on", "cost", "turns", "safe", "gear"]);
 const LIST_TAGS = new Set(["needs", "produces", "on"]);

@@ -22,6 +22,33 @@ import * as headroom from "./headroom.js";
 
 export const STACKS = { baseline: [], lean: [...LEAN_FLAGS, "--tools", ...LANE_TOOLS] };
 
+/** The free half of the answer: what the FIRST turn of each real session in
+ *  this workspace already cost, read off transcripts that are on disk.
+ *
+ *  Nothing else is in the window on turn one, so `input + cache_write +
+ *  cache_read` there IS the opening cost. It is not the same number a probe
+ *  returns — an interactive session carries MCP servers, the full tool set and
+ *  the global CLAUDE.md that a `claude -p` lane does not — so it is an UPPER
+ *  bound on lane overhead and is labelled as one. It beats OVERHEAD_FLOOR,
+ *  which is a constant somebody typed. */
+export async function observe({ root = ROOT, limit = 20 } = {}) {
+  const ledger = await import("./ledger.js");
+  const entries = (ledger.transcripts(root) || []).slice(0, limit);
+  const firsts = [];
+  for (const e of entries) {
+    const t = ledger.turns(e.file, e.adapter);
+    if (!t || !t.length) continue;
+    const f = t[0];
+    const w = (Number(f.input) || 0) + (Number(f.cacheWrite) || 0) + (Number(f.cacheRead) || 0);
+    if (w > 0) firsts.push({ session: e.file, adapter: e.adapter, window: w, turns: t.length });
+  }
+  if (!firsts.length) return { ok: false, why: "no transcripts with a usage block for this workspace", n: 0 };
+  const w = firsts.map((f) => f.window).sort((a, b) => a - b);
+  const mid = Math.floor(w.length / 2);
+  return { ok: true, n: w.length, min: w[0], median: w.length % 2 ? w[mid] : Math.round((w[mid - 1] + w[mid]) / 2),
+    max: w[w.length - 1], sessions: firsts, measured_at: now(), kind: "observed" };
+}
+
 /** One turn, five words, read the window it arrived in. */
 export function probe(stack, { cwd = ROOT, model = "sonnet", timeout = 240000, env = null } = {}) {
   // `--no-session-persistence` is in `claude --help` 2.1.270: a probe must not leave a transcript behind to be folded as spend.
@@ -53,6 +80,14 @@ export async function measure({ cwd = ROOT, model = "sonnet" } = {}) {
 export function write(profile) {
   const p = calibrationPath();
   const cal = readJson(p, {}) || {};
+  if (profile.kind === "observed") {
+    // An observed figure never overwrites a probed one: a probe measures the
+    // session lanes actually open, this measures the ones a person opened.
+    cal.overhead_observed = profile;
+    if (!cal.overhead_tokens) cal.overhead_tokens = profile.min;
+    writeJson(p, cal);
+    return p;
+  }
   cal.session_profile = profile;
   if (profile.lean) cal.overhead_lean = profile.lean;
   if (profile.baseline) cal.overhead_tokens = profile.baseline;

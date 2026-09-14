@@ -6,7 +6,7 @@ import path from "node:path";
 
 // HOME and BB_ROOT are pointed at a scratch dir BEFORE the modules load: ROOT
 // and the transcript locations are resolved at import time.
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bb-ledger-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-ledger-")));
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox"), { recursive: true });
 process.env.BB_ROOT = root;

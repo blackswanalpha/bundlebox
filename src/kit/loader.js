@@ -19,7 +19,7 @@ export const SOURCES = [
   { dir: "snapgen", kind: "table", meta: "snapgen" },
   { dir: "oversight/guidelines", kind: "guideline", meta: "oversight-guidelines" },
   { dir: "pinpoint", kind: "prompt", meta: null },
-  { dir: "learn", kind: "process", meta: "learn" },
+  { dir: "buckmaster", kind: "process", meta: "buckmaster" },
 ];
 // `prompt` is excluded from ranking: pinpoint outputs are written FOR a session
 // and always score highly against the question that produced them, which would

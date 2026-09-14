@@ -2,9 +2,10 @@
 //! writes one JSON object on stdout. Exit 0 on success, 2 on a bad op or bad
 //! input. Never prints anything else on stdout.
 mod json; mod sha1; mod walk; mod fingerprint; mod estimate; mod dupes; mod symbols; mod gate; mod worktree;
+mod http; mod rx; mod subst; mod scenario; mod simulate;
 use std::io::{Read, Write};
 
-const OPS: &[&str] = &["version", "walk", "fingerprint", "estimate", "dupes", "symbols", "anchor", "gate", "worktree", "worktree-prune", "sha1"];
+const OPS: &[&str] = &["version", "walk", "fingerprint", "estimate", "dupes", "symbols", "anchor", "gate", "worktree", "worktree-prune", "sha1", "scenario", "simulate", "probe", "rx"];
 
 fn main() {
     let op = std::env::args().nth(1).unwrap_or_default();
@@ -23,6 +24,16 @@ fn main() {
         "gate" => gate::op_gate(&input),
         "worktree" => worktree::op_worktree(&input),
         "worktree-prune" => worktree::op_worktree_prune(&input),
+        "scenario" => scenario::op_scenario(&input),
+        "simulate" => simulate::op_simulate(&input),
+        "probe" => simulate::op_probe(&input),
+        // Exposed so `test/kernel.test.js` can pin the pattern subset against
+        // JavaScript's own RegExp instead of trusting two engines to agree.
+        "rx" => { let mut o = json::Json::obj();
+            match rx::test(&input.string("pattern", ""), &input.string("subject", "")) {
+                Ok(b) => { o.set("supported", true.into()); o.set("match", b.into()); }
+                Err(e) => { o.set("supported", false.into()); o.set("why", e.into()); } }
+            o }
         "sha1" => { let mut o = json::Json::obj(); o.set("sha1", sha1::sha1(input.string("text", "").as_bytes()).into()); o }
         _ => { eprintln!("bbk: unknown op {}. ops: {}", op, OPS.join(" ")); std::process::exit(2); }
     };

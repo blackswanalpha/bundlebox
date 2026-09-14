@@ -30,7 +30,7 @@ import { out, emit, warn } from "../core/log.js";
 import { now, stamp, slug, human, pad } from "../core/util.js";
 import * as prices from "../tokens/prices.js";
 import { text as estimateText } from "../tokens/estimate.js";
-import * as episodes from "../learn/episodes.js";
+import * as episodes from "../buckmaster/episodes.js";
 
 export const REASONS = {
   exhausted: "The local automation could not finish this. Everything below was gathered for free; none of it needs re-deriving.",
@@ -118,15 +118,19 @@ export function brief({ problem, reason, gear, stage, memory, evidence, ran, acc
 }
 
 /** Pack a call and write it. Spends nothing. */
-export async function draft({ problem, reason = "asked", gear = "", stage = "", files = null, runId = "", acceptance = "" } = {}) {
+export async function draft({ problem, reason = "asked", gear = "", stage = "", files = null, runId = "", acceptance = "", body = "", lean = false } = {}) {
   if (!problem) return { rc: 2, why: "a call needs a problem" };
   if (!REASONS[reason]) reason = "asked";
   const id = `${stamp()}-${slug(problem) || "call"}`;
   const dir = path.join(DIR(), id);
   fs.mkdirSync(dir, { recursive: true });
   const named = namedFiles(problem, files);
-  const mem = memorySection(problem);
-  const ev = await evidenceSection(problem, named);
+  // A caller that already derived the evidence hands it over instead of paying
+  // pinpoint to derive it again, and a lean call drops the memory section too.
+  // Both exist for one reason: the far side is the only part of this factory
+  // that costs anything, so a section that adds nothing is tokens burnt.
+  const mem = lean ? { text: "(skipped: lean call)", keys: [] } : memorySection(problem);
+  const ev = body ? { text: body, via: "caller" } : await evidenceSection(problem, named);
   const accept = acceptance || load().bridge?.acceptance || "bb scan --json";
   const text = brief({ problem, reason, gear, stage, memory: mem.text, evidence: ev.text, ran: ranSection({ runId, gear }), acceptance: accept });
   const briefFile = path.join(dir, "brief.md");
@@ -164,7 +168,7 @@ export function ceiling(cfg = load(), readUsage = () => store.rows("usage")) {
 function refuse(row, why) { const r = { ...row, state: "refused", refused_why: why, refused_at: now() }; save(r); return { ...r, rc: 2, why }; }
 
 /** Spawn the chosen agent against a drafted call. The only spending path. */
-export async function send(callId, { agent = "", run = false, spend = false, cfg = load(), readUsage = undefined, timeout = 1800000 } = {}) {
+export async function send(callId, { agent = "", run = false, spend = false, allowNear = false, cfg = load(), readUsage = undefined, timeout = 1800000 } = {}) {
   const row = calls().find((c) => c.id === callId);
   if (!row) return { rc: 2, state: null, why: `no call ${callId}. bb bridge list` };
   if (!cfg.bridge?.enabled) return refuse(row, "bridge disabled: set bridge.enabled=true in .bundlebox/config.json");
@@ -180,6 +184,14 @@ export async function send(callId, { agent = "", run = false, spend = false, cfg
   if (!run) { const r = { ...row, agent: adp.name, argv: spec.argv }; save(r); return { ...r, rc: 0, why: `drafted, not sent: pass --run to send${spec.argv ? "" : " (adapter spawns nothing)"}` }; }
   const budget = ceiling(cfg, readUsage);
   if (!budget.ok) return refuse(row, budget.why);
+  // The window gate, asked immediately before the one thing here that costs
+  // anything. A call opened with twenty minutes of block left is cut off
+  // half-written: it spends the tokens and produces nothing to accept.
+  if (cfg.bridge?.window_guard !== false) {
+    const { guard } = await import("../monitor/index.js");
+    const g = guard({ plan: cfg.monitor?.plan || "custom", allowNear: allowNear || cfg.bridge?.allow_near === true });
+    if (!g.ok) return refuse(row, g.why);
+  }
   if (!spec.argv) { const r = { ...row, state: "queued", agent: adp.name, queued_at: now() }; save(r); return { ...r, rc: 0, why: `adapter \`${adp.name}\` spawns nothing; the brief is on disk at ${rel(path.dirname(promptFile))}` }; }
   if (!spend) return refuse(row, `adapter \`${adp.name}\` spends tokens; pass --spend to allow a non-zero cost`);
 
@@ -229,7 +241,7 @@ async function bridgeCmd({ _, flags }) {
   if (sub === "send") {
     const id = _[1];
     if (!id) { warn("which call? bb bridge send <id> [--run] [--spend] [--agent name]"); return 2; }
-    const r = await send(id, { agent: flags.agent ? String(flags.agent) : "", run: !!flags.run, spend: !!flags.spend });
+    const r = await send(id, { agent: flags.agent ? String(flags.agent) : "", run: !!flags.run, spend: !!flags.spend, allowNear: !!flags.allowNear });
     if (flags.json) { emit(r); return r.rc; }
     out(`  ${r.id || id}: ${r.state || "?"} — ${r.why}`);
     if (r.argv && !flags.run) out(`    would run: ${r.argv.join(" ")}`);
@@ -250,7 +262,7 @@ async function bridgeCmd({ _, flags }) {
 export const commands = {
   bridge: {
     help: "draft a packed call to an agent; send only with --run (and --spend for a paid agent)",
-    usage: "bb bridge draft \"<problem>\" [--reason exhausted|assist|complete|asked] [--files a,b] | send <id> [--run] [--spend] [--agent name] | list | report [--json]",
+    usage: "bb bridge draft \"<problem>\" [--reason exhausted|assist|complete|asked] [--files a,b] | send <id> [--run] [--spend] [--allow-near] [--agent name] | list | report [--json]",
     run: bridgeCmd,
   },
 };
