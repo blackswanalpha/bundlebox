@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  node:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ matrix.node }}" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: build kernel
+        run: cargo build --release --manifest-path kernel/Cargo.toml
+      - name: install kernel for the tests
+        shell: bash
+        run: mkdir -p ~/.bundlebox/bin && cp kernel/target/release/bbk* ~/.bundlebox/bin/ || true
+      - run: npm run lint
+        shell: bash
+      - run: npm test
+      - run: npm run expert:test
+      - run: node bin/bb.js selftest
+      - run: node bin/bb.js scan --json > /dev/null
+      - name: doc-drift on our own README
+        run: node bin/bb.js scan --only doc-drift

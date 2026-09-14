@@ -1,0 +1,22 @@
+[package]
+name = "bb-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "bundlebox kernel: the operations a scripting runtime gets wrong under load — tree walks, fingerprints, token estimates, duplicate windows, symbol indexes, gates with real timeouts, worktrees."
+license = "MIT"
+repository = "https://github.com/blackswanalpha/bundlebox"
+
+[[bin]]
+name = "bbk"
+path = "src/main.rs"
+
+# Deliberately no dependencies: serde would be convenient, but the kernel must
+# build offline on a box that has only rustc and cargo. JSON in and out is a
+# small hand-written module.
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

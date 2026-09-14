@@ -1,0 +1,9 @@
+.bundlebox/
+docs/
+changelogs/
+test/
+scripts/
+whitepaper/
+marketing/
+.github/
+*.tgz

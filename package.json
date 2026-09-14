@@ -1,0 +1,75 @@
+{
+  "name": "bundlebox",
+  "version": "0.1.0",
+  "description": "The zero-token software factory for AI coding agents: a Node CLI, a Rust kernel and a Python expert system that scan, pack, route and run work across Claude Code, Codex, Gemini CLI, Cursor, Aider, OpenCode and any custom agent, and measure every token used and saved.",
+  "keywords": [
+    "ai-agents",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "cursor",
+    "aider",
+    "token-optimization",
+    "context-engineering",
+    "mcp",
+    "static-analysis",
+    "software-factory",
+    "prompt-caching"
+  ],
+  "homepage": "https://github.com/blackswanalpha/bundlebox#readme",
+  "bugs": {
+    "url": "https://github.com/blackswanalpha/bundlebox/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackswanalpha/bundlebox.git"
+  },
+  "license": "MIT",
+  "author": "Kamande Mbugua",
+  "type": "module",
+  "bin": {
+    "bundlebox": "bin/bb.js",
+    "bb": "bin/bb.js"
+  },
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./adapters": "./src/adapters/index.js",
+    "./tokens": "./src/tokens/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "kernel/Cargo.toml",
+    "kernel/src/",
+    "expert/bundlebox_expert/",
+    "assets/logo.svg",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "EXPLANATION.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node scripts/test.js",
+    "selftest": "node bin/bb.js selftest",
+    "lint": "node --check bin/bb.js && for f in $(find src -name '*.js'); do node --check $f || exit 1; done",
+    "kernel": "cargo build --release --manifest-path kernel/Cargo.toml",
+    "expert:test": "python3 -m unittest discover -s expert/tests -v",
+    "prepack": "npm run lint && npm test"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ]
+}

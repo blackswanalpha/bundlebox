@@ -1,0 +1,17 @@
+{
+  "lanes": {
+    "agent": "claude"
+  },
+  "kernel": {
+    "gates": {
+      "quick": "npm run lint",
+      "full": "npm test",
+      "lint": "npm run lint",
+      "typecheck": "",
+      "test": "npm test",
+      "source": "package.json"
+    }
+  },
+  "$schema": "https://github.com/blackswanalpha/bundlebox/blob/main/src/core/config.js",
+  "initialised": "2026-09-14"
+}

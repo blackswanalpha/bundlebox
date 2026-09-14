@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bundlebox — the zero-token software factory for AI coding agents</title>
+<meta name="description" content="bundlebox scans a repo with static detectors, packs findings into window-sized briefs, opens Claude Code, Codex, Gemini CLI or any agent under a measured-minimal stack, and measures what each session used and saved.">
+<link rel="icon" href="../assets/logo.svg">
+<style>
+:root{--bg:#f7faf8;--fg:#10221b;--muted:#4b6359;--line:#d7e3dc;--card:#ffffff;--accent:#1F7A5C;--accent2:#3FB58A;--code:#eef5f1;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1512;--fg:#e6f1ec;--muted:#9fb8ad;--line:#1f332b;--card:#10201a;--accent:#3FB58A;--accent2:#7fd7b5;--code:#132a21}}
+:root[data-theme="dark"]{--bg:#0b1512;--fg:#e6f1ec;--muted:#9fb8ad;--line:#1f332b;--card:#10201a;--accent:#3FB58A;--accent2:#7fd7b5;--code:#132a21}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.55;padding-inline:16px}
+.wrap{max-width:980px;margin:0 auto;padding-block:32px}
+header{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-bottom:24px}header img{width:72px;height:72px}
+h1{font-size:2rem;margin:0;letter-spacing:-.02em}h1 small{display:block;font-size:1rem;font-weight:400;color:var(--muted)}
+h2{margin-top:2.4rem;padding-top:.6rem;border-top:1px solid var(--line);font-size:1.35rem}h3{font-size:1.05rem;margin-bottom:.3rem}
+nav{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.92rem;margin:12px 0 4px}nav a{color:var(--accent);text-decoration:none}nav a:hover{text-decoration:underline}
+a{color:var(--accent)}
+pre,code{font-family:var(--mono);font-size:.88em}pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto}code{background:var(--code);padding:1px 5px;border-radius:4px}pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;font-size:.93rem;display:block;overflow-x:auto}th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}.card b{display:block;margin-bottom:4px}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0}.kpi div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}.kpi strong{display:block;font-size:1.6rem;color:var(--accent);letter-spacing:-.02em}.kpi span{color:var(--muted);font-size:.9rem}
+.note{border-left:3px solid var(--accent2);padding:8px 12px;background:var(--card);border-radius:0 8px 8px 0;margin:12px 0}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
+svg.flow{width:100%;max-width:100%;height:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <img src="../assets/logo.svg" alt="bundlebox logo">
+  <div><h1>bundlebox <small>the zero-token software factory for AI coding agents</small></h1></div>
+</header>
+<nav>
+  <a href="#what">What it is</a><a href="#install">Install</a><a href="#flow">The flow</a><a href="#verbs">Verbs</a><a href="#wire">Wiring into agents</a><a href="#budget">The budget model</a><a href="#measure">Measured vs estimated</a><a href="#config">Configuration</a><a href="#release">Releases</a><a href="https://github.com/blackswanalpha/bundlebox">GitHub</a><a href="../whitepaper/bundlebox-whitepaper.md">Whitepaper</a>
+</nav>
+
+<h2 id="what">What it is</h2>
+<p>An AI coding agent is billed for what it reads, and most of what it reads is orientation, not judgement. bundlebox answers every question that a parse, a count, a path check or a set difference can answer, <em>before</em> the agent opens, packs the answers into a brief sized to the agent's window, opens the agent under a measured-minimal flag stack, and measures afterwards what the session used and what it was spared. It never calls a model itself, and it has no runtime dependencies.</p>
+<div class="kpi">
+  <div><strong>−34%</strong><span>opening window per session (44.3k → 29.2k tokens), before any work</span></div>
+  <div><strong>−74%</strong><span>projected tokens for the same plan (5 lanes / 1.3M → 2 lanes / 351k)</span></div>
+  <div><strong>226</strong><span>agent turns displaced by one pipeline tick, in 133 s, at 0 model tokens</span></div>
+  <div><strong>0</strong><span>dependencies. Node ≥ 20 and git.</span></div>
+</div>
+<p class="note">Every figure above was measured on the reference workspace and can be regenerated with <code>bb session</code>, <code>bb tokens profile --probe</code> and <code>bb learn episodes</code>. Measured and estimated numbers are labelled and never added.</p>
+
+<h2 id="install">Install</h2>
+<pre><code>npm i -g bundlebox          # or: curl -fsSL https://raw.githubusercontent.com/blackswanalpha/bundlebox/main/scripts/install.sh | sh
+cd your-repo
+bb init                     # detect languages, agents, gates; write .bundlebox/config.json
+bb doctor                   # what this box can run
+bb wire --apply             # hooks, instruction blocks and MCP entries for every agent found
+bb scan                     # the detectors. ~seconds, 0 tokens
+bb update                   # later: is there a newer bundlebox</code></pre>
+
+<h2 id="flow">The flow</h2>
+<svg class="flow" viewBox="0 0 960 150" role="img" aria-label="scan to fix to compile to route to run to git to session">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+  <g font-family="ui-monospace,Menlo,monospace" font-size="15" fill="currentColor">
+    <g stroke="currentColor" fill="none" stroke-width="1.5">
+      <rect x="10" y="40" width="110" height="46" rx="8"/><rect x="150" y="40" width="110" height="46" rx="8"/><rect x="290" y="40" width="120" height="46" rx="8"/><rect x="440" y="40" width="110" height="46" rx="8"/><rect x="580" y="40" width="110" height="46" rx="8" stroke-width="3"/><rect x="720" y="40" width="100" height="46" rx="8"/><rect x="850" y="40" width="100" height="46" rx="8"/>
+      <path d="M120 63H148M260 63H288M410 63H438M550 63H578M690 63H718M820 63H848" marker-end="url(#a)"/>
+    </g>
+    <text x="65" y="69" text-anchor="middle">scan</text><text x="205" y="69" text-anchor="middle">fix</text><text x="350" y="69" text-anchor="middle">compile</text><text x="495" y="69" text-anchor="middle">route</text><text x="635" y="69" text-anchor="middle" font-weight="700">run</text><text x="770" y="69" text-anchor="middle">git</text><text x="900" y="69" text-anchor="middle">session</text>
+    <g font-size="12" opacity=".75"><text x="65" y="112" text-anchor="middle">findings</text><text x="205" y="112" text-anchor="middle">patches</text><text x="350" y="112" text-anchor="middle">units</text><text x="495" y="112" text-anchor="middle">lanes</text><text x="635" y="112" text-anchor="middle">the only spend</text><text x="770" y="112" text-anchor="middle">PRs</text><text x="900" y="112" text-anchor="middle">the bill</text></g>
+    <text x="480" y="140" text-anchor="middle" font-size="12" opacity=".75">0 tokens everywhere except run. Every verb is a dry run until --apply.</text>
+  </g>
+</svg>
+
+<h2 id="verbs">Verbs</h2>
+<table><thead><tr><th>verb</th><th>answers</th><th>cost</th></tr></thead><tbody>
+<tr><td><code>bb scan</code></td><td>what is wrong, with evidence. Sixteen detectors: doc-links, todo-census, secret-scan, big-file, merge-markers, worktree-hygiene, dead-exports, duplicate-blocks, god-file, orphan-files, dead-deps, doc-drift, lockfile-drift, stale-evidence, missing-tests, debug-leftovers</td><td>0</td></tr>
+<tr><td><code>bb findings</code>, <code>bb explain &lt;id&gt;</code></td><td>the store, and one finding's evidence with its triage derivation</td><td>0</td></tr>
+<tr><td><code>bb fix [--apply]</code></td><td>local actuators: write a patch first, then the file; decline with a reason rather than guess</td><td>0</td></tr>
+<tr><td><code>bb compile [--write]</code></td><td>findings → units, each packed to one window: hoisted evidence, quoted regions, prior art, acceptance command</td><td>0</td></tr>
+<tr><td><code>bb route [--write]</code></td><td>units → lanes: budget, file conflicts as affinity, waves, worktrees, stable session ids</td><td>0</td></tr>
+<tr><td><code>bb run [--apply] [--pr]</code></td><td>lanes → sessions on the chosen agent. Dry run writes the exact prompt and command first</td><td><b>spends</b></td></tr>
+<tr><td><code>bb git</code></td><td>commit, push, draft PR, review → findings, gated merge. Guards refuse force flags, root commits, secret paths, empty scope</td><td>0</td></tr>
+<tr><td><code>bb session</code></td><td>what a session used and saved, measured off the transcript</td><td>0</td></tr>
+<tr><td><code>bb tokens</code></td><td>estimate, calibrate against transcripts, probe the session overhead, prices</td><td>0 (probe spends one turn)</td></tr>
+<tr><td><code>bb context &lt;paths&gt;</code></td><td>does this scope fit one session; where does it cut</td><td>0</td></tr>
+<tr><td><code>bb snapgen</code></td><td>fingerprinted tables: layout, symbols, routes, docs, commands, hot files, tests, deps</td><td>0</td></tr>
+<tr><td><code>bb pinpoint "&lt;problem&gt;"</code></td><td>one problem → one focused brief: where, regions, scope, evidence, done-when, traps, guidelines</td><td>0</td></tr>
+<tr><td><code>bb oversight</code></td><td>god files, bloat, duplication, vibe-coded marks, and the one-sentence guideline each produces</td><td>0</td></tr>
+<tr><td><code>bb pipeline run &lt;gear&gt;</code></td><td>six verbs in one process with gates and fingerprinted skips: intake, orient, measure, ops, learn, factory</td><td>0</td></tr>
+<tr><td><code>bb learn</code></td><td>episodes, transcript signals, rules, recommendations, process graph, model, memory, outcomes, backlog</td><td>0</td></tr>
+<tr><td><code>bb bridge</code></td><td>the one doorway out of free: a packed call, drafted by default, sent with <code>--run</code>, paid with <code>--spend</code></td><td>spends only with both flags</td></tr>
+<tr><td><code>bb wire</code>, <code>bb mcp</code></td><td>install into agents; serve the verbs over MCP</td><td>0</td></tr>
+<tr><td><code>bb doctor</code>, <code>bb selftest</code>, <code>bb update</code>, <code>bb cron</code></td><td>what this box can run; the silent-failure checks; the updater; the unattended worker</td><td>0</td></tr>
+</tbody></table>
+
+<h2 id="wire">Wiring into agents</h2>
+<p><code>bb wire --apply</code> installs, per agent detected on the box, three things: an instruction block between markers, hooks where the agent supports them, and an MCP server entry. <code>bb wire</code> without <code>--apply</code> lists every file it would touch. <code>bb unwire</code> removes only its own blocks.</p>
+<div class="grid">
+  <div class="card"><b>Claude Code</b>CLAUDE.md block · <code>.claude/settings.json</code> hooks: SessionStart (table index), PreToolUse Read (range advice past 35% of the window), PreCompact, SessionEnd (the bill) · <code>.mcp.json</code></div>
+  <div class="card"><b>Codex CLI</b>AGENTS.md block · <code>.codex/config.toml</code> <code>[mcp_servers.bundlebox]</code></div>
+  <div class="card"><b>Gemini CLI</b>GEMINI.md block · <code>.gemini/settings.json</code> mcpServers</div>
+  <div class="card"><b>Cursor</b><code>.cursor/rules/bundlebox.mdc</code> · <code>.cursor/mcp.json</code></div>
+  <div class="card"><b>GitHub Copilot</b><code>.github/copilot-instructions.md</code> · <code>.vscode/mcp.json</code></div>
+  <div class="card"><b>OpenCode</b>AGENTS.md · <code>opencode.json</code> mcp</div>
+  <div class="card"><b>Cline / Roo</b><code>.clinerules/bundlebox.md</code></div>
+  <div class="card"><b>Windsurf</b><code>.windsurf/rules/bundlebox.md</code></div>
+  <div class="card"><b>Aider</b><code>.aider.conf.yml</code> read: AGENTS.md</div>
+  <div class="card"><b>Any command</b><code>lanes.custom_command</code> with <code>{prompt_file}</code>, <code>{cwd}</code>, <code>{model}</code></div>
+</div>
+<p>The MCP tools: <code>bb_pinpoint</code>, <code>bb_context</code>, <code>bb_snapgen</code>, <code>bb_findings</code>, <code>bb_scan</code>, <code>bb_oversight_brief</code>, <code>bb_explain</code>, <code>bb_tokens_estimate</code>, <code>bb_session</code>. The server is JSON-RPC 2.0 over stdio with no dependency.</p>
+
+<h2 id="budget">The budget model</h2>
+<pre><code>projected = overhead + brief + payload × churn + reserve
+
+overhead   probed: one-turn session under the exact spawn flags, first usage block
+brief      the compiled instructions and evidence
+payload    files in scope, or the located REGION + widen × the rest when a symbol is named
+churn      ×2.4 measured: the file, the edited file, the linter output, the diff
+reserve    per kind: fix 12k · verify 8k · investigate 40k · build 8k · write 20k
+
+FITS  ≤ 78% of ceiling · TIGHT ≤ ceiling · SPLIT over, &gt;1 file · HEAVY over, one file</code></pre>
+<p>Five levers, in measured order: the lean flag stack; region not file; say it once (hoisted evidence, collapsed hints); a cache-stable prefix so parallel lanes share one cache write; and, optionally, a local compression proxy on the wire, reported on its own row with its own denominator.</p>
+
+<h2 id="measure">Measured vs estimated</h2>
+<table><thead><tr><th>row</th><th>how it is known</th></tr></thead><tbody>
+<tr><td>used</td><td>MEASURED to the token from the transcript, deduplicated by message id; cost from a price table with a source and date</td></tr>
+<tr><td>saved · cache</td><td>MEASURED: those exact tokens billed at the cache-read discount</td></tr>
+<tr><td>saved · wire</td><td>MEASURED from the proxy's own counters when it is up; n/a otherwise</td></tr>
+<tr><td>saved · automation</td><td>ESTIMATE, printed as a range: turns displaced × this session's marginal-to-full per-turn cost</td></tr>
+</tbody></table>
+<p>A model with no price is reported with tokens and no cost. A verb that could not look says unknown. A unit with no acceptance is <code>unproven</code> and is not shipped.</p>
+
+<h2 id="config">Configuration</h2>
+<p>One file, <code>.bundlebox/config.json</code>, holding only the keys you changed. Every default is in <code>src/core/config.js</code> with the reason next to it. Measured values (calibration, probed overhead) live in <code>.bundlebox/var/calibration.json</code> and are written by read-merge, never clobbered.</p>
+<pre><code>{
+  "lanes": { "agent": "claude", "max_parallel": 4, "model": "sonnet", "daily_budget_usd": 20 },
+  "budget": { "max_tokens": 160000, "churn_factor": 2.4, "anchor_widen": 0.45 },
+  "kernel": { "gates": { ".": { "quick": "npm test", "full": "npm run lint && npm test" } } },
+  "detectors": { "promote_at": "medium" },
+  "headroom": { "enabled": false }
+}</code></pre>
+
+<h2 id="release">Releases and updates</h2>
+<p>Tags <code>vX.Y.Z</code> on <code>main</code> publish to npm with provenance and create a GitHub release whose body is <code>changelogs/vX.Y.Z.md</code>. <code>bb update</code> checks the registry at most once a day and installs with <code>--apply</code>. The installer script refuses <code>sudo</code> and prints the two commands that make the global prefix writable.</p>
+
+<footer>MIT · <a href="https://github.com/blackswanalpha/bundlebox">github.com/blackswanalpha/bundlebox</a> · <a href="../EXPLANATION.md">EXPLANATION.md</a> · <a href="../CHANGELOG.md">CHANGELOG</a> · <a href="review-of-the-original.md">review of the original</a></footer>
+</div>
+</body>
+</html>

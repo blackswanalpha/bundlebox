@@ -1,0 +1,221 @@
+// compiler.js — findings become work units, and a work unit is a packed brief.
+//
+// Units are grouped so a lane is worth opening: findings of the same detector
+// in the same top-level directory become ONE unit, because the second one costs
+// almost nothing once the first is understood, and a lane below the floor has
+// paid full price for a fraction of a session.
+import fs from "node:fs";
+import path from "node:path";
+import { load } from "../core/config.js";
+import { ROOT, abs } from "../core/paths.js";
+import { git, gitOk } from "../core/exec.js";
+import { human, sha1 } from "../core/util.js";
+import * as anc from "./anchors.js";
+import * as context from "./context.js";
+import * as brief from "./brief.js";
+
+const SEV = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
+const sev = (s) => SEV[String(s || "").toLowerCase()] ?? 0;
+
+/** Promote-or-not for one finding. The detectors module owns the real rule
+ *  engine; when it is absent or broken this falls back to a severity gate so a
+ *  compile never depends on a module that is still being written. */
+let _triage = null;
+async function triageFn() {
+  if (_triage) return _triage;
+  try {
+    const m = await import("../detectors/index.js");
+    if (typeof m.triage === "function") return (_triage = m.triage);
+  } catch { /* fall through to the local gate */ }
+  _triage = (f, cfg) => {
+    const at = sev(cfg.detectors?.promote_at ?? "medium");
+    const promote = sev(f.severity) >= at;
+    return { promote, reason: promote ? `severity ${f.severity} >= ${cfg.detectors?.promote_at}` : `severity ${f.severity} below ${cfg.detectors?.promote_at}`,
+      model: cfg.lanes?.model || "", kind: f.kind || "fix", priority: 5 - sev(f.severity), ev: sev(f.severity) + 1 };
+  };
+  return _triage;
+}
+
+const topDirOf = (p) => { const s = String(p || "").replace(/\\/g, "/"); return s.includes("/") ? s.split("/")[0] : "."; };
+
+/** What PROVES a change here, read off the tree. Merged under `kernel.gates`
+ *  so a configured gate always wins over a guessed one. `quick` is the cheapest
+ *  gate found (lint, then typecheck, then test); `full` is the test run. */
+export function detectGates(root = ROOT) {
+  const cfg = load();
+  const g = { quick: "", full: "", lint: "", typecheck: "", test: "", source: null };
+  const has = (n) => fs.existsSync(path.join(root, n));
+  if (has("package.json")) {
+    let scripts = {};
+    try { scripts = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).scripts || {}; } catch { /* unparseable: no scripts */ }
+    if (scripts.lint) g.lint = "npm run lint";
+    if (scripts.typecheck) g.typecheck = "npm run typecheck";
+    if (scripts.test) g.test = "npm test";
+    if (g.lint || g.typecheck || g.test) g.source = "package.json";
+  }
+  if (!g.source && has("Makefile")) {
+    const mk = fs.readFileSync(path.join(root, "Makefile"), "utf8");
+    const target = (t) => new RegExp(`^${t}\\s*:`, "m").test(mk);
+    if (target("lint")) g.lint = "make lint";
+    if (target("typecheck")) g.typecheck = "make typecheck";
+    if (target("test")) g.test = "make test";
+    else if (target("check")) g.test = "make check";
+    if (g.lint || g.typecheck || g.test) g.source = "Makefile";
+  }
+  if (!g.source) {
+    if (has("pyproject.toml") || has("setup.py")) { g.test = "pytest -q"; g.source = has("pyproject.toml") ? "pyproject.toml" : "setup.py"; }
+    else if (has("Cargo.toml")) { g.test = "cargo test"; g.source = "Cargo.toml"; }
+    else if (has("go.mod")) { g.test = "go test ./..."; g.source = "go.mod"; }
+    else if (has("pubspec.yaml")) { g.lint = "flutter analyze"; g.source = "pubspec.yaml"; }
+  }
+  g.quick = g.lint || g.typecheck || g.test;
+  g.full = g.test || g.quick;
+  const user = cfg.kernel?.gates || {};
+  return { ...g, ...Object.fromEntries(Object.entries(user).filter(([, v]) => v)) };
+}
+
+/** The re-check that proves THESE findings are gone: the scan must succeed AND
+ *  none of the ids may reappear. Written as two commands, not one pipeline,
+ *  because `! scan | grep` passes when the scan itself crashes. */
+function recheck(detector, ids) {
+  const out = ".bundlebox/out/recheck.json";
+  const pats = ids.map((id) => `-e '"${id}"'`).join(" ");
+  return `bb scan --only ${detector} --json > ${out} && ! grep -q ${pats} ${out}`;
+}
+
+/** The last two commits that mention this detector, as prior art. Best effort:
+ *  null when git could not be asked, [] when it was asked and had nothing. */
+export function priorArt(detector, cwd = ROOT) {
+  if (!gitOk(cwd)) return null;
+  const r = git(["log", `--grep=${detector}`, "-n", "2", "--stat", "--format=%x00%h|%ad|%s", "--date=short"], cwd);
+  if (r.rc !== 0) return null;
+  const rows = [];
+  for (const chunk of r.out.split("\0").slice(1)) {
+    const [head, ...rest] = chunk.split("\n");
+    const [sha, date, ...subj] = head.split("|");
+    if (!sha) continue;
+    rows.push({ sha, date, subject: subj.join("|"), stat: rest.join("\n").trim() });
+  }
+  return rows;
+}
+
+const stripText = (a) => { const { text, ...rest } = a; return rest; };
+const uid = (s) => `u-${sha1(s).slice(0, 8)}`;
+
+/** Group, triage, pack, split. Returns units ready for the router. */
+export async function compileUnits(findings, { maxUnits = 0 } = {}) {
+  const cfg = load();
+  const triage = await triageFn();
+  const gates = detectGates(ROOT);
+
+  // Triage first: a finding the rule engine declines never becomes a unit, and
+  // a finding an actuator can close becomes a zero-token unit.
+  const triaged = [];
+  for (const f of findings || []) {
+    if (f.status && f.status !== "open") continue;
+    let d;
+    try { d = triage(f, cfg) || {}; } catch { d = {}; }
+    if (!d.promote) continue;
+    triaged.push({ ...f, _t: d });
+  }
+
+  const groups = new Map();
+  for (const f of triaged) {
+    const k = `${topDirOf(f.path || (f.files || [])[0])}\0${f.detector}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  }
+
+  const units = [];
+  const priorCache = new Map();
+  for (const key of [...groups.keys()].sort()) {
+    const [topDir, detector] = key.split("\0");
+    const members = groups.get(key).sort((a, b) => (a._t.priority ?? 5) - (b._t.priority ?? 5) || String(a.id).localeCompare(String(b.id)));
+    const scope = [...new Set(members.flatMap((f) => (f.files && f.files.length ? f.files : [f.path]).filter(Boolean)))].sort();
+    const actuator = members.find((f) => f.auto_fix)?.auto_fix || null;
+    const models = members.map((f) => f._t.model).filter(Boolean);
+    const model = models.find((m) => /opus/i.test(m)) || models[0] || cfg.lanes?.model || "";
+    const kind = members[0]._t.kind || members[0].kind || "fix";
+    const priority = Math.min(...members.map((f) => f._t.priority ?? 5));
+    const ev = members.reduce((s, f) => s + (Number(f._t.ev) || 0), 0);
+    const ids = members.map((f) => f.id);
+    const title = `${detector}: ${topDir === "." ? "root" : topDir} (${members.length} finding${members.length > 1 ? "s" : ""})`;
+
+    // Acceptance is a command. A finding may carry its own; otherwise the quick
+    // gate plus a re-scan of this detector. `verify`/`investigate`/`write` units
+    // have nothing a re-scan can prove, so they get the gate alone or nothing.
+    let acceptance = members.find((f) => f.acceptance)?.acceptance || "";
+    if (!acceptance) acceptance = [gates.quick, kind === "fix" ? recheck(detector, ids) : ""].filter(Boolean).join(" && ");
+    const unproven = !acceptance;
+
+    const anchors = anc.forFindings(members);
+    const repo = repoOf(scope[0] || ".");
+    if (!priorCache.has(`${repo}\0${detector}`)) priorCache.set(`${repo}\0${detector}`, priorArt(detector, abs(repo)));
+    const prior = priorCache.get(`${repo}\0${detector}`);
+    const deliverable = members.find((f) => f.deliverable)?.deliverable || "";
+    const extra = deliverable ? `## What this unit must produce\n${deliverable}\n` : "";
+
+    const base = { kind, rule: detector, detector, title, finding_ids: ids, top_dir: topDir, repo, model, actuator, priority, ev,
+      acceptance, unproven, prior: prior ? prior.map(({ stat, ...r }) => r) : null,
+      status: actuator ? "local" : "ready" };
+
+    const text = brief.build({ title, findings: members, scope, acceptance, extra, anchors, prior });
+    const ctx = context.evaluate(scope, { brief: text, anchors, kind });
+    if (ctx.verdict !== "SPLIT" || !ctx.split?.length) {
+      units.push({ ...base, id: uid(title + ids.join("")), scope, anchors: anchors.map(stripText), brief: text,
+        est_tokens: ctx.projected, projected: ctx.projected, verdict: ctx.verdict, context: ctx });
+      continue;
+    }
+    // SPLIT: the same evidence, a different slice of the scope each time.
+    const n = ctx.split.length;
+    ctx.split.forEach((part, i) => {
+      const inPart = new Set(part);
+      const subTitle = `${title} [${i + 1}/${n}]`;
+      const subMembers = members.filter((f) => !(f.files || []).length || f.files.some((p) => inPart.has(p)) || inPart.has(f.path));
+      const subAnchors = anchors.filter((a) => inPart.has(a.path));
+      const subExtra = `${extra}This is part ${i + 1} of ${n}. The other parts cover the rest of the same findings; do not touch their files.\n`;
+      const subText = brief.build({ title: subTitle, findings: subMembers.length ? subMembers : members, scope: part, acceptance, extra: subExtra, anchors: subAnchors, prior });
+      const subCtx = context.evaluate(part, { brief: subText, anchors: subAnchors, kind });
+      units.push({ ...base, title: subTitle, id: uid(subTitle + ids.join("")), scope: part, anchors: subAnchors.map(stripText),
+        finding_ids: (subMembers.length ? subMembers : members).map((f) => f.id), brief: subText,
+        est_tokens: subCtx.projected, projected: subCtx.projected, verdict: subCtx.verdict, context: subCtx, part: [i + 1, n] });
+    });
+  }
+
+  // Priority first: it is an ORDERING constraint, not a preference. Within a
+  // priority, expected value: a cheap exact fix outranks an expensive heuristic
+  // one, which "biggest first" had exactly backwards.
+  units.sort((a, b) => a.priority - b.priority || b.ev - a.ev || b.est_tokens - a.est_tokens);
+  return maxUnits ? units.slice(0, maxUnits) : units;
+}
+
+/** The repo a path belongs to: the nearest ancestor with its own `.git`, as a
+ *  rel path, else "." (the root, whether or not it is a repo). A lane is never
+ *  split across repos because a session with two checkouts open cd's into the
+ *  wrong one. */
+export function repoOf(relPath) {
+  let d = path.posix.dirname(String(relPath).replace(/\\/g, "/"));
+  while (d && d !== ".") {
+    if (fs.existsSync(path.join(ROOT, d, ".git"))) return d;
+    d = path.posix.dirname(d);
+  }
+  return ".";
+}
+
+export function summary(units) {
+  if (!units.length) return "  no work units — nothing promoted";
+  const p = (s, w, r) => (r ? String(s).padStart(w) : String(s).padEnd(w));
+  const lines = [`  ${p("unit", 11)} ${p("model", 8)} ${p("ctx", 7, 1)} ${p("files", 5, 1)} ${p("saved", 7, 1)} ${p("ev", 5, 1)}  title`];
+  let savedTotal = 0;
+  for (const u of units) {
+    const saved = u.context?.payload_saved || 0;
+    savedTotal += saved;
+    lines.push(`  ${p(u.id, 11)} ${p(u.model || "-", 8)} ${p(human(u.est_tokens), 7, 1)} ${p(u.scope.length, 5, 1)} ${p(saved ? human(saved) : "-", 7, 1)} ${p((u.ev || 0).toFixed(1), 5, 1)}  ${u.title}`
+      + (u.actuator ? "  [actuator]" : "") + (u.unproven ? "  [unproven]" : "") + (u.verdict !== "FITS" ? `  [${u.verdict}]` : ""));
+  }
+  const total = units.reduce((s, u) => s + u.est_tokens, 0);
+  lines.push(`  ${"-".repeat(66)}`);
+  lines.push(`  ${units.length} units, ${human(total)} projected context total (ESTIMATE)`
+    + (savedTotal ? `, ${human(savedTotal)} of payload skipped by anchoring` : ""));
+  return lines.join("\n");
+}

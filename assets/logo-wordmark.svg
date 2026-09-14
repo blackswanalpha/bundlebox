@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="bundlebox — the zero-token software factory">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1F7A5C"/><stop offset="1" stop-color="#0B3D2E"/></linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3FB58A"/><stop offset="1" stop-color="#1F7A5C"/></linearGradient>
+  </defs>
+  <g transform="translate(40,30) scale(0.47)">
+    <rect width="512" height="512" rx="96" fill="url(#g)"/>
+    <path d="M256 118 L392 190 L392 340 L256 412 L120 340 L120 190 Z" fill="#0B3D2E" stroke="#E8F5EE" stroke-width="14" stroke-linejoin="round"/>
+    <path d="M256 118 L392 190 L256 262 L120 190 Z" fill="url(#lid)" stroke="#E8F5EE" stroke-width="14" stroke-linejoin="round"/>
+    <path d="M256 262 L256 412" stroke="#E8F5EE" stroke-width="14" stroke-linecap="round"/>
+    <rect x="152" y="292" width="76" height="14" rx="7" fill="#3FB58A"/><rect x="152" y="320" width="56" height="14" rx="7" fill="#3FB58A" opacity="0.8"/><rect x="152" y="348" width="66" height="14" rx="7" fill="#3FB58A" opacity="0.6"/>
+    <rect x="284" y="292" width="76" height="14" rx="7" fill="#3FB58A"/><rect x="284" y="320" width="66" height="14" rx="7" fill="#3FB58A" opacity="0.8"/><rect x="284" y="348" width="46" height="14" rx="7" fill="#3FB58A" opacity="0.6"/>
+    <circle cx="256" cy="190" r="26" fill="#E8F5EE"/>
+    <text x="256" y="200" font-family="ui-monospace, Menlo, monospace" font-size="30" font-weight="700" text-anchor="middle" fill="#0B3D2E">0</text>
+  </g>
+  <text x="320" y="150" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="120" font-weight="800" fill="#0B3D2E" letter-spacing="-4">bundlebox</text>
+  <text x="326" y="215" font-family="ui-monospace, Menlo, monospace" font-size="34" fill="#1F7A5C">the zero-token software factory for AI coding agents</text>
+</svg>

@@ -1,0 +1,66 @@
+# Release: a tag vX.Y.Z on main builds the kernel for every target, publishes
+# the npm package with provenance, and creates the GitHub release with the
+# kernel binaries as assets and changelogs/vX.Y.Z.md as its body.
+# `bb kernel install` downloads the matching asset for the running platform.
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  kernel:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu,  asset: bbk-linux-x64 }
+          - { os: ubuntu-latest,  target: aarch64-unknown-linux-gnu, asset: bbk-linux-arm64, cross: true }
+          - { os: macos-latest,   target: aarch64-apple-darwin,      asset: bbk-darwin-arm64 }
+          - { os: macos-13,       target: x86_64-apple-darwin,       asset: bbk-darwin-x64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,    asset: bbk-win32-x64.exe }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - if: matrix.cross
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu && echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+      - run: cargo build --release --manifest-path kernel/Cargo.toml --target ${{ matrix.target }}
+      - shell: bash
+        run: |
+          src=kernel/target/${{ matrix.target }}/release/bbk; [ -f "$src.exe" ] && src="$src.exe"
+          cp "$src" "${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with: { name: "${{ matrix.asset }}", path: "${{ matrix.asset }}" }
+  publish:
+    needs: kernel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: https://registry.npmjs.org }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --manifest-path kernel/Cargo.toml && mkdir -p ~/.bundlebox/bin && cp kernel/target/release/bbk ~/.bundlebox/bin/
+      - run: npm run lint && npm test && npm run expert:test
+      - name: version matches tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"; ver="$(node -p 'require("./package.json").version')"
+          [ "$tag" = "$ver" ] || { echo "tag v$tag != package.json $ver"; exit 1; }
+          grep -q "^version = \"$ver\"" kernel/Cargo.toml || { echo "kernel/Cargo.toml version != $ver"; exit 1; }
+          grep -q "__version__ = \"$ver\"" expert/bundlebox_expert/__init__.py || { echo "expert version != $ver"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: publish to npm (provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: github release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: changelogs/${{ github.ref_name }}.md
+          files: |
+            dist/*
+            assets/logo.svg
