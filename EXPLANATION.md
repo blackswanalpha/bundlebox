@@ -47,6 +47,33 @@ bb git       PRs         commit, push, draft PR, review, merge   0 tokens
 bb session   the bill    what a session used and saved, measured
 ```
 
+In front of that spine sits the half that turns a document into work, and it has
+exactly one paid stage:
+
+```
+bb genesis <doc>   a world model: surfaces, actors, rules, capabilities   0 tokens
+bb genesis plan    of everything it declares, what no scenario touches    0 tokens
+bb genesis pack    one small brief per surface, derived half already done 0 tokens
+bb genesis send    the judgement half, and only that half           THE ONLY SPEND
+bb cookbook run    what came back, executed against the running system    0 tokens
+bb simulate run    the same request at a hundred callers                  0 tokens
+bb mainboard gaps  which stage does not hold, and the command that closes it
+```
+
+Deciding WHAT to write is a set difference over the document and the corpus and
+costs nothing. Writing it — the voice, the `rule` block, the assertions — is a
+judgement, and it is the only part a model is asked for. The split is the whole
+design, and it is why the brief carries the routes, the tier, the rules to cite
+with their line numbers, the step skeleton and the acceptance command already
+worked out. The agent is told what to write, not asked what is missing.
+
+A pipeline does not fail by erroring. It fails by SKIPPING — a corpus nobody
+ran, a board older than the scenarios in it, findings nobody compiled. Each of
+those is silent and each makes the next stage produce a confident answer about
+stale inputs, so every stage carries an exit criterion that is evaluated now
+rather than a memory of having run once. `bb mainboard gaps` evaluates all ten
+and names the one command that closes the first one that does not hold.
+
 Around that spine sit the verbs that answer questions a session would otherwise
 pay to answer:
 
@@ -57,10 +84,19 @@ pay to answer:
 | `bb context` | will this scope fit in one session, and if not where does it cut |
 | `bb oversight` | which files are god-shaped, duplicated, bloated or vibe-coded, and what to tell a session about it |
 | `bb pipeline` | run six verbs in one process with gates between them instead of asking a session to sequence them |
-| `bb learn` | how sessions actually spend turns, and the recommendations the measurements support |
+| `bb buckmaster` | how sessions actually spend turns, and the recommendations the measurements support |
 | `bb bridge` | the one doorway out of free: a packed call handed to an agent, drafted by default |
 | `bb wire` | install all of the above into Claude Code, Codex, Gemini CLI, Cursor, Copilot, OpenCode, Cline, Windsurf, Aider and Amp |
 | `bb mcp` | the same verbs as MCP tools, so any agent can ask instead of search |
+| `bb cookbook` | what the RUNNING system does with a persona's week, run by the kernel: red steps are findings carrying the rule they contradict |
+| `bb simulate` | what it does at rising concurrency, against a budget that is a multiple of the floor measured in that same run |
+| `bb mainboard` | six views over one ledger — is it up, does it obey its rules, could a person get through, what breaks under load, what answers without credentials, what nothing covers |
+| `bb runbook` | the running system: services under a real cage, and forty thousand log lines as twenty signatures read by offset |
+| `bb frames` | a dataframe over the factory's own data, and evals as JSON files a person can argue with |
+| `bb failsafe` | what is failing now, the cause this workspace already paid to learn, the op that closes it — and what every source was blind to |
+| `bb blackice` | the per-area audit: dated, never edited, ingested as findings, and checked for drift against the tree it described |
+| `bb monitor` | what the current five-hour block has left, and the guard asked immediately before anything spends |
+| `bb commandcenter` | one read-only page: the pipeline, the window, every session with its own title and what the local path displaced for it |
 
 ## 4. Where the tokens go, and where they come back
 
@@ -192,3 +228,10 @@ because which runtime happens to be installed must not change a number.
 - **gate**: the project's own test or lint entrypoint, whose exit code is the verdict.
 - **episode**: one row per local action: what was true before, wall clock, what it produced, turns displaced.
 - **gear**: a declared pipeline over verbs with gates between stages.
+- **world**: a document read into surfaces, actors, rules and capabilities, every item citing the line it came from.
+- **capability**: one thing the world says the system can do, addressable — `GET /orders`, `npm test`.
+- **scenario**: an ordered list of steps under one surface, carrying the rule it asserts, quoted from the source.
+- **board**: the result of running a corpus: per-surface passed, failed, blocked and empty, with evidence.
+- **view**: one producer of board findings, filed through `record()` into the same store the detectors write to.
+- **block**: a five-hour rolling billing window that starts with the first turn after a gap.
+- **stage**: one step of the pipeline, with an exit criterion evaluated now and the one command that closes it.

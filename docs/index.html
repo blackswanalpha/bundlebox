@@ -2,146 +2,330 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>bundlebox — the zero-token software factory for AI coding agents</title>
-<meta name="description" content="bundlebox scans a repo with static detectors, packs findings into window-sized briefs, opens Claude Code, Codex, Gemini CLI or any agent under a measured-minimal stack, and measures what each session used and saved.">
+<meta name="description" content="bundlebox answers every question a parse, a count or a set difference can answer before an agent opens, packs the rest into one window, and measures what the session used and what it was spared.">
 <link rel="icon" href="../assets/logo.svg">
 <style>
-:root{--bg:#f7faf8;--fg:#10221b;--muted:#4b6359;--line:#d7e3dc;--card:#ffffff;--accent:#1F7A5C;--accent2:#3FB58A;--code:#eef5f1;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1512;--fg:#e6f1ec;--muted:#9fb8ad;--line:#1f332b;--card:#10201a;--accent:#3FB58A;--accent2:#7fd7b5;--code:#132a21}}
-:root[data-theme="dark"]{--bg:#0b1512;--fg:#e6f1ec;--muted:#9fb8ad;--line:#1f332b;--card:#10201a;--accent:#3FB58A;--accent2:#7fd7b5;--code:#132a21}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.55;padding-inline:16px}
-.wrap{max-width:980px;margin:0 auto;padding-block:32px}
-header{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-bottom:24px}header img{width:72px;height:72px}
-h1{font-size:2rem;margin:0;letter-spacing:-.02em}h1 small{display:block;font-size:1rem;font-weight:400;color:var(--muted)}
-h2{margin-top:2.4rem;padding-top:.6rem;border-top:1px solid var(--line);font-size:1.35rem}h3{font-size:1.05rem;margin-bottom:.3rem}
-nav{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.92rem;margin:12px 0 4px}nav a{color:var(--accent);text-decoration:none}nav a:hover{text-decoration:underline}
-a{color:var(--accent)}
-pre,code{font-family:var(--mono);font-size:.88em}pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto}code{background:var(--code);padding:1px 5px;border-radius:4px}pre code{background:none;padding:0}
-table{border-collapse:collapse;width:100%;font-size:.93rem;display:block;overflow-x:auto}th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}.card b{display:block;margin-bottom:4px}
-.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0}.kpi div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}.kpi strong{display:block;font-size:1.6rem;color:var(--accent);letter-spacing:-.02em}.kpi span{color:var(--muted);font-size:.9rem}
-.note{border-left:3px solid var(--accent2);padding:8px 12px;background:var(--card);border-radius:0 8px 8px 0;margin:12px 0}
-footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
-svg.flow{width:100%;max-width:100%;height:auto}
+:root{
+  --ink:#141414; --muted:#63615b; --faint:#908d86; --rule:#e4e1da; --bg:#faf9f6; --panel:#fff;
+  --accent:#1f7a5c; --accent-soft:#e9f2ee; --red:#a8302a; --code-bg:#f4f2ec;
+  --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,"Liberation Mono",Menlo,monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+  --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
+  --accent:#55b892; --accent-soft:#15271e; --red:#e0776e; --code-bg:#181a17;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 var(--sans);letter-spacing:-.006em;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:0 28px}
+.wide{max-width:1000px}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+nav{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--rule)}
+nav .wrap{display:flex;align-items:center;gap:22px;height:56px;max-width:1000px}
+nav .n{font-weight:700;letter-spacing:-.025em;font-size:16px;color:var(--ink);border:0}
+nav .links{display:flex;gap:18px;margin-left:auto;font-size:13.5px;overflow-x:auto}
+nav .links a{color:var(--muted);border:0;white-space:nowrap}
+nav .links a:hover{color:var(--ink)}
+header.hero{padding:84px 0 56px;border-bottom:1px solid var(--rule)}
+h1{font-size:clamp(34px,5.4vw,50px);line-height:1.05;letter-spacing:-.035em;margin:0 0 20px;font-weight:700}
+.tagline{font-size:20px;line-height:1.45;color:var(--muted);margin:0 0 30px;max-width:30em;letter-spacing:-.012em}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px}
+.badges img{height:20px}
+section{padding:52px 0;border-bottom:1px solid var(--rule);scroll-margin-top:66px}
+section:last-of-type{border-bottom:0}
+h2{font-size:26px;letter-spacing:-.025em;margin:0 0 6px;font-weight:700;line-height:1.2}
+h2 + .kicker{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:0 0 20px}
+h3{font-size:17px;letter-spacing:-.015em;margin:32px 0 6px;font-weight:700}
+p{margin:0 0 18px}
+p.lead{font-size:18px;color:var(--muted);letter-spacing:-.01em}
+ul,ol{margin:0 0 18px;padding-left:22px}
+li{margin-bottom:8px}
+blockquote{margin:28px 0;padding:0 0 0 20px;border-left:2px solid var(--accent);font-size:19px;
+  line-height:1.5;letter-spacing:-.015em;color:var(--ink)}
+blockquote p{margin:0}
+code{font-family:var(--mono);font-size:.875em;background:var(--code-bg);padding:2px 5px;border-radius:4px}
+pre{background:var(--code-bg);border:1px solid var(--rule);border-radius:9px;padding:16px 18px;overflow-x:auto;
+  font:13px/1.65 var(--mono);margin:0 0 20px}
+pre code{background:0;padding:0;font-size:inherit}
+pre .c{color:var(--faint)}
+pre .g{color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:14.5px;margin:0 0 20px}
+th{text-align:left;font:11px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+  font-weight:400;padding:0 12px 9px 0;border-bottom:1px solid var(--rule)}
+td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td code,th code{white-space:nowrap}
+.muted{color:var(--muted)}
+.stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin:0 0 24px}
+.stages > div{background:var(--panel);padding:15px 16px;display:flex;flex-direction:column}
+.stages .t{font-weight:700;font-size:14px;margin-bottom:5px}
+.stages .d{color:var(--muted);font-size:12.5px;line-height:1.45}
+.stages .cost{font:10.5px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-top:auto;padding-top:14px}
+.stages .cost.spend{color:var(--red)}
+.note{font-size:14px;color:var(--muted);border-left:2px solid var(--rule);padding-left:16px;margin:0 0 20px}
+footer{padding:44px 0 72px;color:var(--faint);font-size:13.5px}
+footer a{color:var(--muted)}
+@media(max-width:900px){.stages{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.wrap{padding:0 20px}header.hero{padding:56px 0 40px}section{padding:40px 0}.stages{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="wrap">
-<header>
-  <img src="../assets/logo.svg" alt="bundlebox logo">
-  <div><h1>bundlebox <small>the zero-token software factory for AI coding agents</small></h1></div>
-</header>
-<nav>
-  <a href="#what">What it is</a><a href="#install">Install</a><a href="#flow">The flow</a><a href="#verbs">Verbs</a><a href="#wire">Wiring into agents</a><a href="#budget">The budget model</a><a href="#measure">Measured vs estimated</a><a href="#config">Configuration</a><a href="#release">Releases</a><a href="https://github.com/blackswanalpha/bundlebox">GitHub</a><a href="../whitepaper/bundlebox-whitepaper.md">Whitepaper</a>
-</nav>
 
-<h2 id="what">What it is</h2>
-<p>An AI coding agent is billed for what it reads, and most of what it reads is orientation, not judgement. bundlebox answers every question that a parse, a count, a path check or a set difference can answer, <em>before</em> the agent opens, packs the answers into a brief sized to the agent's window, opens the agent under a measured-minimal flag stack, and measures afterwards what the session used and what it was spared. It never calls a model itself, and it has no runtime dependencies.</p>
-<div class="kpi">
-  <div><strong>−34%</strong><span>opening window per session (44.3k → 29.2k tokens), before any work</span></div>
-  <div><strong>−74%</strong><span>projected tokens for the same plan (5 lanes / 1.3M → 2 lanes / 351k)</span></div>
-  <div><strong>226</strong><span>agent turns displaced by one pipeline tick, in 133 s, at 0 model tokens</span></div>
-  <div><strong>0</strong><span>dependencies. Node ≥ 20 and git.</span></div>
-</div>
-<p class="note">Every figure above was measured on the reference workspace and can be regenerated with <code>bb session</code>, <code>bb tokens profile --probe</code> and <code>bb learn episodes</code>. Measured and estimated numbers are labelled and never added.</p>
+<nav><div class="wrap">
+  <a class="n" href="#top">bundlebox</a>
+  <span class="links">
+    <a href="#problem">Why</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#genesis">Genesis</a>
+    <a href="#scenarios">Scenarios</a>
+    <a href="#budget">Budget</a>
+    <a href="#window">Window</a>
+    <a href="#verbs">Verbs</a>
+    <a href="https://github.com/blackswanalpha/bundlebox">GitHub</a>
+  </span>
+</div></nav>
 
-<h2 id="install">Install</h2>
-<pre><code>npm i -g bundlebox          # or: curl -fsSL https://raw.githubusercontent.com/blackswanalpha/bundlebox/main/scripts/install.sh | sh
-cd your-repo
-bb init                     # detect languages, agents, gates; write .bundlebox/config.json
-bb doctor                   # what this box can run
-bb wire --apply             # hooks, instruction blocks and MCP entries for every agent found
-bb scan                     # the detectors. ~seconds, 0 tokens
-bb update                   # later: is there a newer bundlebox</code></pre>
+<header class="hero" id="top"><div class="wrap">
+  <h1>The zero-token software factory for AI coding agents.</h1>
+  <p class="tagline">Answer everything a parse, a count or a set difference can answer before the agent opens. Pack the rest into one window. Measure what the session used, and what it was spared.</p>
+  <div class="badges">
+    <a href="https://www.npmjs.com/package/bundlebox"><img src="https://img.shields.io/npm/v/bundlebox?color=1F7A5C&label=npm" alt="npm"></a>
+    <a href="https://github.com/blackswanalpha/bundlebox/actions/workflows/ci.yml"><img src="https://github.com/blackswanalpha/bundlebox/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+    <a href="https://github.com/blackswanalpha/bundlebox/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-3FB58A" alt="MIT"></a>
+  </div>
+<pre><code><span class="c"># Node ≥ 20 and git. No npm dependencies.</span>
+npm i -g bundlebox
+cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
+</div></header>
 
-<h2 id="flow">The flow</h2>
-<svg class="flow" viewBox="0 0 960 150" role="img" aria-label="scan to fix to compile to route to run to git to session">
-  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
-  <g font-family="ui-monospace,Menlo,monospace" font-size="15" fill="currentColor">
-    <g stroke="currentColor" fill="none" stroke-width="1.5">
-      <rect x="10" y="40" width="110" height="46" rx="8"/><rect x="150" y="40" width="110" height="46" rx="8"/><rect x="290" y="40" width="120" height="46" rx="8"/><rect x="440" y="40" width="110" height="46" rx="8"/><rect x="580" y="40" width="110" height="46" rx="8" stroke-width="3"/><rect x="720" y="40" width="100" height="46" rx="8"/><rect x="850" y="40" width="100" height="46" rx="8"/>
-      <path d="M120 63H148M260 63H288M410 63H438M550 63H578M690 63H718M820 63H848" marker-end="url(#a)"/>
-    </g>
-    <text x="65" y="69" text-anchor="middle">scan</text><text x="205" y="69" text-anchor="middle">fix</text><text x="350" y="69" text-anchor="middle">compile</text><text x="495" y="69" text-anchor="middle">route</text><text x="635" y="69" text-anchor="middle" font-weight="700">run</text><text x="770" y="69" text-anchor="middle">git</text><text x="900" y="69" text-anchor="middle">session</text>
-    <g font-size="12" opacity=".75"><text x="65" y="112" text-anchor="middle">findings</text><text x="205" y="112" text-anchor="middle">patches</text><text x="350" y="112" text-anchor="middle">units</text><text x="495" y="112" text-anchor="middle">lanes</text><text x="635" y="112" text-anchor="middle">the only spend</text><text x="770" y="112" text-anchor="middle">PRs</text><text x="900" y="112" text-anchor="middle">the bill</text></g>
-    <text x="480" y="140" text-anchor="middle" font-size="12" opacity=".75">0 tokens everywhere except run. Every verb is a dry run until --apply.</text>
-  </g>
-</svg>
+<main>
 
-<h2 id="verbs">Verbs</h2>
-<table><thead><tr><th>verb</th><th>answers</th><th>cost</th></tr></thead><tbody>
-<tr><td><code>bb scan</code></td><td>what is wrong, with evidence. Sixteen detectors: doc-links, todo-census, secret-scan, big-file, merge-markers, worktree-hygiene, dead-exports, duplicate-blocks, god-file, orphan-files, dead-deps, doc-drift, lockfile-drift, stale-evidence, missing-tests, debug-leftovers</td><td>0</td></tr>
-<tr><td><code>bb findings</code>, <code>bb explain &lt;id&gt;</code></td><td>the store, and one finding's evidence with its triage derivation</td><td>0</td></tr>
-<tr><td><code>bb fix [--apply]</code></td><td>local actuators: write a patch first, then the file; decline with a reason rather than guess</td><td>0</td></tr>
-<tr><td><code>bb compile [--write]</code></td><td>findings → units, each packed to one window: hoisted evidence, quoted regions, prior art, acceptance command</td><td>0</td></tr>
-<tr><td><code>bb route [--write]</code></td><td>units → lanes: budget, file conflicts as affinity, waves, worktrees, stable session ids</td><td>0</td></tr>
-<tr><td><code>bb run [--apply] [--pr]</code></td><td>lanes → sessions on the chosen agent. Dry run writes the exact prompt and command first</td><td><b>spends</b></td></tr>
-<tr><td><code>bb git</code></td><td>commit, push, draft PR, review → findings, gated merge. Guards refuse force flags, root commits, secret paths, empty scope</td><td>0</td></tr>
-<tr><td><code>bb session</code></td><td>what a session used and saved, measured off the transcript</td><td>0</td></tr>
-<tr><td><code>bb tokens</code></td><td>estimate, calibrate against transcripts, probe the session overhead, prices</td><td>0 (probe spends one turn)</td></tr>
-<tr><td><code>bb context &lt;paths&gt;</code></td><td>does this scope fit one session; where does it cut</td><td>0</td></tr>
-<tr><td><code>bb snapgen</code></td><td>fingerprinted tables: layout, symbols, routes, docs, commands, hot files, tests, deps</td><td>0</td></tr>
-<tr><td><code>bb pinpoint "&lt;problem&gt;"</code></td><td>one problem → one focused brief: where, regions, scope, evidence, done-when, traps, guidelines</td><td>0</td></tr>
-<tr><td><code>bb oversight</code></td><td>god files, bloat, duplication, vibe-coded marks, and the one-sentence guideline each produces</td><td>0</td></tr>
-<tr><td><code>bb pipeline run &lt;gear&gt;</code></td><td>six verbs in one process with gates and fingerprinted skips: intake, orient, measure, ops, learn, factory</td><td>0</td></tr>
-<tr><td><code>bb learn</code></td><td>episodes, transcript signals, rules, recommendations, process graph, model, memory, outcomes, backlog</td><td>0</td></tr>
-<tr><td><code>bb bridge</code></td><td>the one doorway out of free: a packed call, drafted by default, sent with <code>--run</code>, paid with <code>--spend</code></td><td>spends only with both flags</td></tr>
-<tr><td><code>bb wire</code>, <code>bb mcp</code></td><td>install into agents; serve the verbs over MCP</td><td>0</td></tr>
-<tr><td><code>bb doctor</code>, <code>bb selftest</code>, <code>bb update</code>, <code>bb cron</code></td><td>what this box can run; the silent-failure checks; the updater; the unattended worker</td><td>0</td></tr>
-</tbody></table>
+<section id="problem"><div class="wrap">
+  <h2>An agent is billed for what it reads</h2>
+  <p class="kicker">The problem</p>
+  <p class="lead">Most of what a coding agent reads in a session is not the problem it was asked to solve. It is orientation: where the code is, which function serves which route, whether two tables agree, what the test command is, what changed since last week.</p>
+  <p>Measured over 170 sessions in the workspace this tool was built for, the median session re-read 37% of the files it opened, spent 88% of its tool turns on a single call, and half of all sessions ran long enough to compact at least once. Every one of those questions has an answer a parse, a count, a path check or a set difference can produce in milliseconds for nothing. The agent was paying tokens for arithmetic.</p>
+  <blockquote><p>If the answer is a set difference, a path check, a count or a parse, it is a detector and it costs nothing.</p></blockquote>
+  <p>Everything that fails that test is packed into a brief the agent can act on without searching, and the agent is opened with the smallest window that can hold that brief plus the files it names. What it used, and what the factory saved it from paying, is measured off the transcript the agent already writes. bundlebox never calls a model itself.</p>
+  <p>The design goal, stated as a number: a model should touch about a tenth of the work.</p>
+</div></section>
 
-<h2 id="wire">Wiring into agents</h2>
-<p><code>bb wire --apply</code> installs, per agent detected on the box, three things: an instruction block between markers, hooks where the agent supports them, and an MCP server entry. <code>bb wire</code> without <code>--apply</code> lists every file it would touch. <code>bb unwire</code> removes only its own blocks.</p>
-<div class="grid">
-  <div class="card"><b>Claude Code</b>CLAUDE.md block · <code>.claude/settings.json</code> hooks: SessionStart (table index), PreToolUse Read (range advice past 35% of the window), PreCompact, SessionEnd (the bill) · <code>.mcp.json</code></div>
-  <div class="card"><b>Codex CLI</b>AGENTS.md block · <code>.codex/config.toml</code> <code>[mcp_servers.bundlebox]</code></div>
-  <div class="card"><b>Gemini CLI</b>GEMINI.md block · <code>.gemini/settings.json</code> mcpServers</div>
-  <div class="card"><b>Cursor</b><code>.cursor/rules/bundlebox.mdc</code> · <code>.cursor/mcp.json</code></div>
-  <div class="card"><b>GitHub Copilot</b><code>.github/copilot-instructions.md</code> · <code>.vscode/mcp.json</code></div>
-  <div class="card"><b>OpenCode</b>AGENTS.md · <code>opencode.json</code> mcp</div>
-  <div class="card"><b>Cline / Roo</b><code>.clinerules/bundlebox.md</code></div>
-  <div class="card"><b>Windsurf</b><code>.windsurf/rules/bundlebox.md</code></div>
-  <div class="card"><b>Aider</b><code>.aider.conf.yml</code> read: AGENTS.md</div>
-  <div class="card"><b>Any command</b><code>lanes.custom_command</code> with <code>{prompt_file}</code>, <code>{cwd}</code>, <code>{model}</code></div>
-</div>
-<p>The MCP tools: <code>bb_pinpoint</code>, <code>bb_context</code>, <code>bb_snapgen</code>, <code>bb_findings</code>, <code>bb_scan</code>, <code>bb_oversight_brief</code>, <code>bb_explain</code>, <code>bb_tokens_estimate</code>, <code>bb_session</code>. The server is JSON-RPC 2.0 over stdio with no dependency.</p>
+<section id="pipeline"><div class="wrap wide">
+  <h2>One document in, working code out</h2>
+  <p class="kicker">The pipeline</p>
+  <p class="lead">The pipeline has one paid stage. Every other stage is a local computation whose whole purpose is to make that one stage shorter.</p>
+  <div class="stages">
+    <div><div class="t">Genesis</div><div class="d">A document or a prompt becomes a world model: surfaces, actors, the rules the prose states, and every capability it names.</div><div class="cost">0 tokens</div></div>
+    <div><div class="t">Situation</div><div class="d">Sixteen detectors over what is on disk, the services that are up, and the playbook entry for anything failing.</div><div class="cost">0 tokens</div></div>
+    <div><div class="t">Agent</div><div class="d">The judgement half, and only that half: the scenarios a set difference says are missing, packed to the smallest brief that can be acted on.</div><div class="cost spend">spends</div></div>
+    <div><div class="t">Scenarios</div><div class="d">The corpus run against the running system by the Rust kernel. Red steps become findings with the rule they contradict.</div><div class="cost">0 tokens</div></div>
+    <div><div class="t">Simulation</div><div class="d">The same request at rising concurrency, against a budget derived from the floor measured in that run.</div><div class="cost">0 tokens</div></div>
+    <div><div class="t">Pinpoint</div><div class="d">One problem, one window: the located regions, the evidence, the scope, the gate, the budget.</div><div class="cost">0 tokens</div></div>
+    <div><div class="t">Agent</div><div class="d">A packed call to whichever agent this box has, gated on what the current billing window has left.</div><div class="cost spend">spends</div></div>
+    <div><div class="t">Ship</div><div class="d">Commit with an explicit path list, a draft PR whose body is the findings it closed, and a merge that has to pass every gate.</div><div class="cost">0 tokens</div></div>
+  </div>
+  <p>A pipeline does not fail by erroring. It fails by skipping — a corpus nobody ran, a board older than the scenarios in it, findings nobody compiled. Each of those is silent, and each makes the next stage produce a confident answer about stale inputs. So every stage carries an exit criterion that is evaluated <em>now</em>, not a memory of having run once.</p>
+<pre><code>$ bb mainboard gaps
+  ok  Genesis      1 world, 23 capabilities, 3 rules from docs/PRD.md
+  ok  Situation    82 open of 84, scanned 9m ago
+  <span class="g">GAP</span> Scenarios    the newest board is older than the newest scenario
+                   — it is reporting on a corpus that has changed
 
-<h2 id="budget">The budget model</h2>
-<pre><code>projected = overhead + brief + payload × churn + reserve
+  9 of 10 stages hold. The first that does not is scenarios. Closed by:
 
-overhead   probed: one-turn session under the exact spawn flags, first usage block
-brief      the compiled instructions and evidence
-payload    files in scope, or the located REGION + widen × the rest when a symbol is named
-churn      ×2.4 measured: the file, the edited file, the linter output, the diff
-reserve    per kind: fix 12k · verify 8k · investigate 40k · build 8k · write 20k
+      bb cookbook run --base &lt;url&gt;</code></pre>
+</div></section>
 
-FITS  ≤ 78% of ceiling · TIGHT ≤ ceiling · SPLIT over, &gt;1 file · HEAVY over, one file</code></pre>
-<p>Five levers, in measured order: the lean flag stack; region not file; say it once (hoisted evidence, collapsed hints); a cache-stable prefix so parallel lanes share one cache write; and, optionally, a local compression proxy on the wire, reported on its own row with its own denominator.</p>
+<section id="genesis"><div class="wrap">
+  <h2>Deciding what to write is free. Writing it is not.</h2>
+  <p class="kicker">Genesis</p>
+  <p class="lead">Give it the document you already wrote — a PRD, a spec, a README, a pasted prompt — and it derives the half of a scenario corpus that is derivable rather than judged.</p>
+<pre><code>$ bb genesis docs/PRD.md --base http://127.0.0.1:4400
+  prd — from docs/PRD.md, 412 lines
+  9 surfaces · 34 rules · 61 capabilities · 3 actors · 12 constants
 
-<h2 id="measure">Measured vs estimated</h2>
-<table><thead><tr><th>row</th><th>how it is known</th></tr></thead><tbody>
-<tr><td>used</td><td>MEASURED to the token from the transcript, deduplicated by message id; cost from a price table with a source and date</td></tr>
-<tr><td>saved · cache</td><td>MEASURED: those exact tokens billed at the cache-read discount</td></tr>
-<tr><td>saved · wire</td><td>MEASURED from the proxy's own counters when it is up; n/a otherwise</td></tr>
-<tr><td>saved · automation</td><td>ESTIMATE, printed as a range: turns displaced × this session's marginal-to-full per-turn cost</td></tr>
-</tbody></table>
-<p>A model with no price is reported with tokens and no cost. A verb that could not look says unknown. A unit with no acceptance is <code>unproven</code> and is not shipped.</p>
+  what it could not settle — stated, not filled in:
+    ? how a request authenticates — the rules assume a signed-in caller and no
+      auth route is named; put it in the corpus `setup`</code></pre>
+  <p>Every item cites the line it came from, because a surface with no source is a guess and a corpus built on guesses goes red about itself. What the derivation could not settle is listed rather than filled in: a model that invents a base URL produces a corpus that is red everywhere for a reason that has nothing to do with the product.</p>
+  <p>From there, coverage is a set difference. <code>bb genesis plan</code> ranks every capability no scenario touches and assigns each a tier from its own shape — a read with no path parameter cannot be anything but simple; anything naming a relationship between two parties is complicated whether or not somebody felt like writing it that way.</p>
+  <p>Then <code>bb genesis pack</code> writes one brief per surface. The brief carries the derived half already done: the routes, the tier, the rules to cite with their line numbers, the step skeleton the tier forces, the exact expectation vocabulary, and one acceptance command. The agent is told what to write, not asked what is missing.</p>
+  <p>Each brief also carries a short table of what it does not accept — "I read the handler, the shape is obvious"; "I'll assert the status and move on" — with the reason each does not apply. It is three hundred tokens that reliably saves several thousand.</p>
+  <div class="note">Nothing in <code>genesis</code> calls a model. <code>bb genesis send</code> hands a packed file to whichever agent this box has, and it still needs <code>--run --spend</code> before anything opens.</div>
+</div></section>
 
-<h2 id="config">Configuration</h2>
-<p>One file, <code>.bundlebox/config.json</code>, holding only the keys you changed. Every default is in <code>src/core/config.js</code> with the reason next to it. Measured values (calibration, probed overhead) live in <code>.bundlebox/var/calibration.json</code> and are written by read-merge, never clobbered.</p>
+<section id="scenarios"><div class="wrap">
+  <h2>A detector asks what the files say. A scenario asks what the system does.</h2>
+  <p class="kicker">Scenarios</p>
+  <p class="lead">A corpus is a persona's week written down: JSON on disk, executed by the Rust kernel, no model anywhere, findings with evidence.</p>
 <pre><code>{
-  "lanes": { "agent": "claude", "max_parallel": 4, "model": "sonnet", "daily_budget_usd": 20 },
-  "budget": { "max_tokens": 160000, "churn_factor": 2.4, "anchor_widen": 0.45 },
-  "kernel": { "gates": { ".": { "quick": "npm test", "full": "npm run lint && npm test" } } },
-  "detectors": { "promote_at": "medium" },
-  "headroom": { "enabled": false }
+  "id": "items-write-read",
+  "surface": "items",
+  "severity": "high",
+  "rule": ["POST /items returns 201 with version 1 — src/items.py:88"],
+  "steps": [
+    {"name": "create", "do": "POST /items",
+     "body": {"title": "audit {{run}}", "due": "{{+2d}}"},
+     "expect": {"status": 201, "json": {"version": 1}},
+     "save": {"item": "id"}},
+    {"name": "read it back — a 201 that stored nothing looks identical from here",
+     "do": "GET /items/{{item}}",
+     "expect": {"status": 200, "json": {"id": "{{item}}"}, "max_ms": 500}}
+  ]
 }</code></pre>
+  <p>Four properties do the work, and each exists because the alternative produces a board that is green for the wrong reason.</p>
+  <p><strong>The rule and the assertion live in the same file.</strong> Every scenario quotes the behaviour from the source with its constant names. Without that, a red step is an argument about what the corpus wants. With it, a red step is the system contradicting something written down, and the fix is obvious in whichever direction it turns out to lie.</p>
+  <p><strong>The run is paced.</strong> A service that limits to sixty requests a minute turns an unpaced 130-step corpus into an all-red board about the limiter, with every surface after the halfway point answering 429. The client paces itself and rides out a 429 rather than recording it.</p>
+  <p><strong>A failed precondition blocks its scenario</strong> instead of cascading. One unwritable directory used to read as nineteen product defects; now it reads as one environment fact and the steps after it are marked blocked, which is a different state from failed and is reported as one.</p>
+  <p><strong>Green has to mean something was checked.</strong> <code>bb cookbook check</code> needs no server and refuses a scenario in which nothing asserts, an unknown surface, an expectation key nothing implements, a duplicate id, and an actor that names nobody. Green-because-nothing-was-checked and green-because-everything-held look identical from the outside, and that gate is the only thing between them.</p>
+  <h3>Which scenarios to run, and when</h3>
+  <p>A corpus grows faster than the wall clock available to run it, so running all of it every time is the thing that stops happening. <code>bb cookbook select</code> ranks by expected information — how often a scenario has been red, how often it has changed its mind, how long since anything looked, what it costs in steps — scaled by the severity of what it is about. Every term is printed beside the score, because a ranking nobody can read is a ranking nobody will trust enough to run.</p>
+<pre><code>$ bb cookbook select --budget 60
+  scenario              sev     last      history    age   steps  value
+  --------------------  ------  --------  ---------  ----  -----  -----
+  calendar-conflict     high    failed    3/4 red    2.1d      7  6.63
+  brief-timelapse       high    passed    0/4 red    2.1d      9  3.02
+  search-federated      medium  never run  -          -        5  2.31
 
-<h2 id="release">Releases and updates</h2>
-<p>Tags <code>vX.Y.Z</code> on <code>main</code> publish to npm with provenance and create a GitHub release whose body is <code>changelogs/vX.Y.Z.md</code>. <code>bb update</code> checks the registry at most once a day and installs with <code>--apply</code>. The installer script refuses <code>sudo</code> and prints the two commands that make the global prefix writable.</p>
+  12 selected, 58 steps of a 60-step budget</code></pre>
+</div></section>
 
-<footer>MIT · <a href="https://github.com/blackswanalpha/bundlebox">github.com/blackswanalpha/bundlebox</a> · <a href="../EXPLANATION.md">EXPLANATION.md</a> · <a href="../CHANGELOG.md">CHANGELOG</a> · <a href="review-of-the-original.md">review of the original</a></footer>
-</div>
+<section id="runtimes"><div class="wrap">
+  <h2>Three runtimes, one set of answers</h2>
+  <p class="kicker">Architecture</p>
+  <p>The CLI, the adapters and the store are Node with no dependencies, because a global install must be one command and a cron worker must run what is on disk. Two classes of operation do not belong in a scripting runtime and were moved out.</p>
+  <table>
+    <tr><th>Runtime</th><th>Owns</th><th>Why there</th></tr>
+    <tr><td><strong>Rust</strong><br><code>bbk</code></td><td>Tree walks, fingerprints, token estimates, duplicate windows, symbol indexes, acceptance gates with real timeouts, worktrees — and now scenario execution, load simulation and health probing.</td><td>A corpus is hundreds of sockets and a simulation is thousands. Threads, one connection per worker, one shared pacer. A scripting runtime spends the wall clock on its own scheduler.</td></tr>
+    <tr><td><strong>Python</strong><br><code>bundlebox_expert</code></td><td>The forward-chaining rule engine, triage, confidence shrinkage, transcript signals, the process model, memory — and now the world derivation, coverage planning, scenario selection and board verdicts.</td><td>Expert-system and ML work is readable and testable here and nowhere else. Standard library only.</td></tr>
+    <tr><td><strong>Node</strong></td><td>Every verb, the adapters, the store, the command centre.</td><td>One <code>npm i -g</code>, no build step, no <code>node_modules</code>.</td></tr>
+  </table>
+  <p>Both optional runtimes degrade cleanly. Without the kernel the JavaScript engine runs, and it is also what runs when the base is <code>https</code> or the corpus uses a pattern outside the kernel's documented subset — the dispatcher says which engine ran and why, because a board that does not name its engine is a board whose numbers cannot be compared with the last one. Without python3 the learning verbs say so and the zero-token path is unaffected. Where two runtimes implement the same fact, a test pins them to identical answers: which runtime happens to be installed must not change a number.</p>
+</div></section>
+
+<section id="simulation"><div class="wrap">
+  <h2>What it does at more than one caller</h2>
+  <p class="kicker">Simulation</p>
+  <p class="lead">A corpus asks whether the system obeys its own rules once. A simulation asks whether it still does under a hundred callers.</p>
+<pre><code>$ bb simulate run smoke --base http://127.0.0.1:4400 --levels 1,8,32
+
+  conc  requests  rate      p50     p95     p99     max     errors
+  ----  --------  --------  ------  ------  ------  ------  ------
+     1      1391  1389.9/s  0.6ms   1.3ms   2.2ms   4.6ms
+     8      1921  1914.3/s  4.1ms   6.6ms   9.7ms   16.2ms
+    32      2287  2258.8/s  11.1ms  22.0ms  96.8ms  267.6ms
+
+  floor 0.3ms measured in this run · budget 25ms (4× the floor)</code></pre>
+  <p>Latency budgets here are never absolute milliseconds. A profile names a multiple of the floor measured in that same run, clamped, with a slack floor under it. A constant written on one box is wrong on every other one, and a performance board that cries wolf on a slower laptop is a board nobody reads twice.</p>
+</div></section>
+
+<section id="budget"><div class="wrap">
+  <h2>Where the tokens go, and where they come back</h2>
+  <p class="kicker">The budget model</p>
+<pre><code>projected = overhead + brief + payload × churn + reserve</code></pre>
+  <p><strong>Overhead</strong> is the system prompt, tool schemas and instruction files, before a word of the task. It is probed, not assumed: <code>bb tokens profile --probe</code> opens a one-turn session under the exact flags a lane spawns with and reads the first usage block. <strong>Payload</strong> is every file in scope, read once; when a finding names a symbol, the payload is the located region plus a widening allowance, not the file. <strong>Churn</strong> is the term everyone forgets — the same files re-read after edits, plus tool output about them — and it measures near 2.4 on real transcripts. <strong>Reserve</strong> is held back for the model's own output, per kind of unit.</p>
+  <p>Five levers act on those terms, in the order they were measured to matter.</p>
+  <ol>
+    <li><strong>Lean session flags.</strong> Naming the seven tools a lane uses, dropping user settings sources, MCP servers and slash commands took a lane's opening window from 44.3k to 29.2k tokens on the reference box. The flags are not independent, so the stack is probed as a combination.</li>
+    <li><strong>Region, not file.</strong> A route table is two to four percent of the file that holds it. Quoting the located region with line numbers turns the common case into a session that never opens the file.</li>
+    <li><strong>Say it once.</strong> Facts shared by every finding in a unit are hoisted into one header. Six near-identical hints become one with a hole in it.</li>
+    <li><strong>A cache-stable prefix.</strong> Static guardrails first, dynamic evidence last, so parallel lanes share a prompt-cache write instead of each priming their own. Cache reads bill at a tenth of input.</li>
+    <li><strong>The wire.</strong> An optional local compression proxy in front of the lane, talked to over the process boundary and never imported. Reported on its own row with its own denominator, because a cache bust can take back what compression removed.</li>
+  </ol>
+  <table>
+    <tr><th></th><th>Before</th><th>After</th></tr>
+    <tr><td>Opening window per spawned session, before any work</td><td>44.3k tokens</td><td><strong>29.2k</strong> (−34%)</td></tr>
+    <tr><td>The same findings, planned</td><td>5 sessions, 1.3M projected</td><td><strong>2 sessions, 351k</strong> (−74%)</td></tr>
+    <tr><td>One pipeline tick</td><td>226 agent turns</td><td><strong>133 s, 0 model tokens</strong></td></tr>
+  </table>
+</div></section>
+
+<section id="window"><div class="wrap">
+  <h2>What the current window has left</h2>
+  <p class="kicker">Monitoring</p>
+  <p class="lead">Claude Code bills in five-hour rolling blocks that start with the first message after a gap, not in calendar days. A daily total answers the wrong question.</p>
+<pre><code>$ bb monitor
+  block  17:10 → 22:10  2h 23m left
+  used   [###################---------] 68.2%   60.1k of 88.1k (p90)
+         the 90th percentile of 14 completed blocks over 8 days
+  burn   1.9k tokens/min over 58m, 214 turns
+  runs out in 14m at this rate — the budget runs out first
+  cache  85.5M read, 1.4M written — read bills at a tenth of input
+  OK</code></pre>
+  <p>Two clocks run at once and the earlier one decides: the block expires on the wall clock whatever the rate, and the budget runs out at this rate whatever the clock. Reporting only one of them is how a window ends early.</p>
+  <p>The limit defaults to this account's own 90th-percentile block over the last eight days rather than a published figure, because a published figure is wrong for anybody on a different plan. Every number carries where it came from: <code>measured</code>, <code>p90</code>, <code>plan</code>, or <code>unknown</code> — and <code>unknown</code> is printed rather than replaced with a zero.</p>
+  <p>This is not only a display. <code>bb monitor guard</code> is asked immediately before the one thing in this factory that costs anything, and it refuses to open an agent when the block is nearly spent. A call opened with twenty minutes left is cut off half-written: it spends the tokens and produces nothing to accept. Exit codes make it usable from a hook or a cron line without parsing — <code>0</code> ok, <code>10</code> near, <code>11</code> reached, <code>20</code> indeterminate.</p>
+  <h3>The command centre</h3>
+  <p><code>bb commandcenter</code> serves one read-only page on loopback: where the pipeline is, what the window has left, and every session with its own title, what it used, and how many agent turns the local path had already displaced for it. <code>bb commandcenter build</code> writes the same page as a single self-contained file that opens without a server.</p>
+</div></section>
+
+<section id="honesty"><div class="wrap">
+  <h2>Measured and estimated are never added</h2>
+  <p class="kicker">Reporting</p>
+  <table>
+    <tr><th>Row</th><th>How it is known</th></tr>
+    <tr><td>used</td><td>Measured to the token from the transcript, deduplicated by message id</td></tr>
+    <tr><td>saved: cache</td><td>Measured — those exact tokens billed at the cache-read discount</td></tr>
+    <tr><td>saved: wire</td><td>Measured from the proxy's own counters, when it is up</td></tr>
+    <tr><td>saved: automation</td><td>An <em>estimate</em>, printed as a range: turns the local verbs displaced × this session's own marginal-to-full per-turn cost</td></tr>
+  </table>
+  <p>A model with no price in the table is reported with its tokens and no cost. A verb that could not look returns unknown, never an empty list. A unit with no acceptance command is marked <code>unproven</code>, not passed. An eval whose frame is empty is skipped, never green — unless its filter selects violations and its spec says so, in which case no rows <em>is</em> the measurement.</p>
+  <p>Every report also states what it could not see. <code>bb failsafe status</code> ends with the sources that were blind, because a status that reports "nothing failing" while three of its five sources could not look is the most expensive kind of green there is.</p>
+</div></section>
+
+<section id="verbs"><div class="wrap wide">
+  <h2>The verbs</h2>
+  <p class="kicker">Reference</p>
+  <table>
+    <tr><th>Verb</th><th>What it answers</th><th>Cost</th></tr>
+    <tr><td><code>genesis</code></td><td>A document becomes a world model, a corpus and the briefs that fill it</td><td>0</td></tr>
+    <tr><td><code>cookbook</code></td><td>A persona's week against the running system; red steps become findings</td><td>0</td></tr>
+    <tr><td><code>simulate</code></td><td>The same request at rising concurrency, against a floor-relative budget</td><td>0</td></tr>
+    <tr><td><code>mainboard</code></td><td>Six views over one ledger, and which pipeline stage does not hold</td><td>0</td></tr>
+    <tr><td><code>runbook</code></td><td>Is it up, what broke since the last call, what is it costing</td><td>0</td></tr>
+    <tr><td><code>blackice</code></td><td>The per-area audit: dated, ingested as findings, and checked for drift</td><td>0</td></tr>
+    <tr><td><code>frames</code></td><td>A dataframe over the factory's own data, and the evals that read it</td><td>0</td></tr>
+    <tr><td><code>failsafe</code></td><td>What is failing, why, and the operation that closes it</td><td>0</td></tr>
+    <tr><td><code>monitor</code>, <code>commandcenter</code></td><td>What the block has left; one page for the whole workspace</td><td>0</td></tr>
+    <tr><td><code>scan</code>, <code>findings</code>, <code>explain</code>, <code>fix</code></td><td>Sixteen detectors with evidence and expected-value triage; local actuators that write a patch before a file</td><td>0</td></tr>
+    <tr><td><code>compile</code>, <code>route</code>, <code>context</code>, <code>gates</code></td><td>Units packed to a window with quoted regions; lanes with conflicts as affinity; does this scope fit</td><td>0</td></tr>
+    <tr><td><code>snapgen</code>, <code>pinpoint</code>, <code>oversight</code></td><td>Fingerprinted reference tables; one problem to one budgeted brief; god files, bloat, duplication</td><td>0</td></tr>
+    <tr><td><code>pipeline</code>, <code>buckmaster</code>, <code>scripts</code></td><td>Gears with gates and fingerprinted skips; episodes, signals, rules, model, memory</td><td>0</td></tr>
+    <tr><td><code>git</code></td><td>Commit, push, draft PR, review to findings, gated merge, with guards</td><td>0</td></tr>
+    <tr><td><code>wire</code>, <code>mcp</code>, <code>hook</code></td><td>Install into every agent on the box; serve the same verbs over MCP</td><td>0</td></tr>
+    <tr><td><code>run</code>, <code>bridge send</code></td><td>The only two verbs that spend</td><td><strong>spends</strong></td></tr>
+  </table>
+  <p class="muted">Every verb is a dry run until <code>--apply</code>. Every verb takes <code>--json</code>.</p>
+  <h3>Wiring into agents</h3>
+  <p><code>bb wire --apply</code> installs three things per agent detected on the box: an instruction block between markers, hooks where the agent supports them, and an MCP server entry. <code>bb unwire</code> removes only its own blocks. Claude Code, Codex CLI, Gemini CLI, Cursor, GitHub Copilot, OpenCode, Cline, Roo, Windsurf, Aider, and any command at all through <code>lanes.custom_command</code>.</p>
+</div></section>
+
+<section id="config"><div class="wrap">
+  <h2>One file, holding only what you changed</h2>
+  <p class="kicker">Configuration</p>
+<pre><code>{
+  "lanes":    { "agent": "claude", "max_parallel": 4, "daily_budget_usd": 20 },
+  "budget":   { "max_tokens": 160000, "churn_factor": 2.4 },
+  "bridge":   { "enabled": true, "window_guard": true, "daily_budget_usd": 5 },
+  "monitor":  { "plan": "custom" },
+  "cookbook": { "default": "alex" },
+  "kernel":   { "gates": { ".": { "quick": "npm test" } } }
+}</code></pre>
+  <p>Every default lives in <code>src/core/config.js</code> beside the reason for it. Measured values live in <code>.bundlebox/var/calibration.json</code> and are written by read-merge, because a daily calibrator that overwrites a probed value silently regresses every lane budget after it.</p>
+</div></section>
+
+</main>
+
+<footer><div class="wrap">
+  <p>MIT. <a href="https://github.com/blackswanalpha/bundlebox">github.com/blackswanalpha/bundlebox</a> · <a href="https://www.npmjs.com/package/bundlebox">npm</a> · <a href="https://github.com/blackswanalpha/bundlebox/blob/main/EXPLANATION.md">the long version</a> · <a href="https://github.com/blackswanalpha/bundlebox/blob/main/whitepaper/bundlebox-whitepaper.md">whitepaper</a></p>
+  <p>bundlebox began as a standard-library Python factory wired into one workspace. This is its portable core, rebuilt and corrected.</p>
+</div></footer>
+
 </body>
 </html>
