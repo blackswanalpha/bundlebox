@@ -4,7 +4,7 @@ import json
 import sys
 import time
 
-from . import __version__, confidence, graph, memory, model, rules, signals, triage
+from . import __version__, confidence, coverage, graph, memory, model, rules, scenarios, signals, throttle, triage, world
 
 
 def main(argv: list) -> int:
@@ -32,14 +32,28 @@ def main(argv: list) -> int:
     elif verb == "model-predict":
         out = model.predict(inp.get("model") or {}, inp.get("episode") or {}, inp.get("lift"))
     elif verb == "memory-derive":
-        fresh = memory.derive(inp.get("signals") or {}, inp.get("episodes") or [], inp.get("scripts") or [], inp.get("root", "."), now_iso)
-        out = {"claims": memory.reconcile(inp.get("old") or [], fresh, now_iso)}
+        fresh = memory.derive(inp.get("signals") or {}, inp.get("episodes") or [], inp.get("scripts") or [],
+                              inp.get("root", "."), now_iso, inp.get("recommendations") or [])
+        out = memory.reconcile(inp.get("old") or [], fresh, now_iso, tombstones=inp.get("tombstones") or [])
     elif verb == "memory-recall":
-        out = memory.recall(inp.get("claims") or [], inp.get("about", ""), int(inp.get("budget_tokens", 1100)))
+        out = memory.recall(inp.get("claims") or [], inp.get("about", ""), int(inp.get("budget_tokens", 1100)),
+                            tiers=inp.get("tiers"))
+    elif verb == "memory-reinforce":
+        out = memory.reinforce(inp.get("claims") or [], inp.get("keys") or [], bool(inp.get("useful")), now_iso)
+    elif verb == "throttle":
+        out = throttle.apply(inp.get("decisions") or [], inp.get("cfg"), inp.get("history") or throttle.cooldowns(inp.get("outcomes") or []))
+    elif verb == "world-derive":
+        out = world.derive(inp.get("text", ""), inp.get("name", ""), inp.get("base", ""))
+    elif verb == "coverage-plan":
+        out = coverage.plan(inp.get("world") or {}, inp.get("corpus") or {}, int(inp.get("limit", 40)))
+    elif verb == "scenario-select":
+        out = scenarios.select(inp.get("scenarios") or [], inp.get("boards") or [], int(inp.get("budget_steps", 0)), inp.get("now") or now_iso)
+    elif verb == "board-verdicts":
+        out = scenarios.verdicts(inp.get("board") or {}, inp.get("thresholds"), inp.get("previous"))
     elif verb == "thresholds":
-        out = {"defaults": rules.THRESHOLDS}
+        out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "thresholds"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "board-verdicts"]}))
         return 2
     print(json.dumps(out))
     return 0

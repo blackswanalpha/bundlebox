@@ -1,0 +1,26 @@
+{
+  "id": "pipeline-gaps",
+  "source": "stages",
+  "where": [
+    [
+      "state",
+      "==",
+      "gap"
+    ]
+  ],
+  "metric": {
+    "fn": "count"
+  },
+  "threshold": {
+    "op": "==",
+    "value": 0
+  },
+  "severity": "medium",
+  "evidence_cols": [
+    "id",
+    "why",
+    "fix"
+  ],
+  "why": "A pipeline stage whose exit criterion does not hold makes every stage after it confident about stale inputs.",
+  "empty": "zero"
+}

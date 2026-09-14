@@ -19,6 +19,12 @@ No network at import time. No TypeScript. No build step. Every module is plain `
 | `src/tokens/prices.js` | `PER_MTOK`, `normalise(model)`, `known(model)`, `cost(model, {inp, out, cache_write, cache_read})` → `{input, cache_write, cache_read, output, total, cache_saved}` or `null`, `table()` |
 | `src/update/index.js` | `currentVersion()`, `latestVersion()`, `checkCached()`, `update({apply})` |
 | `src/mcp/server.js` | `serve({name, version})` — reads tools from `src/mcp/tools.js` (`export const TOOLS = [{name, description, inputSchema, run(args)}]`) |
+| `src/cookbook/tokens.js` | `subst(v, clock, vars, missing)`, `substString`, `token`, `at(v, path)`, `lenOf`, `typeName`, `clockOf`, `offset` — one token grammar, mirrored in `kernel/src/subst.rs` |
+| `src/cookbook/expect.js` | `KEYS`, `asserts(expect)` → `{n, unknown}`, `check(expect, body, status, ms)` → `{why, got}`, `checkCmd` — one expectation vocabulary, mirrored in `kernel/src/scenario.rs` |
+| `src/cookbook/engine.js` | `pick(input, {engine})` → `{engine, why}`, `run(input, opts)`, `runJs(input)`, `unsupportedPatterns(input)` — the kernel is asked what its pattern subset is; it is never re-implemented here |
+| `src/pipeline/stages.js` | `STAGES`, `status()`, `gaps()` — the pipeline as data, one exit criterion per stage |
+| `src/monitor/index.js` | `rows()`, `blocks()` (5-hour rolling), `limitOf(blocks, opts)`, `burn(rows)`, `snapshot(opts)`, `guard(opts)`, `titles()`, `sessions()` |
+| `src/frames/frame.js` | `Frame` (select, where, sort, limit, derive, group, join, describe, markdown, jsonl), `AGGS`, `OPERATORS` |
 
 ## Command registration
 
@@ -75,3 +81,7 @@ export default { name: "doc-links", precision: "exact", severity: "low", descrip
 8. Never print a green that means "nothing was checked". Skipped ≠ passed. `unproven` is a state.
 9. Thresholds are data, relative to the tree's own median where possible.
 10. The tool never inherits the whole parent env into a spawned agent; pass an allowlist.
+11. A pipeline stage is done when its exit criterion holds **now**, not because it ran once. `src/pipeline/stages.js` is the list; `bb mainboard gaps` evaluates it and names the command that closes the first gap.
+12. Every brief handed to a model carries the derived half already done, and a short table of what it does not accept. The far side is the only part of this factory that costs anything, so a section that adds nothing is tokens burnt.
+13. Nothing opens an agent without asking `monitor.guard()` first. A call opened with twenty minutes of the billing window left is cut off half-written: it spends the tokens and produces nothing to accept.
+14. A report that could not see a source says so. `bb failsafe status` ends with what was blind, because "nothing failing" from three of five sources is the most expensive kind of green.

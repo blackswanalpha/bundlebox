@@ -97,6 +97,22 @@ export const DEFAULTS = {
     gate_timeout: 1800,
   },
   headroom: { enabled: false, port: 8787, host: "127.0.0.1" },
+  bridge: {
+    enabled: false,          // nothing leaves this box until somebody sets it
+    daily_budget_usd: 0,     // across every call; 0 disables the ceiling, not the guard
+    acceptance: "bb scan --json",
+    window_guard: true,      // refuse to open an agent while the 5-hour block is nearly spent
+    allow_near: false,       // ...unless this is set, or --allow-near is passed
+  },
+  monitor: {
+    plan: "custom",          // pro | max5 | max20 | custom (this account's own P90 block)
+  },
+  cookbook: {
+    default: "",             // which corpus a bare `bb cookbook run` means; empty = the first with a base
+    thresholds: {},          // overrides for the board rules; `bb frames`/expert holds the defaults
+  },
+  simulate: { thresholds: {} },
+  commandcenter: { port: 7788, host: "127.0.0.1" },
   wire: {
     // Which agents `bb wire` installs into. auto = every one detected on this box.
     agents: ["auto"],

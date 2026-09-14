@@ -1,0 +1,21 @@
+{
+  "id": "tokens-per-turn",
+  "source": "blocks",
+  "metric": {
+    "fn": "ratio",
+    "num": "tokens",
+    "den": "turns"
+  },
+  "threshold": {
+    "op": "<=",
+    "value": 120000
+  },
+  "severity": "low",
+  "evidence_cols": [
+    "started",
+    "turns",
+    "tokens",
+    "usd"
+  ],
+  "why": "Billed tokens per turn inside a five-hour block. A number this large means whole files are being re-read where a quoted region would do."
+}

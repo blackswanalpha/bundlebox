@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bb-adapters-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-adapters-")));
 process.env.BB_ROOT = tmp;
 process.env.HOME = tmp;
 const { get, pick, ADAPTERS, ORDER } = await import("../src/adapters/index.js");

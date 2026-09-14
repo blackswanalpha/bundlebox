@@ -1,0 +1,28 @@
+{
+  "id": "episodes-useless",
+  "source": "episodes",
+  "where": [
+    [
+      "useful",
+      "==",
+      0
+    ]
+  ],
+  "metric": {
+    "fn": "count"
+  },
+  "threshold": {
+    "op": "<=",
+    "value": 10
+  },
+  "severity": "low",
+  "evidence_cols": [
+    "verb",
+    "stage",
+    "rc",
+    "produced",
+    "seconds"
+  ],
+  "why": "Local actions that ran, exited, and produced nothing anybody read. Each one is a stage worth gating or deleting.",
+  "empty": "zero"
+}

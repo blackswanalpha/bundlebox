@@ -1,11 +1,11 @@
 // gears.js — the built-in pipelines, declared.
 //
 //   intake    what is wrong        scan → oversight scan → compile → route
-//   orient    what a session gets  snapgen build → oversight guidelines → learn recommend
-//   measure   what it all cost     tokens ledger → session list → learn episodes
+//   orient    what a session gets  snapgen build → oversight guidelines → buckmaster recommend
+//   measure   what it all cost     tokens ledger → session list → buckmaster episodes
 //   ops       is the box healthy   doctor → scan --only worktree-hygiene
-//   learn     train on all of it   learn signals → learn rules → learn memory
-//   factory   one tick             intake → orient → measure → learn (chained)
+//   buckmaster train on all of it   buckmaster signals → buckmaster rules → buckmaster memory
+//   factory   one tick             intake → orient → measure → buckmaster (chained)
 //   pr        ship what routed     git status → run --pr (dry)
 //
 // Every stage here is free and local. Nothing in a built-in gear spends a
@@ -40,7 +40,7 @@ export const GEARS = [
     stages: [
       { verb: "snapgen", args: ["build"], skip_if_fresh: true, inputs: source, description: "the reference tables" },
       { verb: "oversight", args: ["guidelines"], flags: { build: true }, skip_if_fresh: true, inputs: source, optional: true, description: "the guidelines block" },
-      { verb: "learn", args: ["recommend"], description: "the fired rules, as lines a person can paste" },
+      { verb: "buckmaster", args: ["recommend"], description: "the fired rules, as lines a person can paste" },
     ],
   }),
   gear({
@@ -49,7 +49,7 @@ export const GEARS = [
     stages: [
       { verb: "tokens", args: ["ledger"], description: "fold the transcripts into the ledger" },
       { verb: "session", args: ["list"], description: "the sessions measured so far" },
-      { verb: "learn", args: ["episodes"], description: "turns displaced per verb" },
+      { verb: "buckmaster", args: ["episodes"], description: "turns displaced per verb" },
     ],
   }),
   gear({
@@ -61,19 +61,70 @@ export const GEARS = [
     ],
   }),
   gear({
-    name: "learn", description: "train the process model on everything above",
+    name: "buckmaster", description: "train the process model on everything above",
     on: ["cron", "hand"],
     stages: [
-      { verb: "learn", args: ["signals"], description: "per-session signals off the transcripts" },
-      { verb: "learn", args: ["rules"], description: "which signals crossed a threshold" },
-      { verb: "learn", args: ["memory"], description: "what the factory came to believe" },
+      { verb: "buckmaster", args: ["signals"], description: "per-session signals off the transcripts" },
+      { verb: "buckmaster", args: ["rules"], description: "which signals crossed a threshold" },
+      { verb: "buckmaster", args: ["memory"], description: "what the factory came to believe" },
     ],
   }),
   gear({
-    name: "factory", description: "one tick of the whole free path: intake, orient, measure, learn",
+    name: "situation", description: "what is happening right now: services, what is failing, and what the detectors see",
+    on: ["cron", "hand"],
+    stages: [
+      { verb: "runbook", args: ["status"], when: "services > 0", optional: true, description: "is anything listening" },
+      { verb: "scan", description: "every detector over what is on disk" },
+      { verb: "failsafe", args: ["why"], description: "each failure matched against the playbook: cause, op, doc" },
+    ],
+  }),
+  gear({
+    name: "genesis", description: "the inlet: what the world declares that no scenario touches, packed to briefs",
+    on: ["hand"],
+    stages: [
+      { verb: "genesis", args: ["plan"], when: "world > 0", description: "the coverage set difference" },
+      { verb: "genesis", args: ["pack"], when: "world > 0", description: "one brief per surface, carrying the derived half. Stops here: sending is a decision" },
+    ],
+  }),
+  gear({
+    name: "scenarios", description: "run the corpus against the running system and read what it means",
+    on: ["cron", "hand"],
+    stages: [
+      { verb: "cookbook", args: ["check"], when: "corpora > 0", description: "the corpus asserts something — no server, no requests" },
+      { verb: "cookbook", args: ["run"], when: "corpus_base == 1 and scenarios > 0", description: "the kernel executes it; red steps become findings" },
+      { verb: "mainboard", args: ["run"], flags: { only: "scoreyard,cyberrender" }, when: "corpora > 0", optional: true, description: "what the board means, and what it still does not cover" },
+      { verb: "frames", args: ["eval"], description: "every eval; a red one becomes a finding under `eval`" },
+    ],
+  }),
+  gear({
+    name: "audit", description: "which areas have no current audit, and the briefs that would produce one",
+    on: ["hand"],
+    stages: [
+      { verb: "blackice", args: ["drift"], optional: true, description: "reports describing a tree that has since moved" },
+      { verb: "blackice", args: ["plan"], description: "what is missing, ranked by what auditing it is worth" },
+      { verb: "blackice", args: ["pack"], description: "the briefs. Stops here: sending is a decision" },
+    ],
+  }),
+  gear({
+    name: "watch", description: "fold what was spent, and rebuild the one page that shows it",
+    on: ["cron", "session-end", "hand"],
+    stages: [
+      { verb: "tokens", args: ["ledger"], description: "fold every transcript into the ledger" },
+      { verb: "monitor", args: ["status"], description: "the current block, the burn rate, and which clock runs out first" },
+      { verb: "commandcenter", args: ["build"], description: "the page, with the state embedded" },
+    ],
+  }),
+  gear({
+    name: "factory", description: "one tick of the whole free path: intake, orient, measure, buckmaster",
     on: ["cron"],
     stages: [],
-    chain: ["intake", "orient", "measure", "learn"],
+    chain: ["intake", "orient", "measure", "buckmaster"],
+  }),
+  gear({
+    name: "full", description: "the whole pipeline: what is happening, what is wrong, what a session gets, what the system does, what it cost",
+    on: ["cron"],
+    stages: [],
+    chain: ["situation", "intake", "orient", "scenarios", "watch", "buckmaster"],
   }),
   gear({
     name: "pr", description: "what routed, and what a PR run would do (dry)",

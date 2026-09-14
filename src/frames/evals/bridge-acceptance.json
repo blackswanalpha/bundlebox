@@ -1,0 +1,31 @@
+{
+  "id": "bridge-acceptance",
+  "source": "calls",
+  "where": [
+    [
+      "state",
+      "in",
+      [
+        "sent",
+        "done"
+      ]
+    ]
+  ],
+  "metric": {
+    "fn": "mean",
+    "col": "accepted"
+  },
+  "threshold": {
+    "op": ">=",
+    "value": 0.6
+  },
+  "severity": "medium",
+  "evidence_cols": [
+    "id",
+    "reason",
+    "agent",
+    "accepted",
+    "est_tokens"
+  ],
+  "why": "The share of sent calls whose acceptance command passed. This is the only measurement of whether escalating was worth the tokens."
+}

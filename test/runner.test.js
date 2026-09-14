@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bb-runner-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-runner-")));
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox"), { recursive: true });
 process.env.BB_ROOT = root;

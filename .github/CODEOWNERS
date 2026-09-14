@@ -1,0 +1,6 @@
+# Every path needs the owner's review before it reaches main.
+#
+# `main` is protected: a pull request is the only way in, and the review this
+# file requires is the owner's. Contributors fork, open a pull request, and
+# nothing merges until it is approved and CI is green on all three platforms.
+*       @blackswanalpha

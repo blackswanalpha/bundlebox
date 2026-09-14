@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-git-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-git-")));
 process.env.BB_ROOT = root;
 const sh = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
 sh(["init", "-q", "-b", "main"]); sh(["config", "user.email", "t@t"]); sh(["config", "user.name", "t"]);

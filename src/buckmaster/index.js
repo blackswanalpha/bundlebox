@@ -1,4 +1,4 @@
-// learn/index.js — `bb learn`: the expert-system half, reached through
+// buckmaster/index.js — `bb buckmaster` (was `bb learn`): the expert-system half, reached through
 // src/core/expert.js. Signals off the transcripts, rules over the signals, the
 // process graph and model over the episodes, and the memory derived from all
 // of it. Every sub-verb that needs python says so and returns 2; the zero-token
@@ -19,7 +19,7 @@ import * as outcomes from "./outcomes.js";
 export { episodes, outcomes };
 
 export const modelPath = () => path.join(VAR, "model.json");
-export const recommendationsPath = () => path.join(OUT, "learn", "recommendations.md");
+export const recommendationsPath = () => path.join(OUT, "buckmaster", "recommendations.md");
 
 const INTERRUPT = /\[Request interrupted by user/i;
 const ERRORISH = /^(?:\s*(?:error|Error|ERROR|Exit code [1-9]|Command failed|\[Request interrupted))/;
@@ -67,8 +67,8 @@ export function runSignals({ limit } = {}) {
 
 export function runRules({ cfg = load() } = {}) {
   const sig = store.get("signals", null);
-  if (!sig || !sig.aggregate) return { error: "no signals stored: bb learn signals first" };
-  const r = expert.call("rules", { signals: sig.aggregate, thresholds: cfg.learn?.thresholds || {} });
+  if (!sig || !sig.aggregate) return { error: "no signals stored: bb buckmaster signals first" };
+  const r = expert.call("rules", { signals: sig.aggregate, thresholds: cfg.buckmaster?.thresholds || cfg.learn?.thresholds || {} });
   if (!r) return null;
   const doc = { at: now(), measured_at: sig.at, sessions: sig.aggregate.sessions, ...r };
   store.put("rules", doc);
@@ -76,7 +76,7 @@ export function runRules({ cfg = load() } = {}) {
 }
 
 export function recommendationsMd(r) {
-  const lines = ["# learn — recommendations", "", `Measured ${r.measured_at || r.at} over ${r.sessions ?? "?"} sessions. Verdict: **${r.verdict}**.`, "",
+  const lines = ["# buckmaster — recommendations", "", `Measured ${r.measured_at || r.at} over ${r.sessions ?? "?"} sessions. Verdict: **${r.verdict}**.`, "",
     "Paste the lines you agree with into your agent's instructions file; nothing here writes there for you.", ""];
   if (!r.recommendations.length) lines.push("Nothing crossed a threshold. Sessions are lean.", "");
   for (const rec of r.recommendations) {
@@ -111,16 +111,17 @@ function rulesText(r) {
 }
 
 function modelText(m, { weights = false } = {}) {
-  if (!m) return "  no model trained: bb learn model --train";
+  if (!m) return "  no model trained: bb buckmaster model --train";
   if (!m.n || m.n < 12) return `  not trained: ${m.why}`;
   const lines = [`  MODEL — ${m.n} labelled episodes (${m.train} train, ${m.holdout} holdout by time)`];
-  lines.push(`    accuracy ${m.accuracy} vs base ${m.base_accuracy}${m.auc != null ? `, auc ${m.auc}` : ""}   ${m.useful ? "beats the base rate: it steers optional stages" : `(base rate) ${m.why}`}`);
+  lines.push(`    accuracy ${m.accuracy} vs base ${m.base_accuracy}${m.verb_accuracy != null ? `, verb-only ${m.verb_accuracy}` : ""}${m.auc != null ? `, auc ${m.auc}` : ""}`);
+  lines.push(`    ${m.useful ? "beats the base rate AND a verb-only guess: it steers optional stages" : `(base rate) ${m.why}`}`);
   if (m.collinear?.length) lines.push(`  ! collinear features (one column wearing several names): ${m.collinear.map((g) => g.join(" = ")).join("; ")}`);
   if (weights) for (const [k, v] of Object.entries(m.weights || {}).slice(0, 40)) lines.push(`    ${pad(k, 28)} ${pad(v, 8, true)}`);
   return lines.join("\n");
 }
 
-async function learnCmd({ _, flags }) {
+async function buckmasterCmd({ _, flags }) {
   const sub = _[0] || "episodes";
   const cfg = load();
 
@@ -189,32 +190,56 @@ async function learnCmd({ _, flags }) {
   if (sub === "memory") {
     const sig = store.get("signals", {}) || {};
     const old = store.get("memory", []);
-    const r = expert.call("memory-derive", { signals: sig.aggregate || {}, episodes: store.rows("episodes", { limit: 4000 }), scripts: store.get("scripts", []), root: ROOT, old: Array.isArray(old) ? old : [] });
+    // A fired rule is procedural memory: it is the tier that changes how the
+    // next session works rather than describing the last one, so the rules the
+    // expert already derived are carried in instead of being re-derived here.
+    const rules = store.get("rules", {}) || {};
+    const r = expert.call("memory-derive", { signals: sig.aggregate || {}, episodes: store.rows("episodes", { limit: 4000 }),
+      scripts: store.get("scripts", []), root: ROOT, old: Array.isArray(old) ? old : [],
+      recommendations: rules.recommendations || [], tombstones: store.get("memory_tombstones", []) });
     if (!r) { warn(`python3 required: ${expert.lastError}`); return 2; }
     store.put("memory", r.claims);
+    store.put("memory_tombstones", r.tombstones || []);
     if (flags.json) { emit(r); return 0; }
-    out(`  MEMORY — ${r.claims.length} claims kept (${Array.isArray(old) ? old.length : 0} before)`);
-    for (const c of r.claims.slice(0, 20)) out(`    ${pad(c.confidence.toFixed(2), 5)} ${c.claim}`);
+    const t = r.by_tier || {};
+    out(`  MEMORY — ${r.claims.length} claims kept (${Array.isArray(old) ? old.length : 0} before): ${t.episodic || 0} episodic, ${t.semantic || 0} semantic, ${t.procedural || 0} procedural`);
+    for (const tier of ["procedural", "semantic", "episodic"]) {
+      const rows = r.claims.filter((c) => (c.tier || "episodic") === tier);
+      if (!rows.length) continue;
+      out(`    ${tier}`);
+      for (const c of rows.slice(0, 8)) out(`      ${pad(c.confidence.toFixed(2), 5)} ${c.claim}`);
+      if (rows.length > 8) out(`      ${rows.length - 8} more`);
+    }
+    const dropped = (r.tombstones || []).filter((x) => x.invalidated_at && x.invalidated_at === (r.claims[0]?.last_seen || ""));
+    if (dropped.length) out(`    ${dropped.length} claim(s) left this round: ${[...new Set(dropped.map((d) => d.reason))].join(", ")}`);
     return 0;
   }
   if (sub === "recall") {
     const about = String(flags.about || _.slice(1).join(" ") || "");
-    if (!about) { warn('what about? bb learn recall --about "<text>"'); return 2; }
-    const r = expert.call("memory-recall", { claims: store.get("memory", []), about, budget_tokens: Number(flags.budget) || 1100 });
+    if (!about) { warn('what about? bb buckmaster recall --about "<text>"'); return 2; }
+    const claims = store.get("memory", []);
+    const tiers = flags.tier ? String(flags.tier).split(",").map((x) => x.trim()) : null;
+    const r = expert.call("memory-recall", { claims, about, budget_tokens: Number(flags.budget) || 1100, tiers });
     if (!r) { warn(`python3 required: ${expert.lastError}`); return 2; }
+    // Retrieval is the only thing that raises salience: a claim that keeps being
+    // handed to a session has earned the half-life it is getting.
+    if (r.claims.length) {
+      const bumped = expert.call("memory-reinforce", { claims, keys: r.claims.map((c) => c.key), useful: !!flags.useful });
+      if (bumped) store.put("memory", bumped.claims);
+    }
     if (flags.json) { emit(r); return 0; }
-    out(`  RECALL — ${r.claims.length} of ${r.considered} claims, ${r.tokens} tokens`);
-    for (const c of r.claims) out(`    ${pad(c.score.toFixed(2), 5)} ${c.claim}`);
+    out(`  RECALL — ${r.claims.length} of ${r.considered} claims, ${r.tokens} tokens${r.suppressed ? `, ${r.suppressed} folded into a consolidated claim` : ""}`);
+    for (const c of r.claims) out(`    ${pad(c.score.toFixed(2), 5)} ${pad(c.tier || "episodic", 11)} ${pad(c.hedge, 9)} ${c.claim}`);
     return 0;
   }
-  warn(`unknown learn sub-verb: ${sub}. episodes | signals | rules | recommend | graph | model | memory | recall | outcomes | backlog`);
+  warn(`unknown buckmaster sub-verb: ${sub}. episodes | signals | rules | recommend | graph | model | memory | recall | outcomes | backlog`);
   return 2;
 }
 
 export const commands = {
-  learn: {
+  buckmaster: {
     help: "signals, rules, graph, model and memory over transcripts and episodes (python3)",
-    usage: "bb learn episodes | signals [--limit N] | rules | recommend | graph | model [--train] [--weights] | memory | recall --about \"<text>\" | outcomes [--all] | backlog [--json]",
-    run: learnCmd,
+    usage: "bb buckmaster episodes | signals [--limit N] | rules | recommend | graph | model [--train] [--weights] | memory | recall --about \"<text>\" [--tier procedural,semantic,episodic] [--useful] | outcomes [--all] | backlog [--json]",
+    run: buckmasterCmd,
   },
 };

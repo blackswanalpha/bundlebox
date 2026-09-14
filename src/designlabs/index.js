@@ -157,7 +157,7 @@ export const commands = {
         const rows = runRules(st, cfg, await genericRow(dir));
         // The verdicts are this verb's artefact and they do not land in the
         // store, so the count the session bill needs is published here.
-        (await import("../learn/episodes.js")).publish({
+        (await import("../buckmaster/episodes.js")).publish({
           screens: st.screens.length, rules: rows.length,
           digest: sha1(rows.map((r) => `${r.rule}:${r.verdict}`).join("|")).slice(0, 12),
         });

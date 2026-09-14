@@ -20,16 +20,20 @@ afterwards what the session used and what it was spared. It never calls a
 model itself.
 
 ```
+bb genesis   ->  a world     a doc becomes surfaces, rules and capabilities  0 tokens
 bb scan      ->  findings    what is wrong, with evidence                    0 tokens
-bb fix       ->  patches     local actuators close what they can            0 tokens
+bb fix       ->  patches     local actuators close what they can             0 tokens
+bb cookbook  ->  a board     what the RUNNING system does, run by the kernel 0 tokens
+bb simulate  ->  limits      what it does at a hundred callers               0 tokens
 bb compile   ->  units       what to do about the rest, packed to one window
 bb route     ->  lanes       who does it, where, in what wave
 bb run       ->  sessions    the only verb that spends
-bb git       ->  PRs         commit, push, draft PR, review, gated merge    0 tokens
-bb session   ->  the bill    what a session used and saved, measured        0 tokens
+bb git       ->  PRs         commit, push, draft PR, review, gated merge     0 tokens
+bb monitor   ->  the window  what the 5-hour block has left, and the guard   0 tokens
+bb session   ->  the bill    what a session used and saved, measured         0 tokens
 ```
 
-Measured on the reference workspace (regenerate with `bb session`, `bb tokens profile --probe`, `bb learn episodes`):
+Measured on the reference workspace (regenerate with `bb session`, `bb tokens profile --probe`, `bb buckmaster episodes`):
 
 | | before | after |
 |---|---|---|
@@ -55,7 +59,7 @@ everything degrades cleanly without them:
   to identical answers.
 - **Python expert system** (`bundlebox_expert`, stdlib only): the rule engine
   with explainable derivations, confidence shrinkage, transcript signals, the
-  process model and memory. `bb learn` needs python3 ≥ 3.9; nothing in the
+  process model and memory. `bb buckmaster` needs python3 ≥ 3.9; nothing in the
   zero-token path does.
 
 There are no npm dependencies. A cron worker at 03:00 runs what is on disk or it does not run.
@@ -74,6 +78,18 @@ bb route           # units -> lanes (dry run)
 bb run             # writes the exact prompt and command per lane, spawns nothing
 bb run --apply     # spawns the sessions
 bb session         # what the last session used and saved
+```
+
+From a document instead of from the code:
+
+```bash
+bb genesis docs/PRD.md --base http://127.0.0.1:4400   # surfaces, rules, capabilities, a seeded corpus
+bb genesis plan                                       # what nothing covers, ranked and tiered
+bb genesis pack                                       # one small brief per surface
+bb genesis send calendar --run --spend                # the only step that costs anything
+bb cookbook check && bb cookbook run                  # the kernel executes what came back
+bb mainboard gaps                                     # the first stage that does not hold, and its fix
+bb commandcenter                                      # one page: the pipeline, the window, every session
 ```
 
 Every verb is a dry run until `--apply`. Only `run` and `bridge send` can spend.
@@ -111,7 +127,12 @@ MCP server entry. `bb unwire` removes only its own blocks.
 | `git` | commit, push, draft PR, review → findings, gated merge, with guards | 0 |
 | `tokens`, `session` | estimate, calibrate, probe the overhead, prices; used and saved per session, MEASURED / ESTIMATE | 0 (probe spends one turn) |
 | `snapgen`, `pinpoint`, `oversight` | fingerprinted tables; one problem → one budgeted brief; god files, bloat, duplication, vibe-coded marks and the guideline each produces | 0 |
-| `pipeline`, `learn`, `bridge`, `scripts` | gears with gates and fingerprinted skips; episodes, signals, rules, model, memory, outcomes; the one packed doorway to an agent; tagged scripts | 0 (bridge spends with `--run --spend`) |
+| `genesis` | a document or a prompt becomes a world model, a seeded corpus, and the briefs that fill it; coverage is a set difference | 0 |
+| `cookbook`, `simulate` | a persona's week against the running system, executed by the kernel; the same request at rising concurrency against a floor-relative budget | 0 |
+| `mainboard`, `runbook`, `failsafe` | six views over one ledger and which pipeline stage does not hold; services, log signatures by offset; what is failing, why, and the op | 0 |
+| `frames`, `blackice` | a dataframe over the factory's own data with evals as JSON; per-area dated audits, ingested as findings and checked for drift | 0 |
+| `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
+| `pipeline`, `buckmaster`, `bridge`, `scripts` | gears with gates and fingerprinted skips; episodes, signals, rules, model, memory, outcomes; the one packed doorway to an agent; tagged scripts | 0 (bridge spends with `--run --spend`) |
 | `wire`, `mcp`, `hook` | install into agents; serve over MCP; the hook handlers | 0 |
 | `init`, `doctor`, `selftest`, `update`, `kernel`, `cron` | setup; what this box can run; silent-failure checks; the updater; the kernel; the unattended worker | 0 |
 
@@ -141,11 +162,22 @@ A verb that could not look says unknown. A unit with no acceptance is
 
 ```
 bin/bb.js            the entrypoint
-src/                 Node, ESM, zero dependencies — every verb, the adapters, the store
-kernel/              Rust — bbk: walk, fingerprint, estimate, dupes, symbols, anchor, gate, worktree
-expert/              Python (stdlib) — rule engine, triage, confidence, signals, rules, graph, model, memory
-.bundlebox/          per-repo: config.json, var/ (store, calibration, runs), out/ (tables, briefs, guidelines)
+src/                 Node, ESM, zero dependencies — every verb, the adapters, the store, the command centre
+kernel/              Rust — bbk: walk, fingerprint, estimate, dupes, symbols, anchor, gate, worktree,
+                     and the scenario runner, the load simulator and the health probe
+expert/              Python (stdlib) — rule engine, triage, confidence, signals, rules, graph, model, memory,
+                     the world derivation, coverage planning, scenario selection and board verdicts
+.bundlebox/          per-repo: config.json, cookbook/ (corpora), genesis/ (world models),
+                     var/ (store, boards, simulations, calibration), out/ (tables, briefs, packs, the page)
 ```
+
+The kernel runs a corpus on threads with one connection per worker and a shared
+pacer; a 130-step corpus that takes two minutes paced against a real limiter
+takes under a second against a local mirror. It speaks `http` only, because TLS
+would be a dependency it must build without — the JavaScript engine runs when
+the base is `https`, when the kernel is absent, or when a corpus uses a pattern
+outside the kernel's documented subset, and the board names which engine ran and
+why. `test/scenario.test.js` pins the two to identical answers.
 
 The three runtimes agree by test: `test/kernel.test.js` and
 `test/expert.test.js` pin the kernel and the expert system to the JS answers.

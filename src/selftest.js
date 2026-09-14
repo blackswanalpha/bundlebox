@@ -45,6 +45,18 @@ check("anchors locate a region, and the region is a fraction of the file", async
   return [ratio > 0 && ratio < 0.6, `loadCommands lines ${a.line_start}-${a.line_end}, ${(ratio * 100).toFixed(0)}% of the file`];
 });
 
+check("paths survive this OS: PKG_ROOT resolves, workspace paths are forward-slash", async () => {
+  const { rel, PKG_ROOT: PR } = await import("./core/paths.js");
+  // PKG_ROOT was built from `new URL(import.meta.url).pathname`, which is a URL
+  // path: on Windows that is "/C:/Users/..." and resolves to a directory that
+  // does not exist, taking every module path with it. A check that the package
+  // root contains this package's own manifest catches that on the OS it breaks.
+  const hasManifest = fs.existsSync(path.join(PR, "package.json"));
+  const deep = rel(path.join(PKG_ROOT, "src", "core", "paths.js"));
+  const forward = !deep.includes("\\") && deep.endsWith("src/core/paths.js");
+  return [hasManifest && forward, `PKG_ROOT ${hasManifest ? "has package.json" : "MISSING package.json"}; rel() -> ${deep}`];
+});
+
 check("kernel == js on estimate and fingerprint", async () => {
   const kernel = await import("./core/kernel.js");
   if (!kernel.available()) return [true, "kernel absent, js only (bb kernel install)"];
@@ -58,6 +70,43 @@ check("kernel == js on estimate and fingerprint", async () => {
   const fp = kernel.call("fingerprint", { root: PKG_ROOT, inputs: files });
   const fpSame = fp && fp.fingerprint === cache.fingerprintJs(files);
   return [Boolean(same && fpSame), `${kernel.version()}: estimate total ${js.total} vs ${k?.total}, fingerprint ${fpSame ? "equal" : "DIFFERS"}`];
+});
+
+check("kernel walk == js walk, file for file", async () => {
+  const kernel = await import("./core/kernel.js");
+  if (!kernel.available()) return [true, "kernel absent, js only (bb kernel install)"];
+  const { walk, walkJs } = await import("./core/fs.js");
+  const k = walk(PKG_ROOT), j = walkJs(PKG_ROOT);
+  const ks = new Set(k), jss = new Set(j);
+  const onlyK = k.filter((x) => !jss.has(x)), onlyJ = j.filter((x) => !ks.has(x));
+  return [!onlyK.length && !onlyJ.length,
+    `${k.length} files both ways${onlyK.length || onlyJ.length ? `; kernel-only ${onlyK.length}, js-only ${onlyJ.length}` : ""}`];
+});
+
+check("every kernel op is served by the kernel, not a silent fallback", async () => {
+  const kernel = await import("./core/kernel.js");
+  if (!kernel.available()) return [true, "kernel absent, js fallbacks active (bb kernel install)"];
+  const { OPS } = await import("./kernel-cmd.js");
+  const fell = OPS.filter(([, probe]) => probe() === null).map(([op]) => op);
+  return [!fell.length, `${OPS.length - fell.length} of ${OPS.length} kernel-served${fell.length ? `; fell back: ${fell.join(", ")}` : ""}`];
+});
+
+check("expert == js on throttle", async () => {
+  const expert = await import("./core/expert.js");
+  const throttle = await import("./compile/throttle.js");
+  const decisions = [
+    ...Array.from({ length: 9 }, (_, i) => ({ id: `d${i}`, detector: "dead-exports", promote: true, priority: 3, ev: 10, est_tokens: 5000 })),
+    { id: "g", detector: "god-file", promote: true, priority: 0, ev: 90, est_tokens: 4000 },
+    { id: "h", detector: "orphan-files", promote: false, priority: 3, ev: 1, est_tokens: 100 },
+  ];
+  const js = throttle.apply(decisions, {}, {});
+  if (!expert.available()) return [true, `python3 absent, js throttle only: ${js.summary}`];
+  const py = expert.call("throttle", { decisions, cfg: {}, history: {} });
+  if (!py) return [false, expert.lastError];
+  const same = py.summary === js.summary
+    && py.promoted.map((d) => d.id).join() === js.promoted.map((d) => d.id).join()
+    && py.deferred.map((d) => d.throttle_reason).join() === js.deferred.map((d) => d.throttle_reason).join();
+  return [same, same ? js.summary : `js "${js.summary}" vs py "${py.summary}"`];
 });
 
 check("expert == js on triage", async () => {
@@ -140,6 +189,68 @@ check("bb help lists every verb", async () => {
   const { table, broken } = await loadCommands();
   const n = Object.keys(table).length;
   return [n >= 25 && !broken.length, `${n} verbs${broken.length ? `, ${broken.length} modules not loadable: ${broken.map((b) => b.group).join(",")}` : ""}`];
+});
+
+// ── the scenario half ───────────────────────────────────────────────────────
+
+check("every shipped eval and playbook entry validates without reading data", async () => {
+  const frames = await import("./frames/index.js");
+  const failsafe = await import("./failsafe/index.js");
+  const bad = frames.evals().flatMap(frames.checkOne);
+  const fs2 = failsafe.check();
+  const ok = !bad.length && fs2.ok;
+  return [ok, ok ? `${frames.evals().length} evals, ${fs2.failures} failures, ${fs2.ops} ops`
+    : [...bad, ...fs2.errors].slice(0, 3).join("; ")];
+});
+
+check("every corpus on this box asserts something", async () => {
+  const corpus = await import("./cookbook/corpus.js");
+  const ids = corpus.ids();
+  if (!ids.length) return [true, "no corpora on this box (bb genesis <doc> seeds one)"];
+  const bad = [];
+  let scenarios = 0;
+  for (const id of ids) {
+    const c = corpus.load(id);
+    scenarios += c.scenarios.length;
+    const r = corpus.check(c);
+    if (!r.ok) bad.push(`${id}: ${r.errors[0]}`);
+  }
+  return [!bad.length, bad.length ? bad.join("; ") : `${ids.length} corpora, ${scenarios} scenarios, all validate`];
+});
+
+check("every mainboard view declares a question and a category in the taxonomy", async () => {
+  const mb = await import("./mainboard/index.js");
+  const r = mb.check();
+  return [r.ok, r.ok ? `${r.views} views, ${r.categories} categories` : r.errors.slice(0, 2).join("; ")];
+});
+
+check("every pipeline stage answers ok, gap or unknown and names its fix", async () => {
+  const stages = await import("./pipeline/stages.js");
+  const g = stages.gaps();
+  const bad = g.stages.filter((s) => !["ok", "gap", "unknown"].includes(s.state) || !s.why || !s.fix);
+  return [!bad.length, bad.length ? `${bad.map((s) => s.id).join(", ")} returned nothing usable`
+    : `${g.ok} of ${g.of} hold${g.next ? `, first gap ${g.next.id}` : ""}`];
+});
+
+check("the kernel's pattern subset agrees with JavaScript", async () => {
+  const kernel = await import("./core/kernel.js");
+  if (!kernel.available()) return [true, "no kernel on this box; the JS engine serves every pattern"];
+  const cases = [["^it-[0-9]+$", "it-12"], ["^it-[0-9]+$", "it-"], ["err(or)?s?", "errs"], ["\\d+ items", "3 items"], ["a.c", "abc"]];
+  const bad = [];
+  for (const [pattern, subject] of cases) {
+    const k = kernel.call("rx", { pattern, subject });
+    if (!k || k.supported !== true || k.match !== new RegExp(pattern).test(subject)) bad.push(`/${pattern}/ on ${subject}`);
+  }
+  const refused = kernel.call("rx", { pattern: "^[a-f]{8}$", subject: "abcdefab" });
+  if (!refused || refused.supported !== false || refused.match !== undefined) bad.push("a pattern outside the subset was answered instead of refused");
+  return [!bad.length, bad.length ? bad.join("; ") : `${cases.length} patterns agree, one refused by name`];
+});
+
+check("the window guard can answer, and never blocks on an unknown", async () => {
+  const monitor = await import("./monitor/index.js");
+  const g = monitor.guard({ plan: "custom" });
+  const ok = typeof g.ok === "boolean" && Boolean(g.why) && (g.state !== "indeterminate" || g.ok === true);
+  return [ok, `${g.state}: ${g.why}`];
 });
 
 export async function runAll() {

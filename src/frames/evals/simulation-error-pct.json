@@ -1,0 +1,21 @@
+{
+  "id": "simulation-error-pct",
+  "source": "simulations",
+  "metric": {
+    "fn": "max",
+    "col": "error_pct"
+  },
+  "threshold": {
+    "op": "<=",
+    "value": 1.0
+  },
+  "severity": "high",
+  "evidence_cols": [
+    "profile",
+    "concurrency",
+    "error_pct",
+    "p95",
+    "rps"
+  ],
+  "why": "The worst error share across every level of every stored simulation. Errors under load are the failures a single-caller corpus cannot see."
+}

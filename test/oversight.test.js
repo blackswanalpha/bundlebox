@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-oversight-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-oversight-")));
 process.env.BB_ROOT = root;
 const w = (p, s) => { fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true }); fs.writeFileSync(path.join(root, p), s); };
 

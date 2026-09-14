@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bb-bridge-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-bridge-")));
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox", "var"), { recursive: true });
 fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
@@ -44,7 +44,10 @@ test("send refuses when the bridge is disabled (the default)", async () => {
   assert.equal(r.state, "refused");
   assert.match(r.why, /disabled/);
   assert.equal(bridge.calls().find((c) => c.id === d.id).state, "refused");
-  assert.equal(DEFAULTS.bridge, undefined);                 // enabled only when a user sets it
+  // The block exists so every knob has a documented default in one place; the
+  // one that matters is still off until somebody turns it on.
+  assert.equal(DEFAULTS.bridge.enabled, false);
+  assert.equal(DEFAULTS.bridge.window_guard, true);         // and a spend is gated on the window as well as the ceiling
 });
 
 test("send fails closed when the ceiling check throws, and without --run only drafts", async () => {

@@ -41,8 +41,17 @@ export async function rows() {
   r.push(row("gh", !gh ? "warn" : auth.rc === 0 ? "ok" : "warn", !gh ? "not installed" : auth.rc === 0 ? "authenticated" : "not authenticated", !gh ? "install gh for PRs and reviews (optional)" : auth.rc === 0 ? "" : "gh auth login"));
   const kb = kernel.binary();
   r.push(row("kernel", kb ? "ok" : "warn", kb ? `${kernel.version()} at ${kb}` : "absent — JS fallbacks serve walk, estimate, dupes, symbols, gate", kb ? "" : "bb kernel install (release binary) or bb kernel build (cargo)"));
-  const py = expert.python();
-  r.push(row("expert", py ? "ok" : "warn", py ? `python ${py}, bundlebox_expert ${expert.version() || "?"}` : "python3 >= 3.9 not found — bb learn unavailable", py ? "" : "install python3; the zero-token path does not need it"));
+  if (kb) {
+    // The binary existing is not the same fact as the binary serving. One probe
+    // per op, because a wrong payload key falls back silently and looks fine.
+    const { OPS } = await import("./kernel-cmd.js");
+    const fell = OPS.filter(([, probe]) => probe() === null).map(([op]) => op);
+    r.push(row("kernel ops", fell.length ? "warn" : "ok",
+      `${OPS.length - fell.length} of ${OPS.length} served by the kernel${fell.length ? `; JS serves ${fell.join(", ")}` : ""}`,
+      fell.length ? "bb kernel ops" : ""));
+  }
+  const py = expert.pythonName();
+  r.push(row("expert", py ? "ok" : "warn", py ? `python ${py}, bundlebox_expert ${expert.version() || "?"}` : "python3 >= 3.9 not found — bb buckmaster unavailable", py ? "" : "install python3; the zero-token path does not need it"));
   let agents = [];
   try { agents = (await import("./adapters/index.js")).detect(); } catch (e) { r.push(row("adapters", "warn", String(e.message).split("\n")[0])); }
   r.push(row("agents", agents.length ? "ok" : "warn", agents.length ? agents.map((a) => `${a.name}${a.version ? " " + a.version : ""}`).join(", ") : "none on PATH", agents.length ? "" : "install claude, codex, gemini, opencode or aider, or set lanes.custom_command"));
@@ -54,7 +63,7 @@ export async function rows() {
     const t = transcripts(ROOT) || [];
     const by = {};
     for (const x of t) by[x.adapter || x.agent || "?"] = (by[x.adapter || x.agent || "?"] || 0) + 1;
-    r.push(row("transcripts", t.length ? "ok" : "warn", t.length ? Object.entries(by).map(([k, v]) => `${k} ${v}`).join(", ") : "none found for this workspace", t.length ? "" : "run a session here; bb session and bb learn read what the agent writes"));
+    r.push(row("transcripts", t.length ? "ok" : "warn", t.length ? Object.entries(by).map(([k, v]) => `${k} ${v}`).join(", ") : "none found for this workspace", t.length ? "" : "run a session here; bb session and bb buckmaster read what the agent writes"));
   } catch (e) { r.push(row("transcripts", "warn", String(e.message).split("\n")[0])); }
   r.push(row("config", fs.existsSync(configPath()) ? "ok" : "warn", fs.existsSync(configPath()) ? path.relative(ROOT, configPath()) : "defaults only", fs.existsSync(configPath()) ? "" : "bb init"));
   // Gates: `{quick, full, ...}` for the root, or `{<dir>: {quick, full}}` per subrepo.
@@ -73,9 +82,43 @@ export async function rows() {
   }
   if (!any) r.push(row("gates", "warn", "none detected", "set kernel.gates.quick; a unit with no gate is unproven"));
   const cal = readJson(calibrationPath(), {}) || {};
-  r.push(row("calibration", cal.fitted_at ? "ok" : "warn", cal.fitted_at ? `fitted ${cal.fitted_at}` : "shipped coefficients", cal.fitted_at ? "" : "bb tokens calibrate --write (needs transcripts)"));
-  const over = cfg.budget.overhead_lean ? `${human(cfg.budget.overhead_lean)} (probed lean)` : cfg.budget.overhead_tokens ? `${human(cfg.budget.overhead_tokens)} (calibrated)` : "25.0k (floor, not measured)";
-  r.push(row("session overhead", cfg.budget.overhead_lean || cfg.budget.overhead_tokens ? "ok" : "warn", over, cfg.budget.overhead_lean ? "" : "bb tokens profile --probe (spends one short turn)"));
+  // `bb tokens calibrate --write` stamps `calibrated_at`; this row read
+  // `fitted_at` and so reported "shipped coefficients" forever, however many
+  // times it was run. Both keys are accepted, newest wins.
+  const fittedAt = cal.calibrated_at || cal.fitted_at || "";
+  r.push(row("calibration", fittedAt ? "ok" : "warn", fittedAt ? `fitted ${fittedAt}${cal.fit?.code?.samples ? ` (${cal.fit.code.samples} samples)` : ""}` : "shipped coefficients", fittedAt ? "" : "bb tokens calibrate --write (needs transcripts)"));
+  const obs = cal.overhead_observed || null;
+  const over = cfg.budget.overhead_lean ? `${human(cfg.budget.overhead_lean)} (probed lean)`
+    : obs && cfg.budget.overhead_tokens ? `${human(cfg.budget.overhead_tokens)} (observed min of ${obs.n} transcript${obs.n > 1 ? "s" : ""}; upper bound for a lean lane)`
+    : cfg.budget.overhead_tokens ? `${human(cfg.budget.overhead_tokens)} (calibrated)` : "25.0k (floor, not measured)";
+  r.push(row("session overhead", cfg.budget.overhead_lean || cfg.budget.overhead_tokens ? "ok" : "warn", over,
+    cfg.budget.overhead_lean ? "" : cfg.budget.overhead_tokens ? "bb tokens profile --probe measures a real lane (spends one short turn)" : "bb tokens profile (free, off transcripts) or --probe (spends one short turn)"));
+  // The scenario half of the pipeline: what is on disk to work with, and where
+  // the first stage that does not hold is. A workspace with none of this is not
+  // broken — it has not been through `bb genesis` yet, and the row says so.
+  try {
+    const stages = await import("./pipeline/stages.js");
+    const g = stages.gaps();
+    r.push(row("pipeline", g.gaps.length ? "warn" : "ok",
+      `${g.ok} of ${g.of} stages hold${g.next ? `; first gap: ${g.next.title.toLowerCase()}` : ""}`,
+      g.next ? g.next.fix : ""));
+  } catch (e) { r.push(row("pipeline", "warn", `stages could not be evaluated: ${String(e.message).split("\n")[0]}`, "")); }
+  try {
+    const corpus = await import("./cookbook/corpus.js");
+    const rows = corpus.list();
+    const steps = rows.reduce((a, c) => a + (c.steps || 0), 0);
+    r.push(row("corpora", rows.length ? "ok" : "warn",
+      rows.length ? `${rows.length} corpus/corpora, ${rows.reduce((a, c) => a + (c.scenarios || 0), 0)} scenarios, ${steps} steps` : "none — a corpus is how anything checks what the RUNNING system does",
+      rows.length ? "" : "bb genesis <doc.md>  seeds one from a document"));
+  } catch (e) { r.push(row("corpora", "warn", String(e.message).split("\n")[0], "")); }
+  try {
+    const monitor = await import("./monitor/index.js");
+    const s = monitor.snapshot();
+    r.push(row("window", s.state === "hit" || s.state === "indeterminate" ? "warn" : "ok",
+      s.state === "indeterminate" ? (s.why || "no limit could be established") :
+      `${s.limit.pct ?? "?"}% of the 5-hour block (${s.limit.source})${s.block ? `, ${s.block.minutes_left}m left` : ""}`,
+      s.state === "indeterminate" ? "bb tokens ledger, then bb monitor --plan max5" : ""));
+  } catch (e) { r.push(row("window", "warn", String(e.message).split("\n")[0], "")); }
   r.push(row("state", "ok", `${human(du(BB_DIR))}B under ${path.relative(ROOT, BB_DIR)}`, ""));
   return r;
 }

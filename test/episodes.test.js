@@ -13,7 +13,7 @@ process.env.BB_ROOT = root;
 fs.mkdirSync(path.join(root, ".bundlebox", "var"), { recursive: true });
 
 const store = await import("../src/core/store.js");
-const episodes = await import("../src/learn/episodes.js");
+const episodes = await import("../src/buckmaster/episodes.js");
 const session = await import("../src/tokens/session.js");
 
 const iso = (d) => new Date(d).toISOString();
