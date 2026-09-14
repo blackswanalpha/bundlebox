@@ -27,7 +27,15 @@ export async function rows() {
   r.push(row("node", maj >= 20 ? "ok" : "warn", process.version, maj >= 20 ? "" : "bundlebox needs Node >= 20"));
   r.push(row("git", which("git") ? "ok" : "missing", which("git") || "", which("git") ? "" : "install git; lanes, worktrees and PRs need it"));
   const inRepo = run(["git", "rev-parse", "--is-inside-work-tree"], { cwd: ROOT }).rc === 0;
-  r.push(row("repository", inRepo ? "ok" : "warn", inRepo ? ROOT : `${ROOT} is not a git repository`, inRepo ? "" : "git init; without it bb run gets no worktrees and bb git refuses"));
+  // A workspace of projects carries git per project, not at the top. Telling it
+  // to `git init` is the wrong advice and hides that its lanes already get
+  // worktrees where the work actually is.
+  const subrepos = (cfg.workspace?.subrepos || []).filter((d) => run(["git", "rev-parse", "--is-inside-work-tree"], { cwd: path.join(ROOT, d) }).rc === 0);
+  r.push(inRepo
+    ? row("repository", "ok", ROOT, "")
+    : subrepos.length
+      ? row("repository", "ok", `${ROOT} is a workspace; git lives in ${subrepos.join(", ")}`, "")
+      : row("repository", "warn", `${ROOT} is not a git repository`, "git init; without it bb run gets no worktrees and bb git refuses"));
   const gh = which("gh");
   const auth = gh ? run(["gh", "auth", "status"], { timeout: 15000 }) : null;
   r.push(row("gh", !gh ? "warn" : auth.rc === 0 ? "ok" : "warn", !gh ? "not installed" : auth.rc === 0 ? "authenticated" : "not authenticated", !gh ? "install gh for PRs and reviews (optional)" : auth.rc === 0 ? "" : "gh auth login"));

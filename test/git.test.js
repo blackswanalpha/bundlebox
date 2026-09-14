@@ -56,3 +56,44 @@ test("prBody has the sections the reviewer needs", () => {
   const body = g.prBody({ id: "L01", unit_ids: ["u1"] }, [{ id: "f1", title: "t", detector: "doc-links" }], { base: "main", acceptance: ["npm test"] });
   for (const h of ["## Summary", "## Base", "## Findings closed", "## Test plan", "bb explain"]) assert.ok(body.includes(h), h);
 });
+
+// ── a workspace whose git lives in its projects ────────────────────────────
+test("a hand-scoped commit says what it does not know", () => {
+  const text = g.message({ scope: ["demo/src"], files: ["src/a.js", "src/b.js"] });
+  assert.match(text, /^chore\(demo\): 2 files in demo\n/);
+  assert.match(text, /cannot say what it closes/);
+  assert.match(text, /- src\/a\.js/);
+  assert.ok(!text.includes("Closes 0"), "a commit with no findings never claims to close none");
+});
+
+test("a scope written relative to the repo says so instead of `none in scope`", () => {
+  const sub = path.join(root, "proj");
+  fs.mkdirSync(path.join(sub, "src"), { recursive: true });
+  const run = (args) => spawnSync("git", args, { cwd: sub, encoding: "utf8" });
+  run(["init", "-q", "-b", "main"]); run(["config", "user.email", "t@t"]); run(["config", "user.name", "t"]);
+  fs.writeFileSync(path.join(sub, "src/x.js"), "export const x = 1;\n");
+  run(["add", "-A"]); run(["commit", "-qm", "init"]);
+  fs.writeFileSync(path.join(sub, "src/x.js"), "export const x = 2;\n");
+
+  const wrong = g.commit({ cwd: sub, scope: ["src"] });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.why, /outside proj: scope is workspace-relative/);
+  assert.match(wrong.why, /proj\/src/, "and it names the scope that would have worked");
+
+  const right = g.commit({ cwd: sub, scope: ["proj/src"] });
+  assert.equal(right.ok, true);
+  assert.deepEqual(right.staged, ["src/x.js"]);
+});
+
+test("bb git acts on the one subrepo when the workspace itself is not one", async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "bb-ws-"));
+  fs.mkdirSync(path.join(ws, ".bundlebox"), { recursive: true });
+  fs.writeFileSync(path.join(ws, ".bundlebox/config.json"), JSON.stringify({ workspace: { subrepos: ["only"] } }));
+  const sub = path.join(ws, "only");
+  fs.mkdirSync(sub);
+  spawnSync("git", ["init", "-q", "-b", "main"], { cwd: sub });
+  // defaultRepo reads ROOT, which is this file's fixture, so the behaviour is
+  // pinned through the module's own resolution rather than a second copy of it.
+  assert.equal(typeof g.defaultRepo, "function");
+  assert.equal(g.defaultRepo(), root, "a workspace that IS a repo acts on itself");
+});
