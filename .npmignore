@@ -7,3 +7,9 @@ whitepaper/
 marketing/
 .github/
 *.tgz
+
+# Python bytecode is machine- and version-specific; shipping it bloats the
+# tarball and hands every installer a .pyc compiled for someone else's CPython.
+**/__pycache__/
+*.pyc
+kernel/target/

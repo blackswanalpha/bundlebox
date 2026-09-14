@@ -48,7 +48,10 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
-    "EXPLANATION.md"
+    "EXPLANATION.md",
+    "!expert/**/__pycache__",
+    "!**/*.pyc",
+    "!kernel/target"
   ],
   "engines": {
     "node": ">=20.0.0"
