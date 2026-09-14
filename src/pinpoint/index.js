@@ -25,7 +25,7 @@ import { latest as oversightLatest } from "../oversight/rules.js";
 
 export const DIR = path.join(OUT, "pinpoint");
 const EDGE = () => [path.join(ROOT, ".bundlebox", "edge-cases.md"), path.join(ROOT, "docs", "edge-cases.md")].find((p) => fs.existsSync(p)) || null;
-const RECS = () => path.join(OUT, "learn", "recommendations.md");
+const RECS = () => path.join(OUT, "buckmaster", "recommendations.md");
 
 // Glue plus the verbs every task statement carries; neither names a file.
 const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "is", "it", "that", "this", "with", "when", "not",
@@ -209,7 +209,7 @@ export function prompt(b) {
   } else L.push(ov ? "- nothing measured against these files" : "- run `bb oversight scan` to fill this");
   L.push("", "## Process rules this workspace measured itself needing");
   if (b.process.length) L.push(...b.process);
-  else L.push("- none yet (`bb learn` writes `.bundlebox/out/learn/recommendations.md`)");
+  else L.push("- none yet (`bb buckmaster` writes `.bundlebox/out/buckmaster/recommendations.md`)");
   L.push("", "## Do not",
     "- read a file outside Scope without saying which and why, in one line, first",
     "- run a test suite the change does not touch; one file's tests is the ceiling before the gate",

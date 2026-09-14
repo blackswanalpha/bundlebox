@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT, rel } from "./paths.js";
 import { load } from "./config.js";
+import * as kernel from "./kernel.js";
 
 export const PROSE_SUFFIX = [".md", ".txt", ".rst", ".markdown", ".mdx"];
 export const CODE_SUFFIX = [".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".dart", ".go", ".rs",
@@ -44,8 +45,42 @@ export function isIgnored(name) {
   return names.has(name) || globs.some((g) => g.test(name));
 }
 
-/** Every file under base (absolute paths), depth-first, ignoring the ignore set. */
-export function walk(base = ROOT, { suffixes = SOURCE_SUFFIX, maxBytes = 2_000_000, includeHidden = false } = {}) {
+let _ignoreList = null;
+/** The raw ignore list the kernel needs: names and globs as written, not compiled. */
+function ignoreList() {
+  if (_ignoreList) return _ignoreList;
+  const cfg = load();
+  const list = [...(cfg.workspace.ignore || [])];
+  try {
+    for (const line of fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8").split("\n")) {
+      const l = line.trim();
+      if (!l || l.startsWith("#") || l.startsWith("!")) continue;
+      const clean = l.replace(/^\/+/, "").replace(/\/+$/, "");
+      if (clean && !clean.includes("/")) list.push(clean);
+    }
+  } catch { /* no .gitignore */ }
+  _ignoreList = [...new Set(list)];
+  return _ignoreList;
+}
+
+/** Every file under base (absolute paths), depth-first, ignoring the ignore set.
+ *
+ *  The kernel serves this whenever `bbk` is on the box: it is ~3x faster on a
+ *  mid-sized tree and cannot blow the heap on a deep one. The JS below is the
+ *  fallback and the contract — the selftest pins the two to the same file list,
+ *  because a walk that quietly returns a different set is the silent failure
+ *  every other verb inherits. */
+export function walk(base = ROOT, opts = {}) {
+  const { suffixes = SOURCE_SUFFIX, maxBytes = 2_000_000, includeHidden = false } = opts;
+  const k = kernel.call("walk", { base: path.resolve(base), ignore: ignoreList(),
+    suffixes: suffixes || [], max_bytes: maxBytes, include_hidden: includeHidden });
+  if (k && Array.isArray(k.files)) return k.files.map((f) => f.path).sort();
+  return walkJs(base, opts);
+}
+
+/** The JS walk, kept callable on its own so the parity check has something to
+ *  compare against and `BB_KERNEL=` can force this path. */
+export function walkJs(base = ROOT, { suffixes = SOURCE_SUFFIX, maxBytes = 2_000_000, includeHidden = false } = {}) {
   const out = [];
   const stack = [path.resolve(base)];
   while (stack.length) {

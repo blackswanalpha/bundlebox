@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 // ROOT is resolved at import time, so the fixture root goes into the env first.
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bb-pipeline-"));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-pipeline-")));
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox", "var"), { recursive: true });
 process.env.BB_ROOT = root;
@@ -145,9 +145,9 @@ test("built-in gears load, user gears.json replaces by name, skip_if_fresh stage
   fs.writeFileSync(path.join(root, ".bundlebox", "gears.json"), JSON.stringify({ gears: { mine: { description: "x", stages: [{ verb: "scan", when: "dirty > 0" }] }, intake: { stages: [{ verb: "scan" }] } } }));
   const { gears, warnings } = await load();
   assert.deepEqual(warnings, []);
-  for (const n of ["intake", "orient", "measure", "ops", "learn", "factory", "pr", "mine"]) assert.ok(gears[n], n);
+  for (const n of ["intake", "orient", "measure", "ops", "buckmaster", "factory", "pr", "mine"]) assert.ok(gears[n], n);
   assert.equal(gears.intake.stages.length, 1);
-  assert.deepEqual(gears.factory.chain.map((c) => c.gear), ["intake", "orient", "measure", "learn"]);
+  assert.deepEqual(gears.factory.chain.map((c) => c.gear), ["intake", "orient", "measure", "buckmaster"]);
   for (const g of Object.values(gears)) for (const s of g.stages) if (s.skip_if_fresh) assert.equal(typeof s.inputs, "function", `${g.name}/${s.name}`);
   fs.unlinkSync(path.join(root, ".bundlebox", "gears.json"));
   assert.ok(SKIP_BELOW < 0.5);

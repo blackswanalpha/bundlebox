@@ -333,7 +333,7 @@ export function signatureLines(p, cap = 120) {
   }
   return out;
 }
-/** {source, files:[rel]} — measured re-reads when `learn` has them, else git churn, else nothing. */
+/** {source, files:[rel]} — measured re-reads when `buckmaster` has them, else git churn, else nothing. */
 export function hotFiles(n = 20) {
   const sig = store.get("signals", null);
   const top = sig?.aggregate?.top_reread_files;

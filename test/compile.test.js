@@ -7,7 +7,7 @@ import path from "node:path";
 
 // ROOT is fixed at import time, so the fixture must exist and BB_ROOT must
 // point at it BEFORE any src module is loaded.
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-compile-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-compile-")));
 process.env.BB_ROOT = root;
 const w = (p, s) => { fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true }); fs.writeFileSync(path.join(root, p), s); };
 

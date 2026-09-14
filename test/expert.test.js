@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-process.env.BB_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "bb-expert-"));
+process.env.BB_ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-expert-")));
 const expert = await import("../src/core/expert.js");
 const have = expert.available();
 const { triage } = await import("../src/detectors/index.js");

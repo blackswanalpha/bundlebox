@@ -9,7 +9,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-from bundlebox_expert import confidence, memory, model, rules, signals, triage  # noqa: E402
+from bundlebox_expert import confidence, memory, model, rules, signals, throttle, triage  # noqa: E402
 
 
 class Expert(unittest.TestCase):
@@ -54,6 +54,68 @@ class Expert(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             claims = memory.derive({"top_reread_files": [["nope.js", 9]]}, [], [], d, "2026-09-13T00:00:00")
             self.assertEqual(claims, [])
+
+    def test_memory_consolidates_many_episodic_rows_into_one_semantic_claim(self):
+        with tempfile.TemporaryDirectory() as d:
+            for n in ("a.js", "b.js", "c.js", "d.js"):
+                open(os.path.join(d, n), "w").close()
+            sig = {"top_reread_files": [[n, 4] for n in ("a.js", "b.js", "c.js", "d.js")]}
+            claims = memory.derive(sig, [], [], d, "2026-09-13T00:00:00")
+            tiers = {c["tier"] for c in claims}
+            self.assertIn("semantic", tiers)
+            semantic = [c for c in claims if c["tier"] == "semantic"][0]
+            self.assertEqual(len(semantic["consolidates"]), 4)
+            # The read path must not bill for the four rows AND the sentence that folds them.
+            r = memory.recall(claims, "hot files")
+            self.assertEqual(r["suppressed"], 4, r)
+            self.assertEqual([c["key"] for c in r["claims"]], ["set/hot"])
+
+    def test_memory_supersession_keeps_a_tombstone_and_recency_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "a.js"), "w").close()
+            old = memory.derive({"top_reread_files": [["a.js", 2]]}, [], [], d, "2026-09-13T00:00:00")
+            new = memory.derive({"top_reread_files": [["a.js", 9]]}, [], [], d, "2026-09-14T00:00:00")
+            r = memory.reconcile(old, new, "2026-09-14T00:00:00")
+            self.assertEqual(len(r["claims"]), 1)
+            self.assertIn("9 times", r["claims"][0]["claim"])
+            self.assertEqual([t["reason"] for t in r["tombstones"]], ["superseded"])
+            self.assertIn("2 times", r["tombstones"][0]["claim"])
+
+    def test_memory_reinforcement_survives_regeneration_and_is_capped(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "a.js"), "w").close()
+            sig = {"top_reread_files": [["a.js", 2]]}
+            claims = memory.derive(sig, [], [], d, "2026-09-13T00:00:00")
+            memory.reinforce(claims, ["file/a.js"], useful=True)
+            again = memory.derive(sig, [], [], d, "2026-09-13T00:00:00")
+            kept = memory.reconcile(claims, again, "2026-09-13T00:00:00")["claims"][0]
+            self.assertEqual((kept["uses"], kept["useful"]), (1, 1))
+            self.assertEqual(memory.reinforcement({"uses": 999, "useful": 999}), memory.REINFORCE_CAP)
+
+    def test_throttle_defers_rather_than_drops_and_is_stable(self):
+        rows = [{"id": f"d{i}", "detector": "dead-exports", "promote": True, "priority": 3, "ev": 10, "est_tokens": 5000} for i in range(9)]
+        rows.append({"id": "g", "detector": "god-file", "promote": True, "priority": 0, "ev": 90, "est_tokens": 4000})
+        r = throttle.apply(rows)
+        self.assertEqual(len(r["promoted"]) + len(r["deferred"]), 10, "nothing is dropped")
+        self.assertEqual(r["promoted"][0]["id"], "g", "priority 0 goes first")
+        self.assertEqual([d["id"] for d in r["deferred"]], [d["id"] for d in throttle.apply(rows)["deferred"]], "stable")
+
+    def test_throttle_cooldown_comes_from_outcomes_not_opinion(self):
+        h = throttle.cooldowns([{"detectors": ["god-file"], "verdict": "broken", "scored_at": "2026-09-13"},
+                                {"detectors": ["doc-links"], "verdict": "held", "scored_at": "2026-09-13"}])
+        self.assertEqual(h["god-file"]["cooldown"], throttle.THROTTLE["cooldown_runs"])
+        self.assertEqual(h["doc-links"]["cooldown"], 0)
+        r = throttle.apply([{"id": "x", "detector": "god-file", "promote": True, "priority": 0, "ev": 9, "est_tokens": 10}], history=h)
+        self.assertEqual(r["promoted"], [])
+        self.assertIn("cooldown", r["deferred"][0]["throttle_reason"])
+
+    def test_model_refuses_a_label_that_is_a_function_of_the_verb(self):
+        leaky = [{"verb": v, "prev": "-", "at": f"2026-01-{i % 28 + 1:02d}", "useful": 1 if v == "scan" else 0,
+                  "features": {"inputs": i}} for i, v in enumerate(["scan", "route"] * 15)]
+        m = model.train(leaky)
+        self.assertFalse(m["useful"])
+        self.assertEqual(m["verb_accuracy"], 1.0)
+        self.assertIn("function of the verb", m["why"])
 
     def test_cli_round_trip(self):
         r = subprocess.run([sys.executable, "-m", "bundlebox_expert", "rules"], input=json.dumps({"signals": {}}), capture_output=True, text=True, env={**os.environ, "PYTHONPATH": HERE})

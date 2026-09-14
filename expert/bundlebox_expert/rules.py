@@ -1,5 +1,5 @@
 """Where a signal becomes a recommendation. Change the number in THRESHOLDS
-(or `cfg.learn.thresholds`), not the rule: a rule is a sentence about what a
+(or `cfg.buckmaster.thresholds`), not the rule: a rule is a sentence about what a
 signal means, the threshold is where it starts mattering. Every threshold key
 is read by at least one rule — a test enforces it, because the original
 carried three numbers nobody read.
@@ -12,7 +12,7 @@ THRESHOLDS = {
     "singleton_turn_ratio": 0.55, "retry_ratio": 0.25, "ctx_slope_per_turn": 1800, "long_session_share": 0.30,
     "interrupts_per_session": 1.0, "compactions_per_session": 0.8, "searches_per_session": 12,
 }
-RS = RuleSet("learn")
+RS = RuleSet("buckmaster")
 
 
 def _ge(f, key, tkey=None):

@@ -66,8 +66,22 @@ async function tokensCmd({ _, flags }) {
   if (sub === "profile") {
     if (!flags.probe) {
       const cal = load().budget;
+      // The free measurement first: real sessions in this workspace already
+      // paid for an opening window, and their transcripts are on disk. It is an
+      // UPPER bound on a lean lane, but it is measured, and the alternative is
+      // a 25k constant nobody measured.
+      const obs = await probe.observe();
+      if (flags.json) { emit({ baseline: cal.overhead_tokens, lean: cal.overhead_lean, observed: obs }); return 0; }
       out(`  overhead  baseline ${human(cal.overhead_tokens)}   lean ${human(cal.overhead_lean)}   (from var/calibration.json; 0 = never probed)`);
-      out("  add --probe to measure: it opens three one-turn sessions and SPENDS a few thousand tokens");
+      if (obs.ok) {
+        out(`  observed  min ${human(obs.min)}   median ${human(obs.median)}   max ${human(obs.max)}   MEASURED off ${obs.n} transcript${obs.n > 1 ? "s" : ""} in this workspace`);
+        out("            interactive sessions carry MCP servers, the full tool set and a global CLAUDE.md a lean lane does not: this is an upper bound");
+        if (flags.write) out(`  wrote ${rel(probe.write(obs))}`);
+        else out("  add --write to use the observed minimum instead of the 25.0k floor, or --probe to measure a real lane (SPENDS tokens)");
+      } else {
+        out(`  observed  ${obs.why}`);
+        out("  add --probe to measure: it opens three one-turn sessions and SPENDS a few thousand tokens");
+      }
       return 0;
     }
     warn("probing spends tokens: three one-turn sessions");

@@ -198,7 +198,7 @@ The agent should touch about a tenth of the work. Everything a parse can settle
 is settled locally for nothing; what remains is packed, budgeted and opened
 under a measured stack; what it cost is read back from the transcript. The
 numbers in this paper are arithmetic over work that was done, and every one of
-them can be regenerated with `bb session` and `bb learn episodes` on a
+them can be regenerated with `bb session` and `bb buckmaster episodes` on a
 workspace that has run the tool.
 
 ### References

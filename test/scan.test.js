@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-scan-"));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-scan-")));
 process.env.BB_ROOT = root;
 const w = (rel, text) => { const p = path.join(root, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
 

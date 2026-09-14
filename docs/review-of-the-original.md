@@ -67,7 +67,7 @@ means the port closes it; `Kept out` means the subsystem did not travel;
 | C8/C9 | `buckmaster/memory.py` | documented decay rule not implemented; `last_seen` bumped on every write so decay never fired | Fixed |
 | C14/C15/C16 | thresholds | three thresholds loaded and read by no rule; two metrics computed and read by no verdict | Fixed: a test asserts every threshold is read |
 | C26 | `switchgear/spec.py:148` | a second fingerprint implementation | Fixed: one |
-| C32 | `episodes.py:186` | the training label was a function of the verb, which was also a feature | Open: label is order-aware now, still weak |
+| C32 | `src/buckmaster/episodes.js` `autolabel()` | the training label was a function of the verb, which was also a feature | Closed: the label is order-aware AND requires a measured change (`changed`, produced-before vs produced-after), so the same verb labels 1 on a run where it changed something and 0 on a run where it did not. `model.train` also scores a verb-only majority baseline and refuses to steer unless it beats it, so a label that drifts back to being verb-determined says so instead of scoring 1.0 |
 | C33 | `switchgear/runner.py:137` | train/serve feature skew | Fixed: one `featurize` |
 | C35 | `switchgear/report.py:25` | base-rate predictions printed as if from the model | Fixed |
 | C36 | `episodes.autolabel` | a stage could certify itself useful | Fixed |

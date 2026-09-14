@@ -15,7 +15,7 @@ export const snapgen = () => import("./snapgen/index.js");
 export const pinpoint = () => import("./pinpoint/index.js");
 export const oversight = () => import("./oversight/index.js");
 export const pipeline = () => import("./pipeline/runner.js");
-export const learn = () => import("./learn/index.js");
+export const buckmaster = () => import("./buckmaster/index.js");
 export const session = () => import("./tokens/session.js");
 export const mcp = () => import("./mcp/server.js");
 export { main as cli } from "./cli.js";
