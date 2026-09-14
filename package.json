@@ -3,18 +3,23 @@
   "version": "0.1.0",
   "description": "The zero-token software factory for AI coding agents: a Node CLI, a Rust kernel and a Python expert system that scan, pack, route and run work across Claude Code, Codex, Gemini CLI, Cursor, Aider, OpenCode and any custom agent, and measure every token used and saved.",
   "keywords": [
+    "accessibility",
     "ai-agents",
+    "aider",
     "claude-code",
     "codex",
-    "gemini-cli",
-    "cursor",
-    "aider",
-    "token-optimization",
     "context-engineering",
+    "cursor",
+    "design-system",
+    "design-tokens",
+    "gemini-cli",
     "mcp",
-    "static-analysis",
+    "prompt-caching",
     "software-factory",
-    "prompt-caching"
+    "static-analysis",
+    "token-optimization",
+    "ui",
+    "wcag"
   ],
   "homepage": "https://github.com/blackswanalpha/bundlebox#readme",
   "bugs": {
@@ -41,6 +46,7 @@
   "files": [
     "bin/",
     "src/",
+    "designlabs/",
     "kernel/Cargo.toml",
     "kernel/src/",
     "expert/bundlebox_expert/",

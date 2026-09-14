@@ -1,0 +1,436 @@
+{
+  "version": 1,
+  "note": "Where design evidence comes from, and what each source can and cannot answer. `reach` is the honest field: bundlebox never scrapes a site that forbids it and never pretends a JS-rendered gallery is an API. `web` means hand the plan to an agent holding a web tool; `http` means bb can GET it itself; `manual` means a human exports it.",
+  "kinds": {
+    "shots": "single static frames, art-directed, no states",
+    "flows": "real product screens in sequence, with states",
+    "sites": "shipped marketing and product sites",
+    "systems": "published design systems and platform guidelines",
+    "principles": "HCI, UX and cognitive-psychology research",
+    "type": "typefaces in real use",
+    "color": "palette construction",
+    "motion": "timing, easing, choreography",
+    "access": "normative accessibility requirements",
+    "patterns": "installable UI patterns an agent can fetch as skills, with code",
+    "tooling": "tools that verify, measure or compress the work rather than inspire it"
+  },
+  "providers": [
+    {
+      "id": "dribbble",
+      "name": "Dribbble",
+      "kind": "shots",
+      "url": "https://dribbble.com",
+      "search": "https://dribbble.com/search/{q}",
+      "reach": "web",
+      "auth": "oauth",
+      "gives": [
+        "visual direction",
+        "colour pairings",
+        "composition",
+        "typographic hand"
+      ],
+      "beware": "A shot is a poster, not a product. No empty state, no error, no long string, no 300-row list. Copying a shot is how a UI becomes pretty and unusable.",
+      "license": "All rights reserved by each author. Reference and describe; never copy assets or markup."
+    },
+    {
+      "id": "behance",
+      "name": "Behance",
+      "kind": "shots",
+      "url": "https://www.behance.net",
+      "search": "https://www.behance.net/search/projects?search={q}",
+      "reach": "web",
+      "auth": "key",
+      "gives": [
+        "case studies with reasoning",
+        "before/after",
+        "full flows"
+      ],
+      "beware": "Case studies are written to win the client, not to report the result. Read the decisions, discount the outcomes.",
+      "license": "All rights reserved by each author."
+    },
+    {
+      "id": "mobbin",
+      "name": "Mobbin",
+      "kind": "flows",
+      "url": "https://mobbin.com",
+      "search": "https://mobbin.com/search/apps?q={q}",
+      "reach": "web",
+      "auth": "key",
+      "gives": [
+        "real shipped screens",
+        "state coverage",
+        "flow order",
+        "density under real data"
+      ],
+      "beware": "The antidote to shots. Prefer this over Dribbble whenever the question is how something behaves rather than how it looks.",
+      "license": "Subscription; screenshots of third-party apps. Reference only."
+    },
+    {
+      "id": "awwwards",
+      "name": "Awwwards",
+      "kind": "sites",
+      "url": "https://www.awwwards.com",
+      "search": "https://www.awwwards.com/websites/?text={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "motion craft",
+        "layout risk",
+        "typographic scale at the top end"
+      ],
+      "beware": "Selected for jury appeal. Strong on ambition, weak on the boring screens that carry a product.",
+      "license": "All rights reserved by each studio."
+    },
+    {
+      "id": "godly",
+      "name": "Godly",
+      "kind": "sites",
+      "url": "https://godly.website",
+      "search": "https://godly.website/search?q={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "current web aesthetic",
+        "type pairings",
+        "dark-first layouts"
+      ],
+      "beware": "Curated to a single taste. Sampling only from here produces a house style.",
+      "license": "All rights reserved by each studio."
+    },
+    {
+      "id": "landbook",
+      "name": "Land-book",
+      "kind": "sites",
+      "url": "https://land-book.com",
+      "search": "https://land-book.com/?search={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "landing page structures that convert",
+        "section order",
+        "above-the-fold economy"
+      ],
+      "beware": "Marketing pages only. Says nothing about an app's interior.",
+      "license": "All rights reserved by each studio."
+    },
+    {
+      "id": "siteinspire",
+      "name": "SiteInspire",
+      "kind": "sites",
+      "url": "https://www.siteinspire.com",
+      "search": "https://www.siteinspire.com/websites?search={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "restrained editorial layout",
+        "grid discipline"
+      ],
+      "beware": "Skews editorial and agency. Few dense tools.",
+      "license": "All rights reserved by each studio."
+    },
+    {
+      "id": "lawsofux",
+      "name": "Laws of UX",
+      "kind": "principles",
+      "url": "https://lawsofux.com",
+      "search": "https://lawsofux.com",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "Fitts, Hick, Miller, Jakob, Doherty, Tesler, von Restorff, peak-end, serial position, Gestalt"
+      ],
+      "beware": "Summaries. Each card names the original paper; cite the paper when a rule is contested.",
+      "license": "CC BY-NC-SA 4.0 (Jon Yablonski). Attribute."
+    },
+    {
+      "id": "nngroup",
+      "name": "Nielsen Norman Group",
+      "kind": "principles",
+      "url": "https://www.nngroup.com",
+      "search": "https://www.nngroup.com/search/?q={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "the ten heuristics",
+        "empirical usability studies",
+        "numbers with sample sizes"
+      ],
+      "beware": "The strongest evidence in this list. When a shot and an NN/g study disagree, the study wins.",
+      "license": "Articles free to read; all rights reserved. Cite by URL."
+    },
+    {
+      "id": "idf",
+      "name": "Interaction Design Foundation",
+      "kind": "principles",
+      "url": "https://www.interaction-design.org",
+      "search": "https://www.interaction-design.org/literature/topics/{q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "UX theory",
+        "cognitive load",
+        "mental models",
+        "affordance theory"
+      ],
+      "beware": "Encyclopaedic and uneven. Good for orientation, weak as a final citation.",
+      "license": "Mixed; much is open literature. Cite by URL."
+    },
+    {
+      "id": "m3",
+      "name": "Material Design 3",
+      "kind": "systems",
+      "url": "https://m3.material.io",
+      "search": "https://m3.material.io/search?q={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "token naming",
+        "state layers",
+        "elevation model",
+        "motion spec with real durations"
+      ],
+      "beware": "Adopting M3 wholesale is one of the fastest routes to a generic UI. Take the STRUCTURE (state layers, token roles), refuse the SKIN.",
+      "license": "Apache 2.0 for the spec text and reference code."
+    },
+    {
+      "id": "apple-hig",
+      "name": "Apple Human Interface Guidelines",
+      "kind": "systems",
+      "url": "https://developer.apple.com/design/human-interface-guidelines",
+      "search": "https://developer.apple.com/search/?q={q}&type=Design",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "platform conventions",
+        "hit target minimums",
+        "typographic scale",
+        "when NOT to be novel"
+      ],
+      "beware": "Normative on Apple platforms, advisory elsewhere.",
+      "license": "Apple. Cite by URL."
+    },
+    {
+      "id": "refactoringui",
+      "name": "Refactoring UI",
+      "kind": "systems",
+      "url": "https://www.refactoringui.com",
+      "search": "https://www.refactoringui.com",
+      "reach": "manual",
+      "auth": "key",
+      "gives": [
+        "hierarchy by weight and colour not size",
+        "shadow as elevation",
+        "spacing scales that are not linear"
+      ],
+      "beware": "Paid book. Its defaults became Tailwind's defaults, which is exactly the look this toolkit flags as generic. Use the reasoning, not the swatches.",
+      "license": "Paid. Do not reproduce."
+    },
+    {
+      "id": "typewolf",
+      "name": "Typewolf",
+      "kind": "type",
+      "url": "https://www.typewolf.com",
+      "search": "https://www.typewolf.com/?s={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "typefaces in shipped use",
+        "pairings",
+        "what is current versus what is tired"
+      ],
+      "beware": "The single highest-leverage source for escaping a generic look: typeface choice moves more than colour.",
+      "license": "All rights reserved. Reference only."
+    },
+    {
+      "id": "fontsinuse",
+      "name": "Fonts In Use",
+      "kind": "type",
+      "url": "https://fontsinuse.com",
+      "search": "https://fontsinuse.com/search?q={q}",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "typefaces with provenance and industry context"
+      ],
+      "beware": "Print-heavy. Check licensing and webfont availability before committing.",
+      "license": "Editorial; images credited. Reference only."
+    },
+    {
+      "id": "fontsource",
+      "name": "Fontsource",
+      "kind": "type",
+      "url": "https://fontsource.org",
+      "search": "https://api.fontsource.org/v1/fonts?family={q}",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "self-hostable open typefaces with a real JSON API",
+        "weights, subsets, licence per family"
+      ],
+      "beware": "The one type source bb can query directly. Use it to verify a chosen face is actually shippable.",
+      "license": "Per-family open licences (OFL, Apache). Machine-readable."
+    },
+    {
+      "id": "huemint",
+      "name": "Huemint",
+      "kind": "color",
+      "url": "https://huemint.com",
+      "search": "https://huemint.com",
+      "reach": "web",
+      "auth": "none",
+      "gives": [
+        "palettes generated against a layout rather than a wheel"
+      ],
+      "beware": "Generated palettes still need a contrast pass. Nothing here is accessible by construction.",
+      "license": "Generated output is free to use."
+    },
+    {
+      "id": "motion-dev",
+      "name": "Motion",
+      "kind": "motion",
+      "url": "https://motion.dev",
+      "search": "https://motion.dev/docs",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "spring and easing vocabulary",
+        "durations that hold up on device"
+      ],
+      "beware": "Library docs. Take the timing reasoning, not the API.",
+      "license": "MIT library; docs free to read."
+    },
+    {
+      "id": "wcag",
+      "name": "WCAG 2.2 Quick Reference",
+      "kind": "access",
+      "url": "https://www.w3.org/WAI/WCAG22/quickref/",
+      "search": "https://www.w3.org/WAI/WCAG22/quickref/?showtechniques={q}",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "normative contrast ratios, target sizes, focus visibility, motion preferences"
+      ],
+      "beware": "Normative, not advisory. A rule here outranks every aesthetic source in this file.",
+      "license": "W3C Document Licence. Quote freely with attribution."
+    },
+    {
+      "id": "ui-skills",
+      "name": "UI Skills (ibelick)",
+      "kind": "patterns",
+      "url": "https://github.com/ibelick/ui-skills",
+      "search": "https://ui-skills.com/playbook",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "installable design-engineering patterns",
+        "a motion category",
+        "an MCP server exposing list_skills and get_skill"
+      ],
+      "beware": "Patterns arrive as code, so they arrive with someone else's taste attached. Take the mechanism; re-token the surface against your own system or you have imported a second design language.",
+      "license": "MIT. Reusable, with attribution.",
+      "use": "npx ui-skills list --category motion \u00b7 npx ui-skills get <skill>"
+    },
+    {
+      "id": "fwc-swiftui-skills",
+      "name": "fwc-swiftui-skills (FloWritesCode)",
+      "kind": "patterns",
+      "url": "https://github.com/FloWritesCode/fwc-swiftui-skills",
+      "search": "https://github.com/FloWritesCode/fwc-swiftui-skills",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "modern SwiftUI patterns as agent skills",
+        "platform-idiomatic navigation and state"
+      ],
+      "beware": "Apple-platform idiom. Excellent where the target is SwiftUI, misleading where it is web or Flutter.",
+      "license": "See repository. Cite by URL.",
+      "use": "install as a coding-agent skill for Claude Code, Cursor or Codex"
+    },
+    {
+      "id": "anti-slop",
+      "name": "anti-slop (dmmulroy)",
+      "kind": "tooling",
+      "url": "https://github.com/dmmulroy/anti-slop",
+      "search": "https://github.com/dmmulroy/anti-slop",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "20 Oxlint rules that reject low-evidence TypeScript patterns",
+        "require-safety-comment-for-type-assertion",
+        "the vendored-not-depended-on distribution model"
+      ],
+      "beware": "The code-side sibling of this toolkit's ui-generic detector: same thesis, different surface. It says nothing about an interface, and ui-generic says nothing about a type assertion. Run both.",
+      "license": "MIT (one rule vendored from ESLint Stylistic, MIT).",
+      "use": "vendor src/ into the repo and register in oxlint.config.ts"
+    },
+    {
+      "id": "reticle",
+      "name": "Reticle",
+      "kind": "tooling",
+      "url": "https://github.com/reticlehq/reticle",
+      "search": "https://github.com/reticlehq/reticle",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "runtime verdicts from inside a running app: network, console, state, DOM, routing",
+        "pass / fail / couldn't tell, with file:line",
+        "MCP integration and deterministic flow replay"
+      ],
+      "beware": "This is the answer to every UNKNOWN `bb designlabs check` prints. A declared state that renders identically to rest is invisible to a parse and obvious to a runtime observer. Localhost only; nothing leaves the machine.",
+      "license": "Open source. See repository.",
+      "use": "npx @reticlehq/server init, then drive the flow and read the verdict"
+    },
+    {
+      "id": "caliper",
+      "name": "Caliper",
+      "kind": "tooling",
+      "url": "https://github.com/edonadei/caliper",
+      "search": "https://github.com/edonadei/caliper",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "success rate, pass@k and pass^k over repeated runs",
+        "tokens and wall clock per attempt",
+        "ablation: what a skill contributes versus its absence"
+      ],
+      "beware": "The honest way to claim a prompt or a skill works. One successful run is an anecdote; `--k 3` is a measurement. It costs real tokens, unlike everything else in this file.",
+      "license": "Open source. See repository.",
+      "use": "caliper run spec.eval.yaml --k 3 \u00b7 caliper compare"
+    },
+    {
+      "id": "chisle",
+      "name": "Chisle",
+      "kind": "tooling",
+      "url": "https://github.com/JayPokale/Chisle",
+      "search": "https://github.com/JayPokale/Chisle",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "output-side compression: terse prose, YAGNI-first code, scrubbed and elided tool output",
+        "a decision ladder before code is written",
+        "a measured 44% of a bare model's output tokens over 20 tasks"
+      ],
+      "beware": "Compresses what the model WRITES; bundlebox compresses what it READS. The two do not overlap and the savings compound. Its ~1.6k-token ruleset is charged once per session and belongs in the overhead term of any budget you quote.",
+      "license": "See repository.",
+      "use": "npx chisle \u00b7 /chisle"
+    },
+    {
+      "id": "ouroboros",
+      "name": "Ouroboros",
+      "kind": "tooling",
+      "url": "https://github.com/Q00/ouroboros",
+      "search": "https://github.com/Q00/ouroboros",
+      "reach": "http",
+      "auth": "none",
+      "gives": [
+        "interview \u2192 seed \u2192 execute \u2192 evaluate \u2192 evolve",
+        "an immutable spec as the unit of work",
+        "a three-stage gate: mechanical, semantic, consensus",
+        "stops on ontology convergence rather than on a turn count"
+      ],
+      "beware": "The workflow shape a storybook prompt should follow. Its mechanical gate is the cheap one and should run first; consensus is the expensive one and should run last, on what survived.",
+      "license": "Open source. See repository.",
+      "use": "ooo interview \u00b7 ooo run \u00b7 ooo auto"
+    }
+  ]
+}
