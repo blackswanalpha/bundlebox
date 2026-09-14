@@ -17,7 +17,10 @@ export function loadPlan(runId = "") {
   if (!mine.length) return null;
   const units = new Map(store.get("units", []).map((u) => [u.id, u]));
   const full = mine.map((l) => ({ ...l, units: (l.unit_ids || []).map((u) => units.get(u)).filter(Boolean) }));
-  const stored = (store.get("plans", []) || []).find((p) => p.run_id === id);
+  // `plans` is an object keyed by run_id (see route/index.js writePlan); accept
+  // a list too so an older store still loads.
+  const plans = store.get("plans", {}) || {};
+  const stored = Array.isArray(plans) ? plans.find((p) => p.run_id === id) : plans[id];
   let waves = stored?.waves?.length ? stored.waves : null;
   if (!waves) {
     const by = new Map();
