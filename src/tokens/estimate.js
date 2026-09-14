@@ -36,9 +36,17 @@ export function file(p) {
 }
 /** Per-file estimates plus total; the router bin-packs on the per-file numbers. */
 export function files(paths) {
+  // `estimate <paths>` says paths, so a directory is the tree under it, not a
+  // miss. Expanding here rather than in the verb keeps one walker for every
+  // caller; an unreadable entry stays in the list so it is still reported.
+  const list = [];
+  for (const raw of paths) {
+    let st; try { st = fs.statSync(abs(raw)); } catch { list.push(raw); continue; }
+    if (st.isDirectory()) list.push(...walk(abs(raw)));
+    else list.push(raw);
+  }
   // Over a few hundred files the kernel reads and counts in one process; the
   // coefficients travel with the call so both sides use the calibrated set.
-  const list = [...paths];
   if (list.length > 150) {
     const t = load().tokens;
     const k = kernel.call("estimate", { paths: list.map(abs), prose_suffix: PROSE_SUFFIX, ...t });

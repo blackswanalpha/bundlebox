@@ -38,23 +38,34 @@ async function triageFn() {
 
 const topDirOf = (p) => { const s = String(p || "").replace(/\\/g, "/"); return s.includes("/") ? s.split("/")[0] : "."; };
 
-/** What PROVES a change here, read off the tree. Merged under `kernel.gates`
- *  so a configured gate always wins over a guessed one. `quick` is the cheapest
- *  gate found (lint, then typecheck, then test); `full` is the test run. */
-export function detectGates(root = ROOT) {
-  const cfg = load();
+// What PROVES a change, read off the tree and merged under `kernel.gates` so a
+// configured gate always wins over a guessed one. `quick` is the cheapest gate
+// found (lint, then typecheck, then test); `full` is the test run.
+/** User gates in either shape. `kernel.gates` is documented per directory —
+ *  `{".": {quick, full}}` — and `bb init` writes the flat `{quick, full, ...}`.
+ *  Both shapes exist in the wild, so both are read here rather than in each
+ *  caller: a config in the documented shape used to merge as keys named `.` and
+ *  `demo`, leaving `quick` empty and every unit `unproven` with no warning. */
+export function userGates(cfg = load()) {
+  const user = cfg.kernel?.gates || {};
+  return Object.values(user).some((v) => v && typeof v === "object") ? user : { ".": user };
+}
+
+/** What the tree in `dir` proves a change with, read off its manifest. Nothing
+ *  about config here: this is detection, and detection knows only the files. */
+export function detectIn(dir) {
   const g = { quick: "", full: "", lint: "", typecheck: "", test: "", source: null };
-  const has = (n) => fs.existsSync(path.join(root, n));
+  const has = (n) => fs.existsSync(path.join(dir, n));
   if (has("package.json")) {
     let scripts = {};
-    try { scripts = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).scripts || {}; } catch { /* unparseable: no scripts */ }
+    try { scripts = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")).scripts || {}; } catch { /* unparseable: no scripts */ }
     if (scripts.lint) g.lint = "npm run lint";
     if (scripts.typecheck) g.typecheck = "npm run typecheck";
     if (scripts.test) g.test = "npm test";
     if (g.lint || g.typecheck || g.test) g.source = "package.json";
   }
   if (!g.source && has("Makefile")) {
-    const mk = fs.readFileSync(path.join(root, "Makefile"), "utf8");
+    const mk = fs.readFileSync(path.join(dir, "Makefile"), "utf8");
     const target = (t) => new RegExp(`^${t}\\s*:`, "m").test(mk);
     if (target("lint")) g.lint = "make lint";
     if (target("typecheck")) g.typecheck = "make typecheck";
@@ -70,8 +81,29 @@ export function detectGates(root = ROOT) {
   }
   g.quick = g.lint || g.typecheck || g.test;
   g.full = g.test || g.quick;
-  const user = cfg.kernel?.gates || {};
-  return { ...g, ...Object.fromEntries(Object.entries(user).filter(([, v]) => v)) };
+  return g;
+}
+
+/** The gate for one scope: what its own directory proves a change with, then
+ *  the root's as a fallback, then whatever `kernel.gates` declares over the top.
+ *
+ *  `scope` in the result is the directory the command must RUN in, which is not
+ *  always the scope asked for: a sub-project with no manifest of its own falls
+ *  back to the root's gate, and that gate belongs at the root. */
+export function detectGates(root = ROOT, scope = ".") {
+  const cfg = load();
+  const dir = scope === "." ? root : path.join(root, scope);
+  let g = detectIn(dir), from = scope;
+  // A sub-directory that is not a project of its own is proven the way the
+  // workspace is proven, and that command runs at the workspace root.
+  if (!g.source && scope !== ".") { g = detectIn(root); from = "."; }
+  // The most specific declared scope that contains this one, then the root.
+  const byDir = userGates(cfg);
+  const pick = Object.keys(byDir)
+    .filter((d) => d === "." || scope === d || String(scope).startsWith(d + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+  const user = Object.fromEntries(Object.entries((pick && byDir[pick]) || {}).filter(([, v]) => v && typeof v === "string"));
+  return { ...g, ...user, scope: user.quick || user.full ? pick : from };
 }
 
 /** The re-check that proves THESE findings are gone: the scan must succeed AND
@@ -106,7 +138,6 @@ const uid = (s) => `u-${sha1(s).slice(0, 8)}`;
 export async function compileUnits(findings, { maxUnits = 0 } = {}) {
   const cfg = load();
   const triage = await triageFn();
-  const gates = detectGates(ROOT);
 
   // Triage first: a finding the rule engine declines never becomes a unit, and
   // a finding an actuator can close becomes a zero-token unit.
@@ -145,7 +176,14 @@ export async function compileUnits(findings, { maxUnits = 0 } = {}) {
     // gate plus a re-scan of this detector. `verify`/`investigate`/`write` units
     // have nothing a re-scan can prove, so they get the gate alone or nothing.
     let acceptance = members.find((f) => f.acceptance)?.acceptance || "";
-    if (!acceptance) acceptance = [gates.quick, kind === "fix" ? recheck(detector, ids) : ""].filter(Boolean).join(" && ");
+    // The gate of the directory this unit touches, not the root's: a workspace
+    // of projects has one gate per project and none at the top.
+    const gates = detectGates(ROOT, topDir);
+    // Acceptance runs at the LANE's cwd, which is the workspace root. A gate
+    // declared for a sub-directory has to be taken there, in a subshell so the
+    // re-scan that follows it still runs at the root.
+    const quick = gates.quick && gates.scope !== "." ? `(cd ${JSON.stringify(gates.scope)} && ${gates.quick})` : gates.quick;
+    if (!acceptance) acceptance = [quick, kind === "fix" ? recheck(detector, ids) : ""].filter(Boolean).join(" && ");
     const unproven = !acceptance;
 
     const anchors = anc.forFindings(members);

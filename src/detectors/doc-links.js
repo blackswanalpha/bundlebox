@@ -5,7 +5,7 @@
 // somewhere that does not exist, which is worse than saying nothing.
 import fs from "node:fs";
 import path from "node:path";
-import { basenameIndex, blankFences, corpus, finding, lineIndex, snippet } from "./_shared.js";
+import { basenameIndex, blankFences, corpus, finding, isGeneratedText, lineIndex, snippet } from "./_shared.js";
 
 const MD_LINK = /\[[^\]]*\]\(([^)\s#]+)(?:#[^)]*)?\)/g;
 const BACKTICK_PATH = /`([\w./\-]+\/[\w./\-]+\.\w{1,6})`/g;
@@ -19,6 +19,9 @@ export default {
     const out = [];
     const index = basenameIndex(ctx);
     for (const [r, raw] of corpus(ctx)) {
+      // A derived document is rewritten by its producer, so a broken citation in
+      // one is a bug in the producer and never a fix somebody applies here.
+      if (isGeneratedText(r, raw)) continue;
       if (!r.endsWith(".md")) continue;
       const text = blankFences(raw);      // a path inside a code fence is an example, not a citation
       const lineOf = lineIndex(text);

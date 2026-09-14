@@ -27,6 +27,10 @@ export default {
     const out = [];
     for (const r of codeRels(ctx, { tests: false })) {
       if (SKIP_PATH.test(r)) continue;
+      // A shebang says this file IS a command, wherever it lives, and a command's
+      // stdout is its product rather than a leftover. Exact, like the path rule
+      // above it: the line is there or it is not.
+      if (text.get(r).startsWith("#!")) continue;
       const rules = RULES[langOf(r)];
       if (!rules) continue;
       const hits = [];

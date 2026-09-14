@@ -64,6 +64,22 @@ export function cap(cmd, limit = TAIL) {
 }
 
 const isScalar = (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+/** Every string literal inside a value, at any depth. */
+function literals(v, acc = []) {
+  if (typeof v === "string") acc.push(v);
+  else if (Array.isArray(v)) for (const x of v) literals(x, acc);
+  else if (v && typeof v === "object") for (const x of Object.values(v)) literals(x, acc);
+  return acc;
+}
+/** True when every string in `v` already appears in the detail the detector
+ *  wrote. Detectors that render their own evidence as lines and ALSO carry the
+ *  same rows in `evidence` were paying for one fact twice — measured at 16% of
+ *  a ui-generic brief. Numbers alone never qualify: a count is not a restatement
+ *  of the line it was counted from. */
+function covered(v, detail) {
+  const ls = literals(v).filter((x) => x.length >= 3);
+  return ls.length > 0 && ls.every((x) => detail.includes(x));
+}
 const empty = (v) => v == null || v === "" || (Array.isArray(v) && !v.length) || (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length);
 // Sorted keys so two findings with the same evidence print byte-identical
 // rows, which is what lets the prompt cache treat them as one prefix.
@@ -103,10 +119,11 @@ export function evidenceBlock(findings) {
     // `detail` is prose the detector wrote and it is not always a restatement
     // of the evidence: for a review finding it IS the reviewer's comment, and a
     // brief without it asks a session to go and read the thread.
-    for (const line of String(f.detail || "").slice(0, 1500).split("\n")) out.push(`    ${line}`);
+    const detail = String(f.detail || "").slice(0, 1500);
+    for (const line of detail.split("\n")) out.push(`    ${line}`);
     const ev = f.evidence || {};
     for (const k of Object.keys(ev).sort()) {
-      if (k in shared || empty(ev[k])) continue;
+      if (k in shared || empty(ev[k]) || covered(ev[k], detail)) continue;
       // Compact JSON on purpose: indented output on a 4-element list of short
       // strings is four lines and a dozen tokens of whitespace for what reads
       // identically on one.
