@@ -1,0 +1,35 @@
+{
+  "id": "open-high-findings",
+  "source": "findings",
+  "where": [
+    [
+      "open",
+      "==",
+      1
+    ],
+    [
+      "severity",
+      "in",
+      [
+        "high",
+        "critical"
+      ]
+    ]
+  ],
+  "metric": {
+    "fn": "count"
+  },
+  "threshold": {
+    "op": "<=",
+    "value": 8
+  },
+  "severity": "medium",
+  "evidence_cols": [
+    "detector",
+    "severity",
+    "title",
+    "path"
+  ],
+  "why": "High and critical findings that nobody has closed. The number itself is the backlog; the detector column says which lever moves it.",
+  "empty": "zero"
+}

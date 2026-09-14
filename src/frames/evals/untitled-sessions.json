@@ -1,0 +1,27 @@
+{
+  "id": "untitled-sessions",
+  "source": "sessions",
+  "where": [
+    [
+      "title",
+      "contains",
+      "(no prompt"
+    ]
+  ],
+  "metric": {
+    "fn": "count"
+  },
+  "threshold": {
+    "op": "==",
+    "value": 0
+  },
+  "severity": "low",
+  "evidence_cols": [
+    "session",
+    "agent",
+    "turns",
+    "tokens"
+  ],
+  "why": "A session with no recorded prompt cannot be attributed to a piece of work, so what it cost cannot be argued about later.",
+  "empty": "zero"
+}

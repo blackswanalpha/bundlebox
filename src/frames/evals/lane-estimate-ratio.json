@@ -1,0 +1,27 @@
+{
+  "id": "lane-estimate-ratio",
+  "source": "lanes",
+  "where": [
+    [
+      "ratio",
+      "exists",
+      true
+    ]
+  ],
+  "metric": {
+    "fn": "median",
+    "col": "ratio"
+  },
+  "threshold": {
+    "op": "<=",
+    "value": 1.25
+  },
+  "severity": "medium",
+  "evidence_cols": [
+    "id",
+    "est_tokens",
+    "peak",
+    "ratio"
+  ],
+  "why": "What a lane actually peaked at over what the router budgeted for it. Above 1.25 the budget model is optimistic and lanes will compact."
+}

@@ -20,9 +20,19 @@ export const MODULES = [
   ["tokens", "./tokens/index.js"],
   ["snapgen", "./snapgen/index.js"],
   ["pinpoint", "./pinpoint/index.js"],
+  ["genesis", "./genesis/index.js"],
+  ["cookbook", "./cookbook/index.js"],
+  ["simulate", "./simulate/index.js"],
+  ["mainboard", "./mainboard/index.js"],
+  ["runbook", "./runbook/index.js"],
+  ["frames", "./frames/index.js"],
+  ["failsafe", "./failsafe/index.js"],
+  ["blackice", "./blackice/index.js"],
+  ["monitor", "./monitor/index.js"],
+  ["commandcenter", "./commandcenter/index.js"],
   ["oversight", "./oversight/index.js"],
   ["pipeline", "./pipeline/index.js"],
-  ["learn", "./learn/index.js"],
+  ["buckmaster", "./buckmaster/index.js"],
   ["bridge", "./bridge/index.js"],
   ["scripts", "./scripts/index.js"],
   ["wire", "./wire/index.js"],
@@ -31,7 +41,7 @@ export const MODULES = [
   ["kernel", "./kernel-cmd.js"],
 ];
 
-export const ALIASES = { sg: "pipeline", switchgear: "pipeline", buckmaster: "learn", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
+export const ALIASES = { scenarios: "cookbook", corpus: "cookbook", board: "mainboard", mb: "mainboard", frames: "frames", dataframes: "frames", cc: "commandcenter", usage: "monitor", sg: "pipeline", switchgear: "pipeline", learn: "buckmaster", bm: "buckmaster", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
 
 const version = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
 

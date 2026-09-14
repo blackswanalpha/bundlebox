@@ -1,0 +1,27 @@
+{
+  "id": "scenario-without-rule",
+  "source": "scenarios",
+  "where": [
+    [
+      "has_rule",
+      "==",
+      0
+    ]
+  ],
+  "metric": {
+    "fn": "count"
+  },
+  "threshold": {
+    "op": "==",
+    "value": 0
+  },
+  "severity": "medium",
+  "evidence_cols": [
+    "corpus",
+    "id",
+    "surface",
+    "file"
+  ],
+  "why": "A scenario with no rule block makes a red step an argument about what the corpus wants, rather than the system contradicting something written down.",
+  "empty": "zero"
+}
