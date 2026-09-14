@@ -173,8 +173,14 @@ export function commit({ cwd = ROOT, scope = [], findings = [], detector = "", a
   // written relative to the repo when it is read relative to the WORKSPACE, and
   // "none inside the unit scope" does not say that.
   if (!local.length) {
+    // Relativised from the REAL paths, not through rel(): on Windows a temp
+    // directory has a short-name form, so rel() falls back to the absolute path
+    // and the suggestion comes out as `C:\\Users\\...\\proj/src`. The basename is
+    // the honest fallback when the repo is not under the workspace at all.
+    const r = path.relative(rootReal, dReal).replace(/\\/g, "/");
+    const prefix = r && !r.startsWith("..") ? r : path.basename(dReal);
     return { ok: false, changed: false, repo: rel(d),
-      why: `every scope path is outside ${rel(d)}: scope is workspace-relative, so name ${want.map((p) => `${rel(d)}/${p}`).slice(0, 3).join(", ")}` };
+      why: `every scope path is outside ${prefix}: scope is workspace-relative, so name ${want.map((x) => `${prefix}/${x}`).slice(0, 3).join(", ")}` };
   }
   const inScope = (p) => local.some((s) => p === s || p.startsWith(s.replace(/\/$/, "") + "/"));
   const staged = changed.filter((r) => inScope(r.path)).map((r) => r.path);
