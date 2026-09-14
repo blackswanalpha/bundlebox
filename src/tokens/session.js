@@ -18,7 +18,11 @@
 //                 what one more turn ADDS) for the low figure, `full` (the whole
 //                 re-sent window) for the high one. The truth is between.
 //
-// Episodes are attributed to a session by time, and the report says so.
+// Episodes are attributed to a session by the run it names, and otherwise by
+// the window that PREPARED it, and the report says which. A bracket of [first
+// turn, last turn] was the original rule and it excluded exactly the work this
+// line exists to report: scan, compile and route run BEFORE a session opens,
+// which is the whole point of them.
 import fs from "node:fs";
 import path from "node:path";
 import * as store from "../core/store.js";
@@ -73,6 +77,43 @@ function avoidedUsd(tokens, rows, { marginal }) {
   return c ? c.total : 0;
 }
 
+// Free work older than this was not preparing this session. A bound is needed
+// because the first session in a workspace has no previous one to start from,
+// and without it a month of pipeline rows would all land on it.
+export const PREP_HOURS = 24;
+
+/** The episodes this session may claim.
+ *
+ *  Two rules, in order, and each episode satisfies at most one, so nothing is
+ *  counted twice across sessions:
+ *
+ *    1. It names a run this session's turns also name. Exact: the lane rows
+ *       carry `run_id`, and so does every episode that run wrote.
+ *    2. It is not another run's lane, and falls in the PREPARATION window — after
+ *       the previous session on this workspace ended, and before this one's
+ *       last turn. That is where `scan`, `compile` and `route` live. */
+export function attribute({ first, last, rows, sessionId }) {
+  const runIds = new Set(rows.map((r) => r.run_id).filter(Boolean));
+  const floor = new Date(Date.parse(first) - PREP_HOURS * 3600 * 1000).toISOString();
+  let prevEnd = floor;
+  for (const r of ledger.usage()) {
+    if (!r || r.session_id === sessionId) continue;
+    const ts = r.ts || r.at || "";
+    if (ts && ts < first && ts > prevEnd) prevEnd = ts;
+  }
+  return store.rows("episodes").filter((e) => {
+    const ts = e.ts || e.at || "";
+    if (!ts) return false;
+    if (e.run_id && runIds.has(e.run_id)) return true;
+    // A lane belongs to its own run and to no other session. Everything else
+    // that carries a run_id — a pipeline stage names the pipeline's run, not a
+    // lane's — is free work, and free work is claimed by the session it
+    // prepared.
+    if (e.lane_id || e.kind === "lane") return false;
+    return ts > prevEnd && ts <= last;
+  });
+}
+
 export async function measure({ sessionId = "", transcriptPath = "" } = {}) {
   const r = resolve({ sessionId, transcriptPath });
   if (r.entry) ledger.fold();
@@ -97,7 +138,7 @@ export async function measure({ sessionId = "", transcriptPath = "" } = {}) {
   const pt = perTurn(rows);
   // Null timestamps mean no bracket, so no episode can be attributed: zero
   // turns saved, stated as such, rather than every episode ever.
-  const eps = first && last ? store.rows("episodes").filter((e) => e.at && e.at >= first && e.at <= last) : [];
+  const eps = first && last ? attribute({ first, last, rows, sessionId: r.sessionId }) : [];
   const turnsSaved = eps.reduce((a, e) => a + num(e.turns_saved), 0);
   const localSeconds = eps.reduce((a, e) => a + num(e.seconds), 0);
   const byVerb = new Map();
@@ -123,7 +164,8 @@ export async function measure({ sessionId = "", transcriptPath = "" } = {}) {
       automation_turns: turnsSaved, automation_tokens: low, automation_tokens_high: high,
       automation_usd: r4(avoidedUsd(low, rows, { marginal: true })), automation_usd_high: r4(avoidedUsd(high, rows, { marginal: false })) },
     basis: { per_turn_tokens: pt.marginal, per_turn_full: pt.full, episodes: eps.length, local_seconds: Math.round(localSeconds * 10) / 10,
-      attribution: "by time — an episode counts toward the session whose first and last turn bracket its timestamp", prices: `${prices.SOURCE}, as of ${prices.AS_OF}` },
+      attribution: `by run when the episode names one, else by the window that prepared this session (since the previous session here, capped at ${PREP_HOURS}h)`,
+      prices: `${prices.SOURCE}, as of ${prices.AS_OF}` },
     by_verb: [...byVerb.values()].sort((a, b) => b.turns - a.turns).slice(0, 12),
     measured_at: now(),
   };

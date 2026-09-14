@@ -21,6 +21,7 @@ export const MODULES = [
   ["snapgen", "./snapgen/index.js"],
   ["pinpoint", "./pinpoint/index.js"],
   ["oversight", "./oversight/index.js"],
+  ["designlabs", "./designlabs/index.js"],
   ["pipeline", "./pipeline/index.js"],
   ["learn", "./learn/index.js"],
   ["bridge", "./bridge/index.js"],
@@ -81,6 +82,28 @@ function help(table, broken, verb) {
   out("  bb help <verb> for usage. Docs: https://github.com/blackswanalpha/bundlebox");
 }
 
+// Verbs that write their own episode, with features this hook cannot see.
+const SELF_RECORDED = new Set(["run", "pipeline", "bridge"]);
+
+/** One row per verb that did work a session would otherwise have done. The free
+ *  verbs run BEFORE a session opens, so without this hook `bb session` reports
+ *  the factory as having saved nothing on exactly the runs it prepared.
+ *
+ *  It never throws and never changes the exit code: a bill that cannot be
+ *  written must not lose the verb that earned it. */
+async function recordEpisode(verb, args, rc, t0) {
+  if (SELF_RECORDED.has(verb)) return;
+  try {
+    const ep = await import("./learn/episodes.js");
+    const sub = typeof args._[0] === "string" && /^[a-z][\w-]*$/.test(args._[0]) ? `${verb} ${args._[0]}` : "";
+    const key = sub && ep.YIELD[sub] ? sub : ep.YIELD[verb] ? verb : "";
+    if (!key) return;
+    ep.record({ verb: key, rc: typeof rc === "number" ? rc : 0, seconds: Math.round((Date.now() - t0)) / 1000,
+      features: { apply: args.flags.apply ? 1 : 0, write: args.flags.write ? 1 : 0 },
+      detail: ep.takeDetail() });
+  } catch { /* the verb already did its job */ }
+}
+
 export async function main(argv) {
   const args = parse(argv);
   setMode({ quiet: !!args.flags.quiet || !!args.flags.q, json: !!args.flags.json });
@@ -96,8 +119,10 @@ export async function main(argv) {
     warn(`unknown verb: ${verb}. Try: bb help`);
     return 2;
   }
+  const t0 = Date.now();
   try {
     const code = await cmd.run(args);
+    await recordEpisode(verb, args, code, t0);
     return typeof code === "number" ? code : 0;
   } catch (e) {
     if (args.flags.json) emit({ error: String(e && e.message || e) });

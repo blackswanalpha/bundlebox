@@ -65,35 +65,11 @@ function features(st, ctx, inputCount) {
   return { inputs: inputCount, open_findings: ctx.open_findings, dirty: ctx.dirty, since_min: ctx.since_min, optional: st.optional ? 1 : 0 };
 }
 
-// What each verb reads and makes, and what a session would have spent to get
-// the same answer. Counted off the store after the stage ran; a verb with no
-// entry yields `produced: null` (nothing counted it) and zero turns, never a
-// guess. Artefact names are the graph's vocabulary for autolabel.
-const open = () => store.get("findings", []).filter((f) => f && f.status === "open");
-const YIELD = {
-  scan: () => { const o = open(); const ran = (store.get("scan", {}) || {}).ran || []; return { produced: o.length, produces: ["findings"], reads: [], turns: episodes.turns({ files_read: Math.min(60, o.length * 2), searches: ran.length, rows: o.length }) }; },
-  compile: () => { const u = store.get("units", []); const o = open(); return { produced: u.length, produces: ["units"], reads: ["findings"], turns: episodes.turns({ files_read: Math.min(20, o.length), rows: o.length }) }; },
-  route: () => { const l = store.get("lanes", []); const u = store.get("units", []); return { produced: l.length, produces: ["lanes"], reads: ["units"], turns: episodes.turns({ commands: 3, rows: u.length }) }; },
-  "oversight scan": () => ({ produced: null, produces: ["oversight"], reads: ["findings"], turns: 0 }),
-  "oversight guidelines": () => ({ produced: null, produces: ["guidelines"], reads: ["oversight"], turns: 0 }),
-  "snapgen build": () => ({ produced: null, produces: ["snapgen"], reads: [], turns: 0 }),
-  "learn signals": () => { const s = store.get("signals", {}) || {}; const n = (s.sessions || []).length; return { produced: n, produces: ["signals"], reads: ["transcripts"], turns: episodes.turns({ files_read: Math.min(30, n), commands: 2 }) }; },
-  "learn rules": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["rules"], reads: ["signals"], turns: episodes.turns({ commands: 1 }) }; },
-  "learn recommend": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["recommendations"], reads: ["rules", "signals"], turns: episodes.turns({ commands: 1 }) }; },
-  "learn memory": () => { const m = store.get("memory", []); return { produced: Array.isArray(m) ? m.length : null, produces: ["memory"], reads: ["signals", "episodes", "scripts"], turns: episodes.turns({ files_read: 4 }) }; },
-  "learn episodes": () => ({ produced: store.rows("episodes").length, produces: ["episode-report"], reads: ["episodes"], turns: episodes.turns({ commands: 1 }) }),
-  "tokens ledger": () => { const n = store.rows("usage").length; return { produced: n, produces: ["usage"], reads: ["transcripts"], turns: episodes.turns({ files_read: Math.min(20, n ? 1 + Math.floor(n / 50) : 0) }) }; },
-  "session list": () => ({ produced: null, produces: ["sessions"], reads: ["usage"], turns: 0 }),
-  "scripts scan": () => { const s = store.get("scripts", []); return { produced: s.length, produces: ["scripts"], reads: [], turns: episodes.turns({ files_read: s.length, searches: 2 }) }; },
-  doctor: () => ({ produced: null, produces: ["doctor"], reads: [], turns: episodes.turns({ commands: 3 }) }),
-  "git status": () => ({ produced: null, produces: ["git"], reads: [], turns: episodes.turns({ commands: 1 }) }),
-  run: () => ({ produced: null, produces: ["runs"], reads: ["lanes"], turns: 0 }),
-};
-function yieldOf(st) {
-  const fn = YIELD[verbKey(st)] || YIELD[st.verb];
-  if (!fn) return { produced: null, produces: [verbKey(st)], reads: [], turns: 0 };
-  try { return fn(); } catch { return { produced: null, produces: [verbKey(st)], reads: [], turns: 0 }; }
-}
+// The yield table moved to learn/episodes.js: a verb typed by hand displaces
+// the same work as the same verb inside a gear, and two tables would disagree.
+// The pipeline does not dedupe by digest because its freshness gate already
+// refuses to re-run a stage whose inputs have not drifted.
+const yieldOf = (st) => episodes.yieldOf(verbKey(st));
 
 /** Run one gear and whatever it chains into. Never throws; returns the run record. */
 export async function runGear(name, opts = {}) {
