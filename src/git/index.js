@@ -151,8 +151,12 @@ export function commit({ cwd = ROOT, scope = [], findings = [], detector = "", a
   const d = repoDir(cwd);
   const changed = dirtyFiles(d);
   if (!changed.length) return { ok: true, changed: false, repo: rel(d), why: "clean tree" };
-  // Scope paths are workspace-relative; git speaks repo-relative.
-  const local = want.map((p) => path.relative(d, abs(p)).replace(/\\/g, "/")).filter((p) => p && !p.startsWith(".."));
+  // Scope paths are workspace-relative; git speaks repo-relative. Both sides
+  // are compared as real paths: on macOS a temp dir is /var/... and git
+  // reports /private/var/..., and a relative() across that reads as outside.
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
+  const dReal = real(d), rootReal = real(ROOT);
+  const local = want.map((p) => path.relative(dReal, path.isAbsolute(p) ? real(p) : path.join(rootReal, p)).replace(/\\/g, "/")).filter((p) => p && !p.startsWith(".."));
   const inScope = (p) => local.some((s) => p === s || p.startsWith(s.replace(/\/$/, "") + "/"));
   const staged = changed.filter((r) => inScope(r.path)).map((r) => r.path);
   const outside = changed.filter((r) => !inScope(r.path)).map((r) => r.path);
