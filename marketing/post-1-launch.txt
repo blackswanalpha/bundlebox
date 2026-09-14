@@ -1,0 +1,25 @@
+I spent a month measuring what my AI coding agents actually read.
+
+37% of the files a session opened, it opened twice. 88% of tool turns carried a single call. Half of all sessions ran long enough to compact.
+
+None of that was judgement. It was orientation: where is this symbol, do these two tables agree, what is the test command. A script answers those for free.
+
+So I built bundlebox: a control layer that answers every parse-shaped question before the agent opens, packs the answers into a brief sized to the agent's context window, and measures afterwards what the session cost and what it was spared. It never calls a model itself.
+
+Run against its own repository this morning:
+• 101 agent turns displaced in 1.0 second, 0 tokens spent
+• 51 findings with evidence, from 16 static detectors
+• every lane's exact prompt and command written to disk before anything spawns
+
+On the workspace it grew out of:
+• opening window per session 44.3k → 29.2k tokens, before a word of work
+• the same plan: 5 sessions / 1.3M projected tokens → 2 sessions / 351k
+
+Three runtimes, one set of answers: a zero-dependency Node CLI, a Rust kernel for the operations a scripting runtime gets wrong under load, and a stdlib Python expert system for the rules and the learning. Parity tests pin all three to identical answers, because which runtime you happen to have installed must not change a number.
+
+Works with Claude Code, Codex, Gemini CLI, Cursor, Copilot, OpenCode, Cline, Windsurf, Aider, and any custom command. One install, one `bb wire`.
+
+npm i -g bundlebox
+github.com/blackswanalpha/bundlebox
+
+#AIAgents #ClaudeCode #DeveloperTools #OpenSource #ContextEngineering
