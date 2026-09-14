@@ -23,8 +23,10 @@ export const OUT = path.join(BB_DIR, "out");
 export const HOME = path.join(os.homedir(), ".bundlebox");
 export const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
 
+// Workspace-relative paths are ALWAYS forward-slash: they are finding ids,
+// store keys and brief text, and a key that differs by OS is two findings.
 export const rel = (p) => {
-  const r = path.relative(ROOT, path.resolve(p));
+  const r = path.relative(ROOT, path.resolve(p)).split(path.sep).join("/");
   return r.startsWith("..") ? path.resolve(p) : r || ".";
 };
 export const abs = (p) => (path.isAbsolute(p) ? p : path.join(ROOT, p));

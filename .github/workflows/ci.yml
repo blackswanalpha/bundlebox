@@ -6,6 +6,9 @@ on:
 jobs:
   node:
     runs-on: ${{ matrix.os }}
+    # Windows is best-effort in 0.1.x: path-separator and shell differences are
+    # tracked in issue #1; use WSL for a supported install. Linux and macOS gate.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:

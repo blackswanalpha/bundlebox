@@ -45,7 +45,7 @@ npm i -g bundlebox
 curl -fsSL https://raw.githubusercontent.com/blackswanalpha/bundlebox/main/scripts/install.sh | sh
 ```
 
-Needs Node ≥ 20 and git. Two optional runtimes make it faster and smarter, and
+Needs Node ≥ 20 and git. Linux and macOS are supported; Windows is best-effort in 0.1.x (use WSL). Two optional runtimes make it faster and smarter, and
 everything degrades cleanly without them:
 
 - **Rust kernel** (`bbk`): tree walks, fingerprints, token estimates, duplicate
