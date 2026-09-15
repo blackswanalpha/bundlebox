@@ -1,17 +1,65 @@
-# Release: a tag vX.Y.Z on main builds the kernel for every target, publishes
-# the npm package with provenance, and creates the GitHub release with the
-# kernel binaries as assets and changelogs/vX.Y.Z.md as its body.
-# `bb kernel install` downloads the matching asset for the running platform.
+# Release: a tag vX.Y.Z on main builds the kernel for every target, creates the
+# GitHub release with those binaries as assets, and then publishes to npm.
+#
+# The order is the point. `bb kernel install` downloads a release asset, so the
+# GitHub release is what a user's `bb doctor` depends on — and it is not allowed
+# to be blocked by the registry.
+#
+# v0.2.0 is why this file is shaped like this. All five binaries built, then
+# `npm publish` failed with `EOTP` (the account asks for a one-time password),
+# and because the release step lived in the same job it never ran. The binaries
+# were uploaded as workflow artifacts and thrown away 90 days later; there was
+# no release, and `bb kernel install` had nothing to fetch. One registry's 2FA
+# prompt should not be able to unship a Rust binary.
+#
+# So there are four jobs and one rule: **`release` depends on nothing that can
+# be refused by a third party.** `npm` runs after it and its failure ends there.
+#
+#   kernel   build bbk for five targets            (no secrets)
+#   gate     lint, tests, and the version check     (no secrets)
+#   release  the GitHub release, with the binaries  (GITHUB_TOKEN only)
+#   npm      publish to the registry                (NPM_TOKEN; may fail alone)
+#
+# `workflow_dispatch` ships binaries for a tag whose release did not happen,
+# without deleting and re-pushing the tag.
 name: release
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release, e.g. v0.2.0"
+        required: true
+        type: string
+      npm:
+        description: "Also publish to npm"
+        required: false
+        default: true
+        type: boolean
 permissions:
   contents: write
   id-token: write
+
 jobs:
+  # The tag every other job checks out. On a tag push it is the ref; on a manual
+  # run it is the input. Resolved once so no job has to repeat the expression and
+  # none can disagree about which tag is being released.
+  ref:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - id: pick
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - run: echo "releasing ${{ steps.pick.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+
   kernel:
+    needs: ref
     strategy:
+      # One target failing must not cancel the other four: a release with four
+      # of five binaries is worth shipping, and the missing one is visible.
+      fail-fast: false
       matrix:
         include:
           - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu,  asset: bbk-linux-x64 }
@@ -20,16 +68,17 @@ jobs:
           # x86_64 darwin is CROSS-COMPILED from the Arm64 runner, not built on
           # an Intel one. `macos-13` was the Intel image and GitHub has retired
           # it: a job asking for that label is never assigned a runner, sits
-          # queued until the six-hour timeout, and takes the publish job with it
-          # because `publish` needs every kernel build. The surviving Intel
-          # labels (`macos-15-intel`, `macos-15-large`) are larger runners and
-          # are billed even on a public repo. Apple's SDK is universal, so the
-          # Arm64 runner builds this target natively with no emulation.
+          # queued until the six-hour timeout, and takes everything that needs it
+          # with it. The surviving Intel labels (`macos-15-intel`,
+          # `macos-15-large`) are larger runners and are billed even on a public
+          # repo. Apple's SDK is universal, so the Arm64 runner builds this
+          # target natively with no emulation.
           - { os: macos-latest,   target: x86_64-apple-darwin,       asset: bbk-darwin-x64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc,    asset: bbk-win32-x64.exe }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ needs.ref.outputs.tag }}" }
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: "${{ matrix.target }}" }
       - if: matrix.cross
@@ -41,13 +90,19 @@ jobs:
           cp "$src" "${{ matrix.asset }}"
       - uses: actions/upload-artifact@v4
         with: { name: "${{ matrix.asset }}", path: "${{ matrix.asset }}" }
-  publish:
-    needs: kernel
+
+  # Everything that can say "do not ship this". Separate from `release` so the
+  # reason a release did not happen is one job name rather than a step buried in
+  # a log, and separate from `npm` so a registry outage cannot be mistaken for a
+  # failing test.
+  gate:
+    needs: ref
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ needs.ref.outputs.tag }}" }
       - uses: actions/setup-node@v4
-        with: { node-version: 22, registry-url: https://registry.npmjs.org }
+        with: { node-version: 22 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - uses: dtolnay/rust-toolchain@stable
@@ -55,20 +110,75 @@ jobs:
       - run: npm run lint && npm test && npm run expert:test
       - name: version matches tag
         run: |
-          tag="${GITHUB_REF_NAME#v}"; ver="$(node -p 'require("./package.json").version')"
+          tag="${{ needs.ref.outputs.tag }}"; tag="${tag#v}"
+          ver="$(node -p 'require("./package.json").version')"
           [ "$tag" = "$ver" ] || { echo "tag v$tag != package.json $ver"; exit 1; }
           grep -q "^version = \"$ver\"" kernel/Cargo.toml || { echo "kernel/Cargo.toml version != $ver"; exit 1; }
           grep -q "__version__ = \"$ver\"" expert/bundlebox_expert/__init__.py || { echo "expert version != $ver"; exit 1; }
+
+  # The job that must not be blocked. GITHUB_TOKEN only — no third party can
+  # refuse it.
+  release:
+    needs: [ref, kernel, gate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.ref.outputs.tag }}" }
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
+      - name: the assets, listed before they are uploaded
+        run: |
+          ls -l dist/
+          { echo "### assets"; echo; for f in dist/*; do echo "- \`$(basename "$f")\` — $(du -h "$f" | cut -f1)"; done; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.ref.outputs.tag }}
+          body_path: changelogs/${{ needs.ref.outputs.tag }}.md
+          files: |
+            dist/*
+            assets/logo.svg
+
+  # Publishes to the registry, and is the only job allowed to need a secret
+  # somebody else controls. It runs LAST and nothing depends on it: when it
+  # fails the run is red and the release still stands, which is the whole
+  # reason this file has four jobs.
+  npm:
+    needs: [ref, gate, release]
+    if: ${{ inputs.npm != false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.ref.outputs.tag }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: https://registry.npmjs.org }
+      # A fork, or a repository whose token has not been set, should say so in
+      # one line rather than fail on an error about authentication.
+      - name: NPM_TOKEN is present
+        # Read through the environment, never interpolated into the command
+        # line: a masked secret in a `run:` is still a secret in a process
+        # table and in any shell trace the runner keeps.
+        env: { TOKEN: "${{ secrets.NPM_TOKEN }}" }
+        run: |
+          [ -n "$TOKEN" ] || {
+            echo "::error::NPM_TOKEN is not set. The GitHub release above already shipped; set the secret and re-run this job alone."
+            exit 1
+          }
       - name: publish to npm (provenance)
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: github release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: changelogs/${{ github.ref_name }}.md
-          files: |
-            dist/*
-            assets/logo.svg
+      # `npm publish` fails with EOTP when the account requires a one-time
+      # password, which an automation token is meant to bypass. Saying so here
+      # turns a red job into an instruction.
+      - if: failure()
+        run: |
+          {
+            echo "### npm publish did not happen"
+            echo
+            echo "The GitHub release for \`${{ needs.ref.outputs.tag }}\` is unaffected: the binaries shipped."
+            echo
+            echo "If the log shows \`EOTP\`, NPM_TOKEN is a classic token on an account that requires a"
+            echo "one-time password to publish. Replace it with a **Granular Access Token** scoped to"
+            echo "\`bundlebox\` with read-and-write permission (npmjs.com → Access Tokens → Generate New"
+            echo "Token → Granular), then re-run this job alone."
+          } >> "$GITHUB_STEP_SUMMARY"
