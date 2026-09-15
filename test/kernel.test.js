@@ -24,12 +24,26 @@ const files = ["src/a.js", "src/b.js", "src/c.py", "README.md"].map((p) => path.
 
 test("kernel present on this box (informational)", () => { console.log(`  kernel: ${have ? kernel.version() : "absent — parity tests skipped"}`); });
 
+// Workspace-relative keys are ALWAYS forward-slash — they are finding ids and
+// store keys, and `rel()` normalises for exactly that reason. `path.relative`
+// gives the platform separator, so looking a key up with it misses on Windows:
+// `src\\a.js` against a map that holds `src/a.js`.
+const key = (f) => path.relative(root, f).split(path.sep).join("/");
+
 test("estimate: kernel == js per file", { skip: !have }, () => {
   const js = est.filesJs(files);
   const cfg = cfgMod.load().tokens;
   const k = kernel.call("estimate", { paths: files, ...cfg });
-  for (const f of files) assert.equal(k.files[f], js.files[path.relative(root, f)], f);
+  for (const f of files) assert.equal(k.files[f], js.files[key(f)], f);
   assert.equal(k.total, js.total);
+});
+
+test("js estimate keys are forward-slash on every platform", { skip: !have }, () => {
+  const js = est.filesJs(files);
+  for (const k of Object.keys(js.files)) {
+    assert.ok(!k.includes("\\"), `${k} is a store key and must not carry a platform separator`);
+  }
+  assert.ok(Object.keys(js.files).includes("src/a.js"));
 });
 const cfgMod = await import("../src/core/config.js");
 
