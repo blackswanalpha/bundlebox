@@ -22,8 +22,7 @@ import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
-import { isTest } from "../detectors/_shared.js";
-import * as graph from "../snapgen/graph.js";
+import { rank } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 
 export { ambiguity } from "./ambiguity.js";
@@ -145,60 +144,7 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
   const explicit = [...files.map((f) => rel(abs(f))), ...pathHits(ts)];
   const sym = await snapgen.symbolHits(ts);
   const grep = sym.length < 3 ? grepHits(ts) : [];
-  // ── ranking ───────────────────────────────────────────────────────────────
-  //
-  // Hit count alone ranks a test file first on almost every real issue, because
-  // a test names the thing under test far more often than the implementation
-  // does. Measured on SWE-bench Verified: the top-ranked file for a `Dataset.copy`
-  // bug in xarray was `tests/test_cftimeindex.py`, and the file the maintainer
-  // actually changed was outside the scope entirely. Two corrections, both of
-  // them cheap and both derived from what is already on disk:
-  //
-  //   TEST WEIGHT   a test file scores a third unless the problem statement is
-  //                 itself about a test. The tests are still reachable — they
-  //                 are in the symbol tables the prompt points at — they just
-  //                 stop displacing the implementation.
-  //   CENTRALITY    a file many other files import is more likely to be where a
-  //                 behaviour lives than a leaf. This is the one thing the new
-  //                 import graph is for, capped so a hub cannot win on
-  //                 popularity alone.
-  const wantsTests = /\btest(s|ing|ed)?\b|\bfixture|\bpytest|\bassert/i.test(String(problem));
-  const centrality = (f) => {
-    try { return Math.min((graph.graph().inn.get(abs(f)) || new Set()).size, 8) * 0.4; }
-    catch { return 0; }          // no symbol index on this box is not a reason to rank nothing
-  };
-  const weight = (f) => (!wantsTests && isTest(rel(f)) ? 0.34 : 1);
-  //   MATCH QUALITY a symbol that IS one of the problem's words is far stronger
-  //                 evidence than one that merely contains it. Every symbol hit
-  //                 used to score the same 3, so `coordinates.py` — which holds
-  //                 `Coordinates`, `DataArrayCoordinates` and
-  //                 `DatasetCoordinates`, three loose matches on "coordinates" —
-  //                 outranked `combine.py`, which declares the function the
-  //                 issue names. Measured on SWE-bench Verified: the exact match
-  //                 was found every time and then buried.
-  //
-  //   DIMINISHING   and the hits within one file decay, so a file cannot win on
-  //                 the number of loose matches it happens to contain.
-  const quality = (h) => {
-    const sym1 = String(h.symbol || "").toLowerCase(), t = String(h.term || "").toLowerCase();
-    if (!sym1 || !t) return 2;
-    if (sym1 === t) return 9;
-    if (sym1.replace(/[_.]/g, "") === t.replace(/[_.]/g, "")) return 8;
-    if (sym1.startsWith(t) || sym1.endsWith(t)) return 5;
-    return 2;
-  };
-  const score = new Map();
-  const bump = (f, n) => score.set(f, (score.get(f) || 0) + n * weight(f));
-  for (const f of explicit) bump(f, 10);
-  const byFile = new Map();
-  for (const h of sym) { if (!byFile.has(h.file)) byFile.set(h.file, []); byFile.get(h.file).push(h); }
-  for (const [f, hits] of byFile) {
-    hits.sort((a, b) => quality(b) - quality(a));
-    hits.forEach((h, i) => bump(f, quality(h) * Math.pow(0.55, i)));
-  }
-  for (const h of grep) bump(h.file, 1);
-  for (const f of [...score.keys()]) score.set(f, score.get(f) + centrality(f));
-  const ranked = [...score].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).map(([f]) => f);
+  const ranked = rank(problem, { explicit, sym, grep });
   let scope = ranked.slice(0, maxFiles);
   let anchors = [];
   const seen = new Set();
