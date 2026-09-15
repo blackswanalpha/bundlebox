@@ -42,3 +42,10 @@ expert/**/__pycache__/
 # measure drift against, so it is committed.
 .bundlebox/auditor/*/charter.json
 .bundlebox/auditor/*/charter.md
+
+# Claude Code keeps two settings files side by side and they have opposite
+# rules. `settings.json` is the PROJECT's: `bb wire` writes the hook rows there
+# and every contributor should get the same ones, so it is committed.
+# `settings.local.json` is one person's permission allowlist for their own box —
+# committing it hands everyone else's agent a set of approvals they never gave.
+.claude/settings.local.json

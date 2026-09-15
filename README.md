@@ -123,6 +123,11 @@ MCP server entry. `bb unwire` removes only its own blocks.
 `bb_scan`, `bb_oversight_brief`, `bb_explain`, `bb_tokens_estimate` and
 `bb_session` over stdio as JSON-RPC 2.0, with no dependency.
 
+Full guide, including the agents not in this table, how to wire one bundlebox
+does not know about, and how to drive agents as lanes:
+**[docs/agents.md](docs/agents.md)**. `bb uptake` then reports which of the
+installed surfaces the sessions actually reached for.
+
 ## The verbs
 
 | verb | answers | cost |
@@ -264,6 +269,7 @@ default lives in `src/core/config.js` with its reason. Measured values live in
 
 ## Documentation
 
+- [docs/agents.md](docs/agents.md): integrating bundlebox into every agent, and running work through them
 - [docs/index.html](docs/index.html): the reference site
 - [EXPLANATION.md](EXPLANATION.md): the thesis, the flow, what changed from the original
 - [whitepaper/bundlebox-whitepaper.md](whitepaper/bundlebox-whitepaper.md)
