@@ -49,7 +49,7 @@ npm i -g bundlebox
 curl -fsSL https://raw.githubusercontent.com/blackswanalpha/bundlebox/main/scripts/install.sh | sh
 ```
 
-Needs Node ≥ 20 and git. Linux and macOS are supported; Windows is best-effort in 0.1.x (use WSL). Two optional runtimes make it faster and smarter, and
+Needs Node ≥ 20 and git. Linux, macOS and Windows are supported: CI runs the full suite on all three against Node 20, 22 and 24. Two known gaps remain on Windows — a **piped** acceptance gate reports the last command's exit code rather than the first failure, because `cmd.exe` has no `set -o pipefail` (unpiped gates are exact), and `bb session` may not find transcripts, because the name Claude Code gives its projects directory there has not been verified. Two optional runtimes make it faster and smarter, and
 everything degrades cleanly without them:
 
 - **Rust kernel** (`bbk`): tree walks, fingerprints, token estimates, duplicate
