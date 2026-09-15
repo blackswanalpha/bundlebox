@@ -86,8 +86,8 @@ export default {
       if (!model && m.model) model = m.model;
       const toolUses = [], toolResults = [];
       for (const tc of Array.isArray(m.toolCalls) ? m.toolCalls : []) {
-        toolUses.push({ name: tc.name || "", input: tc.args ?? {} });
-        if (tc.result !== undefined) { const t = typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result); toolResults.push({ chars: t.length, text: t }); }
+        toolUses.push({ id: String(tc.id || ""), name: tc.name || "", input: tc.args ?? {} });
+        if (tc.result !== undefined) { const t = typeof tc.result === "string" ? tc.result : JSON.stringify(tc.result); toolResults.push({ chars: t.length, text: t, id: String(tc.id || ""), tool: tc.name || "" }); }
       }
       turns.push(turn({ msgId: m.id || "", ts: m.timestamp || null, model: m.model || "", ...u, toolUses, toolResults, text: typeof m.content === "string" ? m.content : "" }));
     }

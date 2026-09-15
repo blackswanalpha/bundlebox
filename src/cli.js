@@ -7,7 +7,7 @@ import { parse } from "./core/args.js";
 import { setMode, out, warn, emit } from "./core/log.js";
 import { ROOT, PKG_ROOT } from "./core/paths.js";
 import { readJson } from "./core/config.js";
-import { table } from "./core/util.js";
+import { clamp, table } from "./core/util.js";
 
 // Order matters only for --help grouping.
 export const MODULES = [
@@ -30,6 +30,7 @@ export const MODULES = [
   ["recom", "./recom/index.js"],
   ["dotty", "./dotty/index.js"],
   ["slop", "./slop/index.js"],
+  ["sieve", "./sieve/index.js"],
   ["frames", "./frames/index.js"],
   ["failsafe", "./failsafe/index.js"],
   ["auditor", "./auditor/index.js"],
@@ -42,6 +43,7 @@ export const MODULES = [
   ["bridge", "./bridge/index.js"],
   ["scripts", "./scripts/index.js"],
   ["wire", "./wire/index.js"],
+  ["uptake", "./uptake/index.js"],
   ["cron", "./cron.js"],
   ["selftest", "./selftest.js"],
   ["kernel", "./kernel-cmd.js"],
@@ -87,16 +89,16 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "commandcenter", "pipeline", "scripts"]);
+  "simulate", "runbook", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "commandcenter", "pipeline", "scripts", "sieve"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
   ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "designlabs"]],
-  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "bench"]],
+  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "sieve", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
   ["ship", "What closes the loop?", ["git", "fix", "pipeline", "scripts", "cron", "buckmaster", "commandcenter"]],
-  ["wire", "How do agents reach it?", ["wire", "unwire", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
+  ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
 ];
 
 function effect(name) {
@@ -104,6 +106,24 @@ function effect(name) {
   if (WRITES.has(name)) return "writes --apply";
   return RECORDS.has(name) ? "records" : "reads";
 }
+
+// The page is laid out against the terminal, clamped so a very wide or very
+// narrow window still reads as columns.
+const helpWidth = () => clamp(process.stdout.columns || 100, 72, 120);
+
+// Greedy word wrap. A description that does not fit the column becomes two
+// lines under the same verb, never a line that runs past the screen.
+const wrap = (text, width) => {
+  const lines = [];
+  let line = "";
+  for (const w of String(text).split(/\s+/).filter(Boolean)) {
+    if (!line) line = w;
+    else if (line.length + 1 + w.length <= width) line += ` ${w}`;
+    else { lines.push(line); line = w; }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+};
 
 function help(cmds, broken, verb) {
   if (verb && cmds[verb]) {
@@ -118,16 +138,32 @@ function help(cmds, broken, verb) {
   out(`   workspace: ${ROOT}`);
 
   const placed = new Set();
+  const chapters = [];
   for (const [title, question, names] of CHAPTERS) {
     const rows = names.filter((n) => cmds[n]).map((n) => { placed.add(n); return [n, effect(n), cmds[n].help || ""]; });
-    if (!rows.length) continue;
-    out(`\n  ${title.toUpperCase()}  ${question}`);
-    out(table(rows, { header: ["verb", "effect", "what it does"] }).split("\n").map((l) => `  ${l}`).join("\n"));
+    if (rows.length) chapters.push([`${title.toUpperCase()}  ${question}`, rows]);
   }
   const rest = Object.entries(cmds).filter(([n]) => !placed.has(n)).map(([n, c]) => [n, effect(n), c.help || ""]);
-  if (rest.length) {
-    out(`\n  ALSO`);
-    out(table(rest, { header: ["verb", "effect", "what it does"] }).split("\n").map((l) => `  ${l}`).join("\n"));
+  if (rest.length) chapters.push(["ALSO", rest]);
+
+  // One grid for every chapter, not one table per chapter: the two column
+  // edges run straight down the whole page and the header is printed once, at
+  // the top. Descriptions wrap into the third column instead of running off
+  // the terminal, so no row is read by scrolling sideways.
+  const all = chapters.flatMap(([, rows]) => rows);
+  const verbW = Math.max(4, ...all.map((r) => r[0].length));
+  const effW = Math.max(6, ...all.map((r) => r[1].length));
+  const descW = Math.max(28, helpWidth() - verbW - effW - 6);
+  const cont = " ".repeat(2 + verbW + 2 + effW + 2);
+  out(`\n  ${"verb".padEnd(verbW)}  ${"effect".padEnd(effW)}  what it does`);
+  out(`  ${"-".repeat(verbW)}  ${"-".repeat(effW)}  ${"-".repeat(descW)}`);
+  for (const [title, rows] of chapters) {
+    out(`\n  ${title}`);
+    for (const [name, eff, desc] of rows) {
+      const lines = wrap(desc, descW);
+      out(`  ${name.padEnd(verbW)}  ${eff.padEnd(effW)}  ${lines[0]}`.trimEnd());
+      for (const l of lines.slice(1)) out(`${cont}${l}`);
+    }
   }
   if (broken.length) {
     out("\n  NOT LOADABLE ON THIS INSTALL");

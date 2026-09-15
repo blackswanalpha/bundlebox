@@ -302,7 +302,7 @@ export const commands = {
   },
   hook: {
     help: "a Claude Code hook handler (stdin JSON in, JSON out, always exit 0)",
-    usage: "bb hook session-start|prompt|pre-read|pre-compact|session-end",
+    usage: "bb hook session-start|prompt|pre-read|post-tool|pre-compact|session-end",
     run: async ({ _ }) => { const { handle } = await import("./hooks.js"); return handle(_[0]); },
   },
 };
