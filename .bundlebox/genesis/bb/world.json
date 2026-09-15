@@ -37,24 +37,24 @@
     {
       "id": "the-command-centre",
       "title": "The command centre",
-      "why": "heading at line 178",
-      "line": 178,
+      "why": "heading at line 185",
+      "line": 185,
       "rules": 0,
       "capabilities": 5
     },
     {
       "id": "architecture",
       "title": "Architecture",
-      "why": "heading at line 192",
-      "line": 192,
+      "why": "heading at line 199",
+      "line": 199,
       "rules": 1,
       "capabilities": 0
     },
     {
       "id": "releases",
       "title": "Releases",
-      "why": "heading at line 242",
-      "line": 242,
+      "why": "heading at line 249",
+      "line": 249,
       "rules": 1,
       "capabilities": 2
     }
@@ -99,8 +99,8 @@
       "text": "It speaks `http` only, because TLS would be a dependency it must build without — the JavaScript engine runs when the base is `https`, when the kernel is absent, or when a corpus uses a pattern outside the kernel's documented subset, and the board names which engine ran and why.",
       "modality": "must",
       "surface": "architecture",
-      "line": 207,
-      "why": "line 207",
+      "line": 214,
+      "why": "line 214",
       "constants": []
     },
     {
@@ -108,8 +108,8 @@
       "text": "The optional wire integration talks to [headroom](https://github.com/headroomlabs-ai/headroom) over the process boundary and never imports it.",
       "modality": "must_not",
       "surface": "releases",
-      "line": 251,
-      "why": "line 251",
+      "line": 258,
+      "why": "line 258",
       "constants": []
     }
   ],
@@ -175,8 +175,8 @@
       "kind": "cmd",
       "cmd": "bb commandcenter build",
       "surface": "the-command-centre",
-      "line": 181,
-      "why": "line 181, inline"
+      "line": 188,
+      "why": "line 188, inline"
     },
     {
       "id": "cmd:bb compile",
@@ -359,16 +359,16 @@
       "kind": "cmd",
       "cmd": "bb update",
       "surface": "releases",
-      "line": 246,
-      "why": "line 246, inline"
+      "line": 253,
+      "why": "line 253, inline"
     },
     {
       "id": "cmd:bb update --apply",
       "kind": "cmd",
       "cmd": "bb update --apply",
       "surface": "releases",
-      "line": 246,
-      "why": "line 246, inline"
+      "line": 253,
+      "why": "line 253, inline"
     },
     {
       "id": "cmd:bb wire --apply",
@@ -392,8 +392,8 @@
       "method": "GET",
       "path": "/",
       "surface": "the-command-centre",
-      "line": 187,
-      "why": "line 187",
+      "line": 194,
+      "why": "line 194",
       "absolute": false,
       "tier": "simple"
     },
@@ -403,8 +403,8 @@
       "method": "GET",
       "path": "/api/bench",
       "surface": "the-command-centre",
-      "line": 190,
-      "why": "line 190",
+      "line": 197,
+      "why": "line 197",
       "absolute": false,
       "tier": "simple"
     },
@@ -414,8 +414,8 @@
       "method": "GET",
       "path": "/api/state",
       "surface": "the-command-centre",
-      "line": 189,
-      "why": "line 189",
+      "line": 196,
+      "why": "line 196",
       "absolute": false,
       "tier": "simple"
     },
@@ -425,8 +425,8 @@
       "method": "GET",
       "path": "/health",
       "surface": "the-command-centre",
-      "line": 188,
-      "why": "line 188",
+      "line": 195,
+      "why": "line 195",
       "absolute": false,
       "tier": "simple"
     }
@@ -437,7 +437,7 @@
     "who the actors are — no 'as a <role>' or named cast in the document; the corpus will run as one anonymous user"
   ],
   "counts": {
-    "lines": 253,
+    "lines": 260,
     "surfaces": 7,
     "rules": 5,
     "capabilities": 38,
@@ -446,6 +446,6 @@
   },
   "id": "bb",
   "from": "README.md",
-  "derived_at": "2026-09-15T05:57:53.832Z",
-  "source_bytes": 14733
+  "derived_at": "2026-09-15T06:21:37.643Z",
+  "source_bytes": 15184
 }

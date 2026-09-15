@@ -175,6 +175,13 @@ estimator over text on disk, so neither calls a model and a second run on the
 same tree returns the same number. A task that costs more packed than bare is
 printed in the table, not dropped.
 
+Every `bb pinpoint` brief carries one more section, and it is the one worth
+reading first: **what this brief does not settle.** No gate detected, nothing in
+the symbol tables matched, no region located, no evidence on file, a scope that
+had to be cut to fit — each is stated with its reason rather than filled in by
+guessing, and scored so two briefs can be compared. A question costs one turn;
+a wrong assumption costs the review that catches it.
+
 ## The command centre
 
 `bb commandcenter` serves one read-only page for the workspace on

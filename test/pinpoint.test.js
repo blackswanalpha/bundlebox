@@ -66,6 +66,7 @@ test("prompt: the exact section order, gates, traps, process rules", async () =>
     "## Scope — the only files you may edit",
     "## Evidence already on file — do not re-derive",
     "## Done when",
+    "## What this brief does not settle",
     "## Traps",
     "## What is already known about these files (bb oversight, no scan on file)",
     "## Process rules this workspace measured itself needing",
@@ -78,6 +79,22 @@ test("prompt: the exact section order, gates, traps, process rules", async () =>
   assert.match(b.prompt, /- batch independent calls\n- read the region/);
   assert.match(b.prompt, /^Reference tables, read instead of searching: `\.bundlebox\/out\/snapgen\/layout\.md` ~\d+/m);
   assert.match(b.prompt, /do not re-read the files\n\n`src\/\w+\.js` lines \d+-\d+ \(~\d+ tokens\)\n```\n/);
+  // The ambiguity ledger states what the brief leaves open rather than filling
+  // it in. A brief with nothing open still prints the section, because a
+  // missing section reads as "not checked".
+  assert.ok(b.ambiguity.score >= 0 && b.ambiguity.score <= 1);
+  assert.match(b.prompt, /## What this brief does not settle\n(- nothing unresolved|Ambiguity 0\.\d+)/);
+});
+
+test("ambiguity: a brief that locates nothing and proves nothing scores higher than one that does", async () => {
+  const { ambiguity } = await import("../src/pinpoint/ambiguity.js");
+  const thin = ambiguity({ gates: {}, symbols: [], grep: [], anchors: [], evidence: [], scope: [], cut: [], terms: [], verdict: "HEAVY", projected: 9e5, ceiling: 1e5 });
+  const full = ambiguity({ gates: { quick: "npm test" }, symbols: [{}], grep: [], anchors: [{}], evidence: [{}], scope: ["a.js"], cut: [], terms: ["a", "b"], verdict: "FITS" });
+  assert.equal(full.score, 0);
+  assert.equal(full.band, "low");
+  assert.ok(thin.score > 0.5, `an unlocatable, ungated, evidence-free brief should score high, got ${thin.score}`);
+  assert.ok(thin.reasons.some((r) => r.id === "no-gate"));
+  assert.ok(thin.reasons.some((r) => r.id === "no-location"));
 });
 
 test("evidence and oversight sections read the store and the stored scan", async () => {

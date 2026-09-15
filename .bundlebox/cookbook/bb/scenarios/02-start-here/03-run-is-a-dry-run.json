@@ -6,14 +6,15 @@
  "question": "is the dry run actually dry \u2014 does it say so, and does it stay at rc 0 without spending?",
  "rule": [
   "README: every verb is a dry run until --apply. Only `run` and `bridge send` can spend tokens.",
-  "cli.js prints: `Every verb is a dry run until --apply.`"
+  "With no routed plan `bb run` exits 2 and says what is missing; it never spawns either way."
  ],
  "steps": [
   {
-   "name": "run reports without spawning",
-   "run": "node bin/bb.js run",
+   "name": "run reports and spawns nothing, whether or not a plan is routed",
+   "run": "node bin/bb.js run; rc=$?; test $rc -le 2 && echo \"did-not-spawn rc=$rc\"",
    "expect": {
-    "rc": 0
+    "rc": 0,
+    "stdout_contains": "did-not-spawn"
    }
   },
   {

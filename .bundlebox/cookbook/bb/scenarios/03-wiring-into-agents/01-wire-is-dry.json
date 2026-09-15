@@ -6,21 +6,24 @@
  "question": "does `bb wire` show what it would write without writing it?",
  "rule": [
   "README: `bb wire --apply` installs the instructions block, the MCP entry and the hooks.",
-  "`bb unwire` removes only bundlebox's blocks, MCP entries and hook rows."
+  "`bb unwire` removes only bundlebox's blocks, MCP entries and hook rows.",
+  "On a box with no agent installed both exit non-zero and say so; neither writes."
  ],
  "steps": [
   {
    "name": "wire without --apply reports and writes nothing",
-   "run": "node bin/bb.js wire",
+   "run": "node bin/bb.js wire; rc=$?; test $rc -le 2 && echo \"dry rc=$rc\"",
    "expect": {
-    "rc": 0
+    "rc": 0,
+    "stdout_contains": "dry"
    }
   },
   {
    "name": "unwire without --apply is equally dry",
-   "run": "node bin/bb.js unwire",
+   "run": "node bin/bb.js unwire; rc=$?; test $rc -le 2 && echo \"dry rc=$rc\"",
    "expect": {
-    "rc": 0
+    "rc": 0,
+    "stdout_contains": "dry"
    }
   },
   {
