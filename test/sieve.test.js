@@ -165,3 +165,23 @@ test("the measured ratio refuses to exist without enough billed samples", () => 
   assert.ok(m.ratio > 0 && m.ratio < 1);
   assert.equal(measuredRatio(turns, { min: 99 }).ratio, null);
 });
+
+test("the replay splits the saving by tier, because lossless and lossy are different trades", () => {
+  // A run that can only scrub: repeated lines, but nowhere near the token cap.
+  const repeated = ("the same line of output\n".repeat(200));
+  const scrubbed = replaySession([turnOf([result("Bash", repeated)])], limits);
+  assert.ok(scrubbed.by_tier.scrub > 0);
+  assert.equal(scrubbed.by_tier.elide, 0);
+
+  // A run that must elide: distinct lines, well past the cap.
+  const huge = Array.from({ length: 4000 }, (_, i) => `line ${i} of a very long build log with words in it`).join("\n");
+  const elided = replaySession([turnOf([result("Bash", huge)])], limits);
+  assert.ok(elided.by_tier.elide > 0);
+  assert.equal(elided.by_tier.scrub, 0);
+
+  // Every char saved is attributed to exactly one tier, so the split can never
+  // quietly disagree with the total it sits beside.
+  const both = replaySession([turnOf([result("Bash", repeated), result("Grep", huge)])], limits);
+  const tiers = both.by_tier.scrub + both.by_tier.dedup + both.by_tier.elide;
+  assert.equal(tiers, both.before - both.after + both.dedup_chars);
+});

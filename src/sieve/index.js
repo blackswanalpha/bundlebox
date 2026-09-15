@@ -16,7 +16,7 @@
 //                                 says which tool and which tier can.
 import fs from "node:fs";
 import path from "node:path";
-import { VAR, ensureDirs } from "../core/paths.js";
+import { VAR } from "../core/paths.js";
 import { load, readJson, writeJson } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { human, now, sha1, pad, table } from "../core/util.js";
@@ -191,6 +191,8 @@ function showReplay(flags) {
     ["deduped repeats", `${r.dedup.toLocaleString("en-US")}  (${human(r.dedup_chars)} chars)`],
     ["outputs with errors carried out of the cut", String(r.salvaged)],
     ["chars saved", `${human(r.saved_chars)}  (${pctOf(r.saved_chars, r.chars)} of all tool output)`],
+    ["  of which lossless", `${human(r.lossless_chars)}  (scrub ${human(r.by_tier.scrub)}, dedup ${human(r.by_tier.dedup)}) — nothing can be lost`],
+    ["  of which elided", `${human(r.by_tier.elide)}  — the middle is cut, and spills to disk`],
   ]).split("\n").map((l) => "  " + l).join("\n"));
   out("");
   out(`  tokens saved   ${human(r.saved_tokens_estimate)}   ESTIMATE  (the estimator, both sides of the transform)`);
@@ -263,8 +265,12 @@ export const commands = {
       "(head + tail + the error lines carried out of the middle). Read, Edit and Write are never touched:",
       "their output is the text a later exact-match edit is written against.",
       "",
-      "Installed by `bb wire --apply` as a PostToolUse hook, and off until `sieve.enabled` is set.",
-      "Measure first: `bb sieve replay` needs no wiring and spends nothing.",
+      "Installed by `bb wire --apply` as a PostToolUse hook, and off until `sieve.enabled` is set. It stays",
+      "off by default on purpose: replayed across four workspaces on one box the saving ran 1.8% to 34.1% of",
+      "tool output, and in every one of them it was almost entirely the ELIDE tier — scrub and dedup together",
+      "never reached 3% of the win. So enabling this is a decision to accept lossy compression for a benefit",
+      "that depends on what your sessions actually run. The replay reports the split; the default does not",
+      "guess. Measure first: `bb sieve replay` needs no wiring and spends nothing.",
     ].join("\n"),
     run: cmd,
   },

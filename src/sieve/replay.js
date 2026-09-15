@@ -51,6 +51,11 @@ export function replaySession(turns, limits) {
     touched: 0, before: 0, after: 0, salvaged: 0,
     dedup: 0, dedup_chars: 0,
     tokens_before: 0, tokens_after: 0,
+    // The split is the decision input, not a detail. scrub and dedup cannot
+    // lose a fact; elide can. A saving that is mostly elide is a trade, and a
+    // saving that is mostly scrub is free — the same total means two different
+    // things, and a report that adds them cannot tell you which one you have.
+    by_tier: { scrub: 0, dedup: 0, elide: 0 },
     by_tool: {}, skipped: {},
   };
   const last = new Map();
@@ -76,6 +81,7 @@ export function replaySession(turns, limits) {
           const marker = duplicateMarker(tool, text);
           acc.dedup += 1;
           acc.dedup_chars += text.length - marker.length;
+          acc.by_tier.dedup += text.length - marker.length;
           acc.tokens_before += estimateText(text, "code");
           acc.tokens_after += estimateText(marker, "code");
           const b = (acc.by_tool[tool] ||= { n: 0, before: 0, after: 0, dedup: 0 });
@@ -87,6 +93,7 @@ export function replaySession(turns, limits) {
       const got = transform(text, limits, { tool });
       if (!got) continue;
       acc.touched += 1;
+      acc.by_tier[got.tier] += got.before - got.after;
       acc.before += got.before; acc.after += got.after;
       acc.tokens_before += got.tokens_before; acc.tokens_after += got.tokens_after;
       if (got.text.includes("error-like line(s)")) acc.salvaged += 1;
@@ -110,7 +117,8 @@ export function replay({ cfg = load(), limit = 0 } = {}) {
   const sessions = [];
   const totals = {
     results: 0, chars: 0, named: 0, touched: 0, before: 0, after: 0, salvaged: 0,
-    dedup: 0, dedup_chars: 0, tokens_before: 0, tokens_after: 0, by_tool: {}, skipped: {},
+    dedup: 0, dedup_chars: 0, tokens_before: 0, tokens_after: 0,
+    by_tier: { scrub: 0, dedup: 0, elide: 0 }, by_tool: {}, skipped: {},
   };
   const ratios = [];
 
@@ -125,6 +133,7 @@ export function replay({ cfg = load(), limit = 0 } = {}) {
     sessions.push({ session: tr.sessionId, agent: e.adapter, ...acc, by_tool: undefined, skipped: undefined,
       saved: acc.before - acc.after + acc.dedup_chars });
     for (const k of ["results", "chars", "named", "touched", "before", "after", "salvaged", "dedup", "dedup_chars", "tokens_before", "tokens_after"]) totals[k] += acc[k];
+    for (const tier of ["scrub", "dedup", "elide"]) totals.by_tier[tier] += acc.by_tier[tier];
     for (const [tool, b] of Object.entries(acc.by_tool)) {
       const t = (totals.by_tool[tool] ||= { n: 0, before: 0, after: 0, dedup: 0 });
       t.n += b.n; t.before += b.before; t.after += b.after; t.dedup += b.dedup;
@@ -141,6 +150,10 @@ export function replay({ cfg = load(), limit = 0 } = {}) {
     touched: totals.touched, dedup: totals.dedup, salvaged: totals.salvaged,
     before: totals.before, after: totals.after, dedup_chars: totals.dedup_chars,
     saved_chars: savedChars,
+    by_tier: totals.by_tier,
+    // What is available with NOTHING lost: the two tiers that cannot drop a
+    // fact. This is the number a default has to justify itself against.
+    lossless_chars: totals.by_tier.scrub + totals.by_tier.dedup,
     // ESTIMATE: the estimator, on both sides of every transform, dedup included.
     saved_tokens_estimate: totals.tokens_before - totals.tokens_after,
     // MEASURED: this workspace's own billed tokens-per-char, or null.

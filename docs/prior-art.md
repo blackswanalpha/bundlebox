@@ -115,6 +115,21 @@ Changed, and each change is a doctrine this box already had:
   not skipped silently** (doctrine 2), and the report prints what the allowlist
   *declined* beside what it took, because that column is the correctness half.
 
+**Measured before it was defaulted, and then not defaulted.** Chisle ships its
+compressor on. `bb sieve` ships off, because replaying it across four workspaces
+on one box gave 1.8%, 15.9%, 18.7% and 34.1% of tool output — and the largest
+sample, 29 sessions, is the 1.8% — while in all four the saving was almost
+entirely the **elide** tier: scrub and dedup together never reached 3% of the
+win. There is therefore no lossless default worth shipping, and the lossy one
+buys a benefit that depends entirely on what a workspace's sessions run. The
+replay reports the split so the decision belongs to the reader; the default does
+not guess for them.
+
+That also corrects a claim this repo nearly published. On bundlebox's own
+transcripts the ESTIMATE and MEASURED token figures agreed to 0.2%, which read
+as a result about the estimator. Across the other three workspaces they diverge
+by up to 58%. One workspace is not a calibration.
+
 **Still not taken:** the ruleset. The objection above stands.
 
 ### caliper, read again → `bb uptake`
