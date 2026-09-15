@@ -1,0 +1,119 @@
+// runjson.test.js — a `run` step whose stdout is JSON is assertable like a
+// response, and BOTH engines must agree about it.
+//
+// This is the test that matters more than the feature. The kernel implements
+// `run` steps too; a body key it did not understand would be a step it ran and
+// silently did not check, and the board would be green for the worst possible
+// reason. So every assertion here is made twice — once through the JS engine,
+// once through the kernel — and compared.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { checkCmd, stdoutBody, BODY_KEYS } from "../src/cookbook/expect.js";
+
+const PAYLOAD = JSON.stringify({
+  label: "catalogue", blank: false, nodes: 3,
+  screen: [
+    { role: "searchbox", name: "Search the catalogue" },
+    { role: "button", name: "Add to cart" },
+    { role: "button", name: "Add to cart", disabled: true },
+  ],
+});
+
+test("stdout is a body only when it is an object or an array", () => {
+  assert.deepEqual(stdoutBody('{"a":1}'), { a: 1 });
+  assert.deepEqual(stdoutBody("[1,2]"), [1, 2]);
+  // A command printing a bare scalar has not returned a body. Treating `true`
+  // as one would make a `json` assertion pass against nothing.
+  assert.equal(stdoutBody("true"), null);
+  assert.equal(stdoutBody("42"), null);
+  assert.equal(stdoutBody("ok"), null);
+  assert.equal(stdoutBody(""), null);
+  assert.equal(stdoutBody("{not json"), null);
+});
+
+test("a body key asserts against stdout, and counts as an assertion", () => {
+  const r = checkCmd({ rc: 0, json: { "screen.0.role": "searchbox" } }, { rc: 0, stdout: PAYLOAD, stderr: "", ms: 5 });
+  assert.deepEqual(r.why, []);
+  assert.equal(r.n, 2, "the rc and the json both count, so the step is not `empty`");
+});
+
+test("a body key that does not hold fails, and says what it got", () => {
+  const r = checkCmd({ json: { "screen.0.role": "button" } }, { rc: 0, stdout: PAYLOAD, stderr: "", ms: 5 });
+  assert.equal(r.why.length, 1);
+  assert.match(r.why[0], /screen\.0\.role/);
+});
+
+test("a body key against stdout that is not JSON is a failure, not a pass", () => {
+  // The dangerous case. Silently skipping would make a step that asserts
+  // nothing look like a step that held.
+  const r = checkCmd({ json_present: ["screen"] }, { rc: 0, stdout: "some human output", stderr: "", ms: 5 });
+  assert.ok(r.why.length, "it must fail");
+  assert.match(r.why[0], /not a JSON object or array/);
+  assert.ok(r.n > 0, "and it must count as asserted, or the step reads as empty");
+});
+
+test("rc and max_ms stay the command's own and are not double-counted", () => {
+  const r = checkCmd({ rc: 1, max_ms: 1, json: { blank: false } }, { rc: 0, stdout: PAYLOAD, stderr: "", ms: 999 });
+  assert.equal(r.why.length, 2, "rc and max_ms, once each; the json held");
+  assert.ok(r.why.some((w) => /^rc 0/.test(w)));
+  assert.ok(r.why.some((w) => /budget 1ms/.test(w)));
+});
+
+test("counting and set membership work against stdout", () => {
+  const r = checkCmd({
+    json_len_at_least: { screen: 3 },
+    json_type: { "screen.1.name": "str" },
+    json_in: { "screen.2.disabled": [true] },
+  }, { rc: 0, stdout: PAYLOAD, stderr: "", ms: 1 });
+  assert.deepEqual(r.why, []);
+  assert.equal(r.n, 3);
+});
+
+test("the kernel and the JS engine agree about a run step with body keys", async (t) => {
+  const kernel = await import("../src/core/kernel.js");
+  if (!kernel.available()) return t.skip("no kernel binary on this box");
+
+  const { run } = await import("../src/cookbook/engine.js");
+  // `node -p` rather than a shell heredoc: this has to run where the runner
+  // does, and Windows has no `cat`.
+  const emit = `node -p ${JSON.stringify(`JSON.stringify(${PAYLOAD})`)}`;
+  const spec = {
+    base: "http://127.0.0.1:1", rpm: 0, parallel: 1, timeout_ms: 20000,
+    timezone: "UTC", tz_offset_minutes: 0, headers: {}, vars: {}, actors: {}, setup: [],
+    root: process.cwd(), cap_bytes: 1200, max_429: 0,
+    scenarios: [{
+      id: "screen", surface: "ui", severity: "low", title: "the screen has what it should",
+      steps: [
+        { name: "it holds", run: emit, expect: { rc: 0, json: { "screen.0.role": "searchbox" }, json_len_at_least: { screen: 3 } } },
+        { name: "it does not", run: emit, expect: { json: { "screen.0.role": "button" } } },
+        { name: "stdout is not a body", run: "echo plain", expect: { json_present: ["screen"] } },
+      ],
+    }],
+  };
+
+  const js = await run(spec, { engine: "js" });
+  const k = await run(spec, { engine: "kernel" });
+  assert.equal(js.engine ?? "js", "js");
+
+  const shape = (board) => (board.scenarios[0].steps || []).map((s) => ({ state: s.state, whys: s.why.length }));
+  assert.deepEqual(shape(k), shape(js), "one contract, two implementations");
+  assert.deepEqual(shape(js), [
+    { state: "passed", whys: 0 },
+    { state: "failed", whys: 1 },
+    { state: "failed", whys: 1 },
+  ]);
+});
+
+test("every body key is one the kernel also knows", async (t) => {
+  const kernel = await import("../src/core/kernel.js");
+  if (!kernel.available()) return t.skip("no kernel binary");
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const rs = fs.readFileSync(path.join(process.cwd(), "kernel", "src", "scenario", "expect.rs"), "utf8");
+  const m = /pub const BODY_KEYS: &\[&str\] = &\[([^\]]*)\]/s.exec(rs);
+  assert.ok(m, "the kernel declares BODY_KEYS");
+  const theirs = [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+  // Two lists that drifted would be one engine checking a key the other
+  // ignored, which is exactly the silent divergence this feature could cause.
+  assert.deepEqual([...theirs].sort(), [...BODY_KEYS].sort());
+});

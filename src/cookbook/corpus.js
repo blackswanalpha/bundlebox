@@ -116,15 +116,22 @@ export function spec(c, { base = "", rpm = null, only = "", ids: pick = null, pa
   let scenarios = c.scenarios;
   if (only) { const want = new Set(String(only).split(",").map((s) => s.trim()).filter(Boolean)); scenarios = scenarios.filter((s) => want.has(s.surface)); }
   if (pick) { const want = new Set(pick); scenarios = scenarios.filter((s) => want.has(s.id)); }
+  const resolved = base || p.base || "";
   return {
-    base: base || p.base || "",
+    base: resolved,
     rpm: rpm == null ? (p.rpm ?? 55) : Number(rpm),
     parallel: parallel == null ? (p.parallel ?? 1) : Number(parallel),
     timeout_ms: p.timeout_ms ?? 20000,
     timezone: p.timezone || "UTC",
     tz_offset_minutes: p.tz_offset_minutes ?? 0,
     headers: p.headers || {},
-    vars: p.vars || {},
+    // `{{base}}` is always the base this board actually ran against, and it is
+    // set AFTER the persona's own vars so it cannot be shadowed. A corpus that
+    // could disagree with the base printed at the top of the board would be
+    // asserting against a different world than the one it names — and the `run`
+    // and `static` steps have no other way to reach it, since only `do` steps
+    // get the base prefixed for them.
+    vars: { ...(p.vars || {}), base: resolved },
     actors: p.actors || {},
     setup: p.setup || [],
     root,
