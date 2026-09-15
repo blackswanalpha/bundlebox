@@ -25,7 +25,7 @@ use crate::rx;
 use crate::subst::{self, at, len_of, show, type_name, Clock};
 use std::collections::BTreeMap;
 use std::io::Read;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -400,7 +400,10 @@ fn cmd_step(run: &Run, step: &Json, vars: &BTreeMap<String, Json>, name: &str) -
         return Step { name: name.into(), kind: "cmd", state: "error".into(), status: None, ms: 0.0, why: vec![format!("unresolved token(s): {}", missing.join(", "))], request: cmd, evidence };
     }
     let t0 = Instant::now();
-    let child = Command::new("bash").arg("-lc").arg(format!("set -o pipefail; {{ {} ; }}", cmd)).current_dir(&run.root)
+    // Same shell selection as the gate: `bash` does not exist on Windows, and a
+    // spawn error there is not a failing step, it is no step at all. stderr is
+    // kept separate here, so the merge is off.
+    let child = crate::gate::shell(&cmd, false).current_dir(&run.root)
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
     let mut child = match child { Ok(c) => c, Err(e) => return Step { name: name.into(), kind: "cmd", state: "error".into(), status: None, ms: 0.0, why: vec![format!("spawn: {}", e)], request: cmd, evidence } };
     let mut so = child.stdout.take().unwrap();

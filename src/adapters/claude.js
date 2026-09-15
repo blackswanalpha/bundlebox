@@ -25,8 +25,17 @@ export const LEAN_FLAGS = ["--strict-mcp-config", "--disable-slash-commands", "-
 export const PROJECTS = path.join(os.homedir(), ".claude", "projects");
 
 /** ~/.claude/projects directory name for a cwd. `/`, `.` and `_` all become `-`,
- *  which is what Claude Code does on this box. */
-export const slug = (p) => String(p).replace(/[/._]/g, "-");
+ *  which is what Claude Code does on this box.
+ *
+ *  A Windows path also carries `\\` and a drive colon, and neither is legal in a
+ *  directory name: `slug("C:\\Users\\me\\ws")` used to return itself, and the
+ *  caller then tried to create `projects\\C:\\Users\\me\\ws` and got ENOENT.
+ *
+ *  UNVERIFIED on Windows: what Claude Code itself writes there has not been
+ *  observed from this box. `transcriptDirs` matches against the real directory
+ *  listing, so a wrong guess finds nothing — exactly what happens today — but it
+ *  no longer builds a path the OS refuses. */
+export const slug = (p) => String(p).replace(/[/\\:._]/g, "-");
 
 /** The window a turn arrived in: what the provider re-read to answer it. */
 export const windowOf = (u) => num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);

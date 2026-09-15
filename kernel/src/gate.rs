@@ -8,6 +8,34 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// The shell that runs a command, per platform.
+///
+/// `set -o pipefail` is the whole point of the POSIX wrapping: without it a pipe
+/// eats the exit code and every acceptance passes. cmd.exe has neither that nor
+/// a `bash` to run it, so hard-coding one made every gate on Windows come back
+/// as a spawn error instead of a verdict — and a spawn error is not a failing
+/// gate, it is no gate at all.
+///
+/// `cfg!` and not `#[cfg]`: both arms are type-checked on every platform, so the
+/// branch that only ever runs on Windows cannot be the one that fails to build
+/// there.
+///
+/// `merge_stderr` because the two callers differ: the gate sends stderr to null
+/// and wants the shell to have merged it into stdout first, while the scenario
+/// runner pipes the two separately and needs them kept apart.
+pub fn shell(cmd: &str, merge_stderr: bool) -> Command {
+    let redir = if merge_stderr { " 2>&1" } else { "" };
+    if cfg!(windows) {
+        let mut c = Command::new(std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()));
+        c.arg("/d").arg("/s").arg("/c").arg(format!("{}{}", cmd, redir));
+        c
+    } else {
+        let mut c = Command::new("bash");
+        c.arg("-lc").arg(format!("set -o pipefail; {{ {} ; }}{}", cmd, redir));
+        c
+    }
+}
+
 pub fn op_gate(input: &Json) -> Json {
     let cmd = input.string("cmd", "");
     let cwd = input.string("cwd", ".");
@@ -15,9 +43,8 @@ pub fn op_gate(input: &Json) -> Json {
     let cap = input.num("cap_bytes", 4000.0) as usize;
     let mut out = Json::obj();
     if cmd.trim().is_empty() { out.set("rc", Json::Null); out.set("verdict", "unproven".into()); out.set("why", "no acceptance command".into()); return out; }
-    let wrapped = format!("set -o pipefail; {{ {} ; }} 2>&1", cmd);
     let started = Instant::now();
-    let mut child = match Command::new("bash").arg("-lc").arg(&wrapped).current_dir(&cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
+    let mut child = match shell(&cmd, true).current_dir(&cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
         Ok(c) => c, Err(e) => { out.set("rc", 127.into()); out.set("verdict", "failed".into()); out.set("why", format!("spawn: {}", e).into()); return out; }
     };
     let mut stdout = child.stdout.take().unwrap();

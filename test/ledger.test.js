@@ -10,7 +10,11 @@ const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-ledger-"))
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox"), { recursive: true });
 process.env.BB_ROOT = root;
+// os.homedir() reads USERPROFILE on Windows and HOME on POSIX, so a test that
+// sets only HOME points the adapters at the real profile there and finds
+// nothing. Both, so the scratch dir is the home on either.
 process.env.HOME = tmp;
+process.env.USERPROFILE = tmp;
 const ledger = await import("../src/tokens/ledger.js");
 const session = await import("../src/tokens/session.js");
 const store = await import("../src/core/store.js");
@@ -104,4 +108,12 @@ test("episodes are attributed by time and null timestamps attribute nothing", as
   store.append("usage", { session_id: "s-nots", msg_id: "m1", agent: "claude", model: "claude-sonnet-5", input: 5, output: 5, cache_write: 0, cache_read: 0, ts: null });
   const n = await session.measure({ sessionId: "s-nots" });
   assert.equal(n.saved.automation_turns, 0);
+});
+
+test("the transcript directory name is a legal directory name", () => {
+  // `path.join(projects, slug(root))` on Windows used to build
+  // `projects\\C:\\Users\\...\\ws` and die with ENOENT, because slug left the
+  // backslashes and the drive colon in place.
+  assert.ok(!/[\\:]/.test(slug("C:\\Users\\me\\Documents\\ws")), slug("C:\\Users\\me\\Documents\\ws"));
+  assert.equal(slug("/home/me/Documents/my_ws"), "-home-me-Documents-my-ws", "POSIX naming is unchanged");
 });
