@@ -56,6 +56,10 @@ export const CLAUDE_HOOKS = [
   { event: "SessionStart", cmd: "session-start", timeout: 30 },
   { event: "UserPromptSubmit", cmd: "prompt", timeout: 15 },
   { event: "PreToolUse", matcher: "Read", cmd: "pre-read", timeout: 10 },
+  // No matcher: which tools it may touch is an allowlist inside the handler, so
+  // a tool added to Claude Code cannot quietly become eligible by matching a
+  // pattern here. Off unless `sieve.enabled`, and the handler returns instantly.
+  { event: "PostToolUse", cmd: "post-tool", timeout: 15 },
   { event: "PreCompact", cmd: "pre-compact", timeout: 30 },
   { event: "SessionEnd", cmd: "session-end", timeout: 120, statusMessage: "bundlebox: measuring what this session used and saved" },
 ];

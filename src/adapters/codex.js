@@ -86,13 +86,16 @@ export default {
     let model = null, n = 0;
     const turns = [];
     let pending = turn({ msgId: "" });
+    // Codex emits function_call then function_call_output in file order, so the
+    // name of the call still open is the name of the next output.
+    let openCall = "";
     for (const o of lines) {
       const p = o.payload || {};
       if (o.type === "turn_context" && p.model && !model) model = String(p.model);
       if (o.type === "response_item") {
         if (p.type === "message" && p.role === "assistant") pending.text += (pending.text ? "\n" : "") + blockText(p.content);
-        else if (p.type === "function_call") pending.toolUses.push({ name: p.name || "", input: p.arguments ?? "" });
-        else if (p.type === "function_call_output") { const t = blockText(p.output); pending.toolResults.push({ chars: t.length, text: t }); }
+        else if (p.type === "function_call") { openCall = p.name || ""; pending.toolUses.push({ id: String(p.call_id || ""), name: openCall, input: p.arguments ?? "" }); }
+        else if (p.type === "function_call_output") { const t = blockText(p.output); pending.toolResults.push({ chars: t.length, text: t, id: String(p.call_id || ""), tool: openCall }); openCall = ""; }
       }
       if (o.type === "event_msg" && p.type === "token_count") {
         const u = p.info?.last_token_usage;

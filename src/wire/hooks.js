@@ -69,6 +69,15 @@ async function preRead(payload) {
     permissionDecisionReason: capTokens(`bundlebox: ${path.basename(fp)} is ~${Math.round(tokens / 1000)}k tokens (${Math.round(100 * tokens / capacity)}% of the working window). Read a range with offset/limit; \`bb pinpoint\` or the bb_pinpoint tool quotes the region you need.`, CAPS["pre-read"]) } });
 }
 
+/** The input axis. Imported lazily: every other hook on this list runs once per
+ *  session or once per prompt, and this one runs once per TOOL CALL, so the
+ *  cost of loading a module it will not use is paid hundreds of times. */
+async function postTool(payload) {
+  if (!load().sieve?.enabled) return;
+  const { postTool: run } = await import("../sieve/index.js");
+  run(payload);
+}
+
 async function preCompact(payload) {
   store.append("episodes", { kind: "hook", verb: "compaction", features: { trigger: payload.trigger || "auto" }, rc: 0, seconds: 0, produced: 0, turns_saved: 0, session_id: payload.session_id || "" });
 }
@@ -88,6 +97,7 @@ export async function handle(event) {
     if (event === "session-start") await sessionStart(payload);
     else if (event === "prompt") await prompt(payload);
     else if (event === "pre-read") await preRead(payload);
+    else if (event === "post-tool") await postTool(payload);
     else if (event === "pre-compact") await preCompact(payload);
     else if (event === "session-end" || event === "stop") await sessionEnd(payload);
     else log(event || "(none)", "unknown event");
@@ -97,4 +107,4 @@ export async function handle(event) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "pre-compact", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "post-tool", "pre-compact", "session-end"];

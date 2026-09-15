@@ -127,6 +127,12 @@ export default {
     const lines = jsonLines(file);
     if (!lines) return null;
     let sessionId = null, cwd = null, model = null, saw = false, last = null;
+    // A tool_result names only the id it answers, and the id was minted in an
+    // earlier line. Without this map every result reads as an anonymous blob,
+    // which is exactly the fact `bb sieve` needs (a Read is never compressed,
+    // a Bash dump is). The map spans the file because a result can arrive
+    // several turns after its call.
+    const toolName = new Map();
     const byId = new Map(), turns = [];
     for (const o of lines) {
       if (o.sessionId && !sessionId) sessionId = String(o.sessionId);
@@ -144,7 +150,10 @@ export default {
         for (const b of Array.isArray(m.content) ? m.content : []) {
           if (!b || typeof b !== "object") continue;
           if (b.type === "text") t.text += (t.text ? "\n" : "") + (b.text || "");
-          else if (b.type === "tool_use") t.toolUses.push({ name: b.name || "", input: b.input ?? {} });
+          else if (b.type === "tool_use") {
+            t.toolUses.push({ id: String(b.id || ""), name: b.name || "", input: b.input ?? {} });
+            if (b.id) toolName.set(String(b.id), b.name || "");
+          }
         }
         if (!model) model = m.model || null;
         last = t;
@@ -155,7 +164,10 @@ export default {
         for (const b of c) {
           if (!b || b.type !== "tool_result") continue;
           const text = blockText(b.content);
-          last.toolResults.push({ chars: text.length, text });
+          const id = String(b.tool_use_id || "");
+          // "" means the call is not in this file (a resumed session), which is
+          // a different fact from "a tool with no name" and readers treat it so.
+          last.toolResults.push({ chars: text.length, text, id, tool: toolName.get(id) || "" });
         }
       }
     }

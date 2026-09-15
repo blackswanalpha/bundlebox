@@ -81,9 +81,9 @@ export default {
         if (!p) continue;
         if (p.type === "text") text += (text ? "\n" : "") + (p.text || "");
         else if (p.type === "tool") {
-          toolUses.push({ name: p.tool || "", input: p.state?.input ?? {} });
+          toolUses.push({ id: String(p.callID || p.id || ""), name: p.tool || "", input: p.state?.input ?? {} });
           const out = p.state?.output;
-          if (typeof out === "string") toolResults.push({ chars: out.length, text: out });
+          if (typeof out === "string") toolResults.push({ chars: out.length, text: out, id: String(p.callID || p.id || ""), tool: p.tool || "" });
         }
       }
       turns.push(turn({ msgId: m.id, ts: m.time?.created ? new Date(m.time.created).toISOString() : null, model: m.modelID || "", ...u, toolUses, toolResults, text }));

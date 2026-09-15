@@ -97,6 +97,21 @@ export const DEFAULTS = {
     gate_timeout: 1800,
   },
   headroom: { enabled: false, port: 8787, host: "127.0.0.1" },
+  sieve: {
+    // The input axis: a tool result shrunk before it enters the window. Off
+    // until it is turned on, because the elide tier is the only lossy thing in
+    // this box and `bb sieve replay` measures it for nothing first.
+    enabled: false,
+    // The share of the WORKING window (max_tokens - reserve_output) one tool
+    // result may occupy before its middle is cut. A share, not a constant: the
+    // same log is 6% of a 130k window and 1.5% of a 500k one.
+    max_share: 0.02,
+    head_lines: 60,          // kept from the top: the command and what it opened with
+    tail_lines: 40,          // kept from the bottom: the result, and how it ended
+    // Empty = the built-in allowlist (see src/sieve/compress.js). Naming tools
+    // here replaces it entirely, including the mcp__ prefix rule.
+    tools: [],
+  },
   bridge: {
     enabled: false,          // nothing leaves this box until somebody sets it
     daily_budget_usd: 0,     // across every call; 0 disables the ceiling, not the guard

@@ -33,6 +33,8 @@ bb runbook   ->  the system  is it up, is it ANSWERING, what broke since    0 to
 bb recom     ->  an answer   what was already driven, and whether it holds   0 tokens
 bb recom gate->  a decision  and therefore whether to drive at all           0 tokens
 bb dotty     ->  a screen    what it showed, as rows a session can diff      0 tokens
+bb sieve     ->  a window    a tool result shrunk before it is billed twice    0 tokens
+bb uptake    ->  a verdict   of everything wired in, what sessions reached for 0 tokens
 bb monitor   ->  the window  what the 5-hour block has left, and the guard   0 tokens
 bb session   ->  the bill    what a session used and saved, measured         0 tokens
 ```
@@ -106,7 +108,7 @@ MCP server entry. `bb unwire` removes only its own blocks.
 
 | agent | instructions | hooks | MCP |
 |---|---|---|---|
-| Claude Code | `CLAUDE.md` | SessionStart (table index), PreToolUse Read (range advice past 35% of the window), PreCompact, SessionEnd (the bill) | `.mcp.json` |
+| Claude Code | `CLAUDE.md` | SessionStart (table index), PreToolUse Read (range advice past 35% of the window), PostToolUse (the sieve, off until `sieve.enabled`), PreCompact, SessionEnd (the bill) | `.mcp.json` |
 | Codex CLI | `AGENTS.md` | — | `.codex/config.toml` |
 | Gemini CLI | `GEMINI.md` | — | `.gemini/settings.json` |
 | Cursor | `.cursor/rules/bundlebox.mdc` | — | `.cursor/mcp.json` |
@@ -138,6 +140,8 @@ MCP server entry. `bb unwire` removes only its own blocks.
 | `recom` | has this automation already been run, and is its result still true; a record declares the facts it rests on and they are re-probed on every read — `fresh`, `stale` naming what moved, or `unknown`. `bb recom gate <id> -- <cmd>` wires that verdict straight to the decision, so an expensive drive happens only when its answer stopped holding | 0 |
 | `dotty` | what the screen showed, over the Chrome DevTools Protocol with no dependency: a PNG for a person and an accessibility summary for the session, a frame each side of a command, and a BLANK verdict on a frame that is a picture of nothing | 0 |
 | `slop` | the prose ruleset every brief, commit message and PR body is stripped by before a lane is billed for it | 0 |
+| `sieve` | the input axis: a tool result scrubbed, deduped or elided before it enters the window, so a 4,000-line log is not re-sent on every later turn. Read/Edit/Write are never touched, error lines are carried out of the cut, and the dropped middle spills to disk so recovery is a grep. `bb sieve replay` measures it against this workspace's own transcripts before anything is wired | 0 |
+| `uptake` | installed is not used: which of the wired surfaces — the MCP tools, `bb` itself, `pinpoint`, the reference tables — sessions actually reached for, against the moments each one was for, with every miss and what the session did instead. A surface that arrives in the system prompt is reported as not observable, never as 0% | 0 |
 | `frames` | a dataframe over the factory's own data with evals as JSON files a person can argue with | 0 |
 | `auditor` | the bar declared BEFORE the work — scope, standards, governance, assurance, derived from the tree's own signals — then `gate` checks it after, where `unproven` never reads as green. Dated per-area reviews are ingested as findings and checked for drift | 0 |
 | `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
