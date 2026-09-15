@@ -154,8 +154,16 @@ test("scopeToRepo: an absolute scope path inside the repo is kept, outside is dr
   assert.deepEqual(g.scopeToRepo(["/etc/passwd"], at).local, []);
 });
 
-test("canon settles a path and never throws on one that is not there", () => {
-  assert.equal(g.canon(root), fs.realpathSync(root));
+test("canon names one directory one way, and never throws on one that is not there", () => {
+  // Deliberately NOT asserted equal to realpathSync: on Windows that returns the
+  // 8.3 short name and canon returns the long one, which is the whole point of
+  // it. What must hold everywhere is that it is stable and still the same
+  // directory.
+  const once = g.canon(root);
+  assert.equal(g.canon(once), once, "idempotent");
+  assert.equal(g.canon(path.join(root, "src")), path.join(once, "src"),
+    "a child of a canonical directory is canonical too");
+  assert.ok(fs.existsSync(path.join(once, "src", "a.js")), "and it still points at the same tree");
   const missing = path.join(root, "no", "such", "place");
   assert.equal(g.canon(missing), missing, "an unresolvable path comes back unchanged");
 });
