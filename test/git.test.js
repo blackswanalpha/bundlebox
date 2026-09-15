@@ -167,3 +167,29 @@ test("canon names one directory one way, and never throws on one that is not the
   const missing = path.join(root, "no", "such", "place");
   assert.equal(g.canon(missing), missing, "an unresolvable path comes back unchanged");
 });
+
+// ── a shell is where argument quoting is lost ───────────────────────────────
+test("shellFor: only a script shim takes the shell, and never off Windows", async () => {
+  const { shellFor } = await import("../src/core/exec.js");
+  // The bug: `git` has no .exe suffix, so it took the shell, and cmd.exe does
+  // not quote — a commit message arrived as five pathspecs.
+  assert.equal(shellFor("C:\\Program Files\\Git\\bin\\git.exe", { win: true }), false);
+  assert.equal(shellFor("C:\\Program Files\\nodejs\\node.exe", { win: true }), false);
+  assert.equal(shellFor("C:\\x\\y.COM", { win: true }), false, "case does not matter");
+  // A .cmd shim genuinely cannot be spawned without one on Node >= 20.
+  assert.equal(shellFor("C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd", { win: true }), true);
+  assert.equal(shellFor("C:\\x\\thing.bat", { win: true }), true);
+  assert.equal(shellFor("git", { win: true }), true, "unresolved: the shim path is the safe assumption");
+  assert.equal(shellFor("git", { win: false }), false, "nothing off Windows ever needs it");
+  assert.equal(shellFor("/usr/bin/git", { win: false }), false);
+});
+
+test("an argument with spaces survives the spawn", async () => {
+  const { run } = await import("../src/core/exec.js");
+  // The shape that broke: one argv entry holding spaces and punctuation. Node
+  // quotes it correctly only when no shell is in the way.
+  const msg = "docs(src): close 1 doc-links finding in src";
+  const r = run([process.execPath, "-e", "process.stdout.write(process.argv[1])", msg]);
+  assert.equal(r.rc, 0, r.err);
+  assert.equal(r.out, msg, "one argument in, one argument out");
+});
