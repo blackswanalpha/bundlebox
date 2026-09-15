@@ -17,7 +17,15 @@ jobs:
           - { os: ubuntu-latest,  target: x86_64-unknown-linux-gnu,  asset: bbk-linux-x64 }
           - { os: ubuntu-latest,  target: aarch64-unknown-linux-gnu, asset: bbk-linux-arm64, cross: true }
           - { os: macos-latest,   target: aarch64-apple-darwin,      asset: bbk-darwin-arm64 }
-          - { os: macos-13,       target: x86_64-apple-darwin,       asset: bbk-darwin-x64 }
+          # x86_64 darwin is CROSS-COMPILED from the Arm64 runner, not built on
+          # an Intel one. `macos-13` was the Intel image and GitHub has retired
+          # it: a job asking for that label is never assigned a runner, sits
+          # queued until the six-hour timeout, and takes the publish job with it
+          # because `publish` needs every kernel build. The surviving Intel
+          # labels (`macos-15-intel`, `macos-15-large`) are larger runners and
+          # are billed even on a public repo. Apple's SDK is universal, so the
+          # Arm64 runner builds this target natively with no emulation.
+          - { os: macos-latest,   target: x86_64-apple-darwin,       asset: bbk-darwin-x64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc,    asset: bbk-win32-x64.exe }
     runs-on: ${{ matrix.os }}
     steps:
