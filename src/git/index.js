@@ -156,6 +156,49 @@ export function message({ detector = "", findings = [], scope = [], acceptance =
   return `${type}(${area}): ${subject}\n\n${body.join("\n")}\n`;
 }
 
+/** The name the OS itself gives a path, for comparing two spellings of one
+ *  directory.
+ *
+ *  `fs.realpathSync` resolves symlinks, which is enough on macOS, where a temp
+ *  dir is `/var/...` and git reports `/private/var/...`. It does NOT resolve a
+ *  Windows 8.3 short name: `os.tmpdir()` hands back `C:\Users\RUNNER~1\...`
+ *  and stays short, while `git rev-parse --show-toplevel` always reports the
+ *  long form. The two then compare as different directories, every scope path
+ *  lands "outside" the repository, and nothing is ever staged.
+ *  `realpathSync.native` asks the OS for the final name, which settles both the
+ *  short name and the drive-letter case git and Node disagree about. */
+export function canon(p) {
+  for (const f of [fs.realpathSync.native, fs.realpathSync]) {
+    try { return f(p); } catch { /* not on disk, or no native call on this build */ }
+  }
+  return p;
+}
+
+/** Unit scope paths as paths relative to the repository top level, and which
+ *  base they were read against.
+ *
+ *  Scope is workspace-relative, which only means something while the repository
+ *  is inside the workspace. `--cwd` on a checkout somewhere else leaves no
+ *  workspace path to be relative TO, so there the scope is read against the
+ *  repository — the only reading it can have.
+ *
+ *  Pure, and takes its `path` implementation, so the Windows arithmetic can be
+ *  tested on a machine that is not Windows. */
+export function scopeToRepo(want, { root, repo, p = path } = {}) {
+  const under = (parent, child) => {
+    const r = p.relative(parent, child);
+    return r === "" || (!r.startsWith("..") && !p.isAbsolute(r));
+  };
+  const workspace = under(root, repo);
+  const from = workspace ? root : repo;
+  const out = [];
+  for (const s of want || []) {
+    const r = p.relative(repo, p.isAbsolute(s) ? s : p.join(from, s)).replace(/\\/g, "/");
+    if (r && !r.startsWith("..")) out.push(r);
+  }
+  return { local: [...new Set(out)], base: workspace ? "workspace" : "repo" };
+}
+
 /** Stage ONLY the dirty files inside the unit scope and commit them. */
 export function commit({ cwd = ROOT, scope = [], findings = [], detector = "", acceptance = [], apply = false } = {}) {
   const want = [...new Set((scope || []).map(String).filter(Boolean))];
@@ -163,24 +206,18 @@ export function commit({ cwd = ROOT, scope = [], findings = [], detector = "", a
   const d = repoDir(cwd);
   const changed = dirtyFiles(d);
   if (!changed.length) return { ok: true, changed: false, repo: rel(d), why: "clean tree" };
-  // Scope paths are workspace-relative; git speaks repo-relative. Both sides
-  // are compared as real paths: on macOS a temp dir is /var/... and git
-  // reports /private/var/..., and a relative() across that reads as outside.
-  const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
-  const dReal = real(d), rootReal = real(ROOT);
-  const local = want.map((p) => path.relative(dReal, path.isAbsolute(p) ? real(p) : path.join(rootReal, p)).replace(/\\/g, "/")).filter((p) => p && !p.startsWith(".."));
-  // Every scope path landed outside this checkout. Almost always the scope was
-  // written relative to the repo when it is read relative to the WORKSPACE, and
-  // "none inside the unit scope" does not say that.
+  const dReal = canon(d), rootReal = canon(ROOT);
+  const { local, base } = scopeToRepo(want.map((s) => (path.isAbsolute(s) ? canon(s) : s)), { root: rootReal, repo: dReal });
   if (!local.length) {
-    // Relativised from the REAL paths, not through rel(): on Windows a temp
-    // directory has a short-name form, so rel() falls back to the absolute path
-    // and the suggestion comes out as `C:\\Users\\...\\proj/src`. The basename is
-    // the honest fallback when the repo is not under the workspace at all.
-    const r = path.relative(rootReal, dReal).replace(/\\/g, "/");
-    const prefix = r && !r.startsWith("..") ? r : path.basename(dReal);
-    return { ok: false, changed: false, repo: rel(d),
-      why: `every scope path is outside ${prefix}: scope is workspace-relative, so name ${want.map((x) => `${prefix}/${x}`).slice(0, 3).join(", ")}` };
+    const prefix = path.relative(rootReal, dReal).replace(/\\/g, "/");
+    // Two different failures, and they need different sentences. Under the
+    // workspace, the scope was almost certainly written relative to the repo:
+    // name the prefix that would have worked. Outside it, the scope simply is
+    // not in this checkout and there is no prefix to suggest.
+    const why = base === "workspace" && prefix && !prefix.startsWith("..")
+      ? `every scope path is outside ${prefix}: scope is workspace-relative, so name ${want.map((x) => `${prefix}/${x}`).slice(0, 3).join(", ")}`
+      : `no scope path is inside ${rel(d)}: ${want.slice(0, 3).join(", ")}`;
+    return { ok: false, changed: false, repo: rel(d), why };
   }
   const inScope = (p) => local.some((s) => p === s || p.startsWith(s.replace(/\/$/, "") + "/"));
   const staged = changed.filter((r) => inScope(r.path)).map((r) => r.path);
