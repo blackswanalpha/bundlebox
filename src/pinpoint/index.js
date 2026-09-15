@@ -45,6 +45,11 @@ const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "fo
 /** The most files a brief will ever name. Past this the prompt stops being a
  *  located scope and becomes a directory listing, whatever the budget allows. */
 export const GROW_CAP = 24;
+/** How far down the ranking the grow loop will look for something that fits.
+ *  The loop skips what it cannot afford instead of stopping, so it needs a
+ *  bound of its own: past forty the candidates are no longer about the problem
+ *  and each one costs a read to price. */
+export const GROW_TRIES = 40;
 /** How many ranked-but-unaffordable files the brief names as pointers. Naming
  *  one costs about fifteen tokens; budgeting one to be read costs its whole
  *  size times the churn factor. Twelve is where the list stops being a lead and
@@ -174,15 +179,33 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
   // written and nothing acted on it.
   //
   // So: take the next-ranked candidate while the unit is under the FLOOR and
-  // the addition still FITS. It stops at the first file that would not fit, at
-  // the floor, or at GROW_CAP, whichever comes first. Nothing is ever added
-  // past FITS, so the budget contract is unchanged.
+  // the addition still FITS. It stops at the floor, at GROW_CAP, or at
+  // GROW_TRIES, whichever comes first. Nothing is ever added past FITS, so the
+  // budget contract is unchanged.
+  //
+  // One correction to that, measured: the loop used to stop at the FIRST
+  // candidate that did not fit, which on a tree holding one oversized file
+  // stops it for every smaller file behind that one — and
+  // after a cut the first candidate it tries is precisely the file the cut loop
+  // just removed, so any unit that had to cut could never grow at all. Measured
+  // on SWE-bench Verified that is where the localisation gap lived: on xarray
+  // and seaborn the scope collapsed to 1-8 files at 3% of the window while the
+  // gold file sat below the cut, named but not budgeted.
+  //
+  // So an unaffordable candidate is now SKIPPED, not fatal. The price of a
+  // candidate is known before the unit is re-evaluated — payload plus that file
+  // against the payload capacity for this kind — so the loop only re-evaluates
+  // what it can actually afford, and GROW_TRIES bounds how far it looks.
   const grown = [];
+  const payloadCap = context.capacity(kind, { brief: estimate.text(String(problem).trim(), "prose") });
+  let tries = 0;
   for (const f of ranked.slice(scope.length)) {
-    if (!ev.underfilled || scope.length >= GROW_CAP) break;
+    if (!ev.underfilled || scope.length >= GROW_CAP || tries >= GROW_TRIES) break;
+    tries++;
+    if ((ev.parts?.payload || 0) + estimate.file(abs(f)) > payloadCap) continue;
     scope.push(f);
     const next = evalOf();
-    if (next.verdict !== "FITS") { scope.pop(); break; }
+    if (next.verdict !== "FITS") { scope.pop(); continue; }
     grown.push(f);
     ev = next;
   }

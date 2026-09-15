@@ -315,22 +315,23 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
   <p>What it measures is the half bundlebox is responsible for, on the same public instances: given only the issue text, does the context it packs contain the files the maintainer actually changed, and what does that context cost?</p>
 <pre><code>$ bb bench swebench run --n 20 --repos requests,flask,seaborn,pylint,pytest,xarray
 
-  LOCALISATION  in scope (budgeted to be read):  11 of 24 gold file(s) — 45.8%
+  LOCALISATION  in scope (budgeted to be read):  13 of 24 gold file(s) — 54.2%
                 named  (in scope, or pointed at):  17 of 24 — 70.8%
                 bare   (top 10 files read whole):  20 of 24 — 83.3%
-                10 instance(s) had every gold file in scope; 14 had every one named
-  CONTEXT       65.9k packed against 3.5M bare — 98.1% less, 53.4x</code></pre>
-  <p><strong>The bare arm still localises better.</strong> It reads ten whole files and finds four more gold files than the packed brief names, at fifty-three times the context. That is the trade this benchmark exists to put a number on, and printing only the half that flatters the tool would make the number worthless.</p>
+                11 instance(s) had every gold file in scope; 14 had every one named
+  CONTEXT       66.3k packed against 3.5M bare — 98.1% less, 53.1x</code></pre>
+  <p><strong>The bare arm still localises better.</strong> It reads ten whole files and finds three more gold files than the packed brief names, at fifty-three times the context. That is the trade this benchmark exists to put a number on, and printing only the half that flatters the tool would make the number worthless.</p>
   <p>Every input is public — the dataset over the Hugging Face datasets-server, the repository over a blobless <code>git clone</code> at the instance's own base commit. The run records the instance ids it used and the exact command that reproduces it, so the number can be contradicted rather than only repeated.</p>
   <h3>What the benchmark changed</h3>
   <p>It was run first, and then acted on. Four defects it exposed, each fixed and re-measured on the same twenty instances:</p>
   <table>
     <tr><th>What the run showed</th><th>What was wrong</th><th>Named recall after</th></tr>
     <tr><td>Test files ranked first on almost every issue</td><td>A test names the thing under test more often than the implementation does. Test files now score a third unless the issue is itself about a test.</td><td>—</td></tr>
-    <tr><td>Briefs came out at 2–5k tokens against a 120k floor</td><td>The scope could only shrink. It now grows into the budget that was already paid for, stopping at the first file that would not fit.</td><td>—</td></tr>
+    <tr><td>Briefs came out at 2–5k tokens against a 120k floor</td><td>The scope could only shrink. It now grows into the budget that was already paid for, skipping what it cannot afford rather than stopping there.</td><td>—</td></tr>
     <tr><td>The file the fix belonged in sat just outside the scope</td><td>Ranked candidates the budget could not afford were discarded. Naming one costs about fifteen tokens; budgeting one to be read costs its whole size times churn. They are now named.</td><td>54.2%</td></tr>
     <tr><td>An exact symbol match lost to three loose ones</td><td>Every symbol hit scored the same. A symbol that <em>is</em> one of the issue's words now scores far higher, and hits within one file decay.</td><td><strong>70.8%</strong></td></tr>
   </table>
+  <p>The same run priced a fifth defect. The grow loop stopped at the <em>first</em> candidate it could not afford, so one oversized file blocked every smaller file behind it and a scope that had been cut could never grow again. On repositories with large files the scope collapsed to 1–8 files at 3% of the window while the gold file sat below the cut, named but not budgeted. Skipping an unaffordable candidate instead of stopping took in-scope recall from <strong>45.8% to 54.2%</strong> for 0.6% more context.</p>
   <p class="muted">37.5% → 70.8% named recall over four changes, on the same instances, at the same context cost. The baseline run is on disk beside the current one.</p>
 </div></section>
 
