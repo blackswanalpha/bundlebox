@@ -1,0 +1,62 @@
+Every bug I shipped this week failed by looking like it was working.
+
+I spent the week pointing my own tool at my own repo. bundlebox is a CLI that
+runs before an AI coding agent and answers — for free — the questions the agent
+would otherwise pay tokens to answer: where does this symbol live, what proves a
+change here, what did the last session cost. Seven findings later, the pattern
+was the same every time. Not one of them threw an error.
+
+The cron line. `bb cron install` had been writing a crontab entry without the
+flag that makes it do anything. So every thirty minutes, on the dot, a worker
+woke up, reported "would-run" for each stage, wrote a clean log line, and went
+back to sleep. A green log, a correct schedule, an installed worker, and zero
+work done since the day it was set up.
+
+The coverage number. The matcher that decides whether a test corpus exercises a
+CLI compared the FIRST TOKEN of the command. Every command in a CLI shares it.
+So one test step running `bb scan` marked all twenty-three documented commands
+as covered, and a corpus with a single step reported 100%.
+
+The error rate. A load-test metric read every run ever stored and took the
+worst. One bad run — against a service that happened to be down that afternoon —
+pinned "100% error rate" to the dashboard permanently. The only way to clear it
+was to delete files, which is not a fix, it is tampering.
+
+The closer. A clean run could never close the findings a failed run opened,
+because the code only wrote findings when it FOUND some. Silence meant "nothing
+to say" where it should have meant "the problem is gone."
+
+And a `.gitignore` line. `dir/` instead of `dir/*`. Git cannot re-include a file
+inside an excluded directory, so the three exception lines under it were dead
+text. The test corpus I had just written would have been silently absent from
+every clone.
+
+None of these show up in a test suite, because they are all the ABSENCE of
+something. That is the whole design bet behind the tool: a check that only
+verifies the happy path cannot tell a working system from a stopped one.
+
+So v0.2.0 adds the instrument for it. `bb bench` runs the same task twice — once
+with the tool in front of it, once without — and both arms are token counts over
+files on disk, so neither calls a model and two runs return the same number. If
+it ever starts returning zero, a test fails. A measurement you cannot catch
+drifting is not a measurement.
+
+It also adds a corpus that runs the tool against itself in CI. That went from
+exercising 0% of what the README documents to 96.6%, and writing it is what
+surfaced four of the seven bugs above.
+
+Status, honestly: v0.2.0 is tagged and every gate is green — 225 tests, 23
+expert tests, 25 silent-failure checks, zero open high-severity findings. It is
+not on npm yet. The release stalled on a job requesting `macos-13`, a runner
+image GitHub retired. It did not fail. It sat in the queue with no runner
+assigned, reporting "queued", and would have done so for six hours before timing
+out.
+
+Seventh one this week. Same shape.
+
+MIT, zero npm dependencies, works with Claude Code, Codex, Gemini CLI, Cursor,
+Copilot, OpenCode and Aider.
+
+github.com/blackswanalpha/bundlebox
+
+#DeveloperTools #AIcoding #Observability #OpenSource #SoftwareEngineering

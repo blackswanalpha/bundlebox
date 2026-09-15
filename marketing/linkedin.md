@@ -122,3 +122,15 @@ still not move`), and the self-audit paragraph is not modesty, it is what makes
 the first half credible.
 
 Do not lead with 97%.
+
+## Post 3 — silent failures (v0.2.0 progress)
+
+Full text in `post-3-silent-failures.txt`. One thesis, six examples, and the
+seventh is the release itself still being stuck as you post it — which is the
+point, not an embarrassment. Do not soften the status paragraph: "tagged, green,
+not on npm yet, here is why" is more credible than waiting a day and claiming a
+clean launch.
+
+If the release has landed by the time you post, replace that paragraph with the
+npm line and keep the macos-13 story as the sixth example. The post still works.
+
