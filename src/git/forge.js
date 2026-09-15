@@ -12,6 +12,7 @@ import { ROOT, rel } from "../core/paths.js";
 import * as store from "../core/store.js";
 import { out } from "../core/log.js";
 import { repoDir, branch, defaultBranch } from "./repo.js";
+import { clean } from "../slop/index.js";
 
 let _gh;
 /** Can this box talk to GitHub. Memoised: `gh auth status` is a network call. */
@@ -36,7 +37,8 @@ export function ghJson(args, opts) {
 
 // ── pull requests ────────────────────────────────────────────────────────────
 
-/** The PR body a reviewer can act on, filled from what the lane closed. */
+/** The PR body a reviewer can act on, filled from what the lane closed.
+ *  Stripped by the prose ruleset like every other summary this factory writes. */
 export function prBody(lane = {}, findings = [], { base = "main", acceptance = null } = {}) {
   const units = store.get("units", []).filter((u) => (lane.unit_ids || []).includes(u.id));
   const acc = [...new Set((acceptance || units.map((u) => u.acceptance)).filter(Boolean))];
@@ -50,7 +52,7 @@ export function prBody(lane = {}, findings = [], { base = "main", acceptance = n
   ];
   const ids = findings.slice(0, 40).map((f) => `- \`${f.id}\` ${f.title || ""}`.trimEnd());
   const plan = acc.length ? acc.map((c) => `- [ ] \`${c}\``) : ["- [ ] (no automated acceptance recorded)"];
-  return `## Summary
+  return clean(`## Summary
 ${summary.join("\n")}
 
 ## Base
@@ -65,7 +67,7 @@ ${plan.join("\n")}
 ---
 Opened by bundlebox. The evidence was gathered by the local detectors; run
 \`bb explain <id>\` for the derivation behind any item above.
-`;
+`) + "\n";
 }
 
 /** Open a DRAFT pull request with an explicit base: GitHub's default is the

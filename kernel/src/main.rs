@@ -2,10 +2,10 @@
 //! writes one JSON object on stdout. Exit 0 on success, 2 on a bad op or bad
 //! input. Never prints anything else on stdout.
 mod json; mod sha1; mod walk; mod fingerprint; mod estimate; mod dupes; mod symbols; mod gate; mod worktree;
-mod http; mod rx; mod subst; mod scenario; mod simulate;
+mod http; mod rx; mod subst; mod scenario; mod simulate; mod digest; mod recom;
 use std::io::{Read, Write};
 
-const OPS: &[&str] = &["version", "walk", "fingerprint", "estimate", "dupes", "symbols", "anchor", "gate", "worktree", "worktree-prune", "sha1", "scenario", "simulate", "probe", "rx"];
+const OPS: &[&str] = &["version", "walk", "fingerprint", "estimate", "dupes", "symbols", "anchor", "gate", "worktree", "worktree-prune", "sha1", "scenario", "simulate", "probe", "rx", "digest", "recom"];
 
 fn main() {
     let op = std::env::args().nth(1).unwrap_or_default();
@@ -27,6 +27,8 @@ fn main() {
         "scenario" => scenario::op_scenario(&input),
         "simulate" => simulate::op_simulate(&input),
         "probe" => simulate::op_probe(&input),
+        "digest" => digest::op_digest(&input),
+        "recom" => recom::op_recom(&input),
         // Exposed so `test/kernel.test.js` can pin the pattern subset against
         // JavaScript's own RegExp instead of trusting two engines to agree.
         "rx" => { let mut o = json::Json::obj();

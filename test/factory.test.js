@@ -209,6 +209,8 @@ test("a log line becomes a signature with every digit, uuid, hash and path erase
   const a = runbook.signature('2026-09-14T10:00:00Z ERROR user 550e8400-e29b-41d4-a716-446655440000 failed after 1234ms at /srv/app/x.js');
   const b = runbook.signature('2026-09-14T11:22:33Z ERROR user 7c9e6679-7425-40de-944b-e07fc1f90ae7 failed after 99ms at /srv/app/y.js');
   assert.equal(a, b, "two instances of one failure must collapse to one row");
-  assert.match(a, /<uuid>/);
-  assert.match(a, /<n>/);
+  assert.ok(!/550e8400|7c9e6679/.test(a), "the uuid is identity, never the fact");
+  assert.ok(!/1234|99/.test(a), "the duration varies between two instances of one event");
+  assert.ok(!/srv/.test(a), "a path of three or more segments is erased");
+  assert.match(a, /^ERROR user/, "the timestamp is erased and the message survives");
 });

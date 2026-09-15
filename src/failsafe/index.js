@@ -90,8 +90,13 @@ export function status() {
   if (unproven.length) rows.push({ source: "units", key: "unproven", acceptance: "", title: `${unproven.length} unit(s) have no acceptance command`, evidence: { units: unproven.map((u) => u.id).slice(0, 8) } });
 
   const logs = runbook.digest({ since: true });
-  for (const l of logs) for (const sig of (l.signatures || []).filter((s) => /error|exception|fatal|panic|refused|timeout|traceback/i.test(s.sig)).slice(0, 6))
+  for (const l of logs.files || []) for (const sig of (l.signatures || []).filter((s) => /error|exception|fatal|panic|refused|timeout|traceback/i.test(s.sig)).slice(0, 6))
     rows.push({ source: "log", key: sig.sig.slice(0, 60), signature: sig.sig, title: `${sig.n}x ${sig.sig.slice(0, 80)}`, evidence: { file: l.file, count: sig.n, sample: sig.sample } });
+  // A named bucket outranks every signature guess: the workspace has already
+  // paid to learn what it means, and the row carries that sentence.
+  for (const b of logs.buckets || [])
+    rows.push({ source: "log", key: `bucket:${b.id}`, bucket: b.id, severity: b.severity, signature: b.id,
+      title: `${b.n}x ${b.id}: ${b.says}`, evidence: { count: b.n, sample: b.sample, severity: b.severity } });
 
   return { rows, blind };
 }

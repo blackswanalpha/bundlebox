@@ -101,6 +101,14 @@ pub fn op_simulate(input: &Json) -> Json {
 pub fn op_probe(input: &Json) -> Json {
     let targets: Vec<Json> = input.get("targets").and_then(|v| v.as_arr()).cloned().unwrap_or_default();
     let timeout = Duration::from_millis(input.num("timeout_ms", 3000.0) as u64);
+    // `wait_ms` turns a probe into a READINESS GATE: keep asking until the
+    // target answers or the deadline passes. A scenario run against a service
+    // that has not finished booting is the most expensive kind of red board
+    // there is — every step fails, every failure is filed, and a session pays
+    // to read a board about nothing. Waiting here costs wall clock and no
+    // tokens, so it is always the cheaper half of that trade.
+    let wait = Duration::from_millis(input.num("wait_ms", 0.0).max(0.0) as u64);
+    let gap = Duration::from_millis(input.num("gap_ms", 250.0).max(50.0) as u64);
     let results: Mutex<Vec<(usize, Json)>> = Mutex::new(Vec::new());
     let next = AtomicUsize::new(0);
     std::thread::scope(|scope| {
@@ -108,25 +116,38 @@ pub fn op_probe(input: &Json) -> Json {
             scope.spawn(|| loop {
                 let i = next.fetch_add(1, Ordering::Relaxed);
                 let Some(t) = targets.get(i) else { break };
-                let mut r = Json::obj();
-                r.set("name", t.string("name", "").into());
-                let u = t.string("url", "");
-                r.set("url", u.clone().into());
-                match parse_url(&u) {
-                    Err(e) => { r.set("state", "error".into()); r.set("why", e.into()); }
-                    Ok(url) if url.scheme == "https" => { r.set("state", "unknown".into()); r.set("why", "https: the kernel cannot probe TLS".into()); }
-                    Ok(url) => {
-                        let mut c = Conn::new(&url.host, url.port, timeout);
-                        match c.request(&t.string("method", "GET").to_uppercase(), &url.path, &[], None) {
-                            Ok(resp) => {
-                                r.set("state", (if (200..500).contains(&resp.status) { "up" } else { "degraded" }).into());
-                                r.set("status", Json::Num(resp.status as f64));
-                                r.set("ms", Json::Num(round1(resp.ms)));
+                let deadline = std::time::Instant::now() + wait;
+                let mut attempts = 0u32;
+                let mut r;
+                loop {
+                    attempts += 1;
+                    r = Json::obj();
+                    r.set("name", t.string("name", "").into());
+                    let u = t.string("url", "");
+                    r.set("url", u.clone().into());
+                    match parse_url(&u) {
+                        Err(e) => { r.set("state", "error".into()); r.set("why", e.into()); }
+                        Ok(url) if url.scheme == "https" => { r.set("state", "unknown".into()); r.set("why", "https: the kernel cannot probe TLS".into()); }
+                        Ok(url) => {
+                            let mut c = Conn::new(&url.host, url.port, timeout);
+                            match c.request(&t.string("method", "GET").to_uppercase(), &url.path, &[], None) {
+                                Ok(resp) => {
+                                    r.set("state", (if (200..500).contains(&resp.status) { "up" } else { "degraded" }).into());
+                                    r.set("status", Json::Num(resp.status as f64));
+                                    r.set("ms", Json::Num(round1(resp.ms)));
+                                }
+                                Err(e) => { r.set("state", "down".into()); r.set("why", e.into()); }
                             }
-                            Err(e) => { r.set("state", "down".into()); r.set("why", e.into()); }
                         }
                     }
+                    // `error` is the URL itself being wrong and `unknown` is a
+                    // scheme this kernel cannot read. Neither becomes true by
+                    // waiting, so only a transport failure is retried.
+                    let again = r.string("state", "") == "down" && std::time::Instant::now() + gap < deadline;
+                    if !again { break; }
+                    std::thread::sleep(gap);
                 }
+                if wait > Duration::from_millis(0) { r.set("attempts", Json::Num(attempts as f64)); }
                 results.lock().unwrap_or_else(|e| e.into_inner()).push((i, r));
             });
         }

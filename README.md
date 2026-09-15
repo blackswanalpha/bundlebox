@@ -29,6 +29,8 @@ bb compile   ->  units       what to do about the rest, packed to one window
 bb route     ->  lanes       who does it, where, in what wave
 bb run       ->  sessions    the only verb that spends
 bb git       ->  PRs         commit, push, draft PR, review, gated merge     0 tokens
+bb runbook   ->  the system  is it up, is it ANSWERING, what broke since    0 tokens
+bb recom     ->  an answer   what was already driven, and whether it holds   0 tokens
 bb monitor   ->  the window  what the 5-hour block has left, and the guard   0 tokens
 bb session   ->  the bill    what a session used and saved, measured         0 tokens
 ```
@@ -129,7 +131,10 @@ MCP server entry. `bb unwire` removes only its own blocks.
 | `snapgen`, `pinpoint`, `oversight` | fingerprinted tables; one problem → one budgeted brief; god files, bloat, duplication, vibe-coded marks and the guideline each produces | 0 |
 | `genesis` | a document or a prompt becomes a world model, a seeded corpus, and the briefs that fill it; coverage is a set difference | 0 |
 | `cookbook`, `simulate` | a persona's week against the running system, executed by the kernel; the same request at rising concurrency against a floor-relative budget | 0 |
-| `mainboard`, `runbook`, `failsafe` | six views over one ledger and which pipeline stage does not hold; services, log signatures by offset; what is failing, why, and the op | 0 |
+| `mainboard`, `failsafe` | six views over one ledger and which pipeline stage does not hold; what is failing, why, and the op | 0 |
+| `runbook` | declared services and groups; `up` refuses a set whose cages exceed free memory and `--wait` returns when the service ANSWERS; 40,000 log lines as twenty signatures and the failures this workspace already paid to learn, arriving named | 0 |
+| `recom` | has this automation already been run, and is its result still true; a record declares the facts it rests on and they are re-probed on every read — `fresh`, `stale` naming what moved, or `unknown` | 0 |
+| `slop` | the prose ruleset every brief, commit message and PR body is stripped by before a lane is billed for it | 0 |
 | `frames`, `blackice` | a dataframe over the factory's own data with evals as JSON; per-area dated audits, ingested as findings and checked for drift | 0 |
 | `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
 | `pipeline`, `buckmaster`, `bridge`, `scripts` | gears with gates and fingerprinted skips; episodes, signals, rules, model, memory, outcomes; the one packed doorway to an agent; tagged scripts | 0 (bridge spends with `--run --spend`) |
