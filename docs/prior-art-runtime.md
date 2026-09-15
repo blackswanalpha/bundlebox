@@ -9,7 +9,7 @@ out.
 |---|---|
 | [Graft](https://github.com/trailhq/Graft) | a two-pass code graph — tree-sitter structure, then cached LLM summaries — written out as markdown files agents read like source, with a ~3 ms structural refresh against the working tree |
 | [ARTEMIS](https://github.com/google/artemis) | natural-language Android automation: a reactive observe-and-act loop over the accessibility hierarchy, with a planner/operator/checker graph for the hard cases, an MCP server, and 99%+ on AndroidWorld |
-| [Playwright's 2026 MCP work](https://qaskills.sh/blog/whats-new-playwright-2026) | a browser driven through accessibility-tree snapshots rather than screenshots or raw DOM, reported at 90–95% smaller than the HTML they replace |
+| [Playwright's 2026 MCP work](https://qaskills.sh/blog/whats-new-playwright-2026) | a browser driven through accessibility-tree snapshots rather than screenshots or raw DOM |
 | the mypa prototype | the shell-and-Python `bundlebox/` this package was ported from, whose `runbook`, `dotty` and `recom` never made the port |
 | [anti-slop](https://github.com/dmmulroy/anti-slop) | already in [prior-art.md](prior-art.md) as a code ruleset; re-read here for a question it turns out not to answer |
 
@@ -20,12 +20,35 @@ out.
 **Give the reader the structure, not the bytes.**
 
 Graft writes markdown a session greps instead of a vector index it queries.
-Playwright hands the model an accessibility snapshot instead of the DOM, and
-measures the saving at 90–95%. ARTEMIS reads the accessibility hierarchy rather
-than pixels, and falls back to OCR and then to coordinates only when the
-hierarchy has nothing — a chain, not a choice. All three are the same move
-bundlebox makes when it prints a signature instead of a log line and a region
-instead of a file.
+Playwright hands the model an accessibility snapshot instead of the DOM.
+ARTEMIS reads the accessibility hierarchy rather than pixels, and falls back to
+OCR and then to coordinates only when the hierarchy has nothing — a chain, not a
+choice. All three are the same move bundlebox makes when it prints a signature
+instead of a log line and a region instead of a file.
+
+**A correction to the first version of this file**, which quoted Playwright's
+"90–95% smaller than the HTML" as though it were a property of the technique.
+It is a property of the PAGE. Measured here over CDP against three real ones:
+
+| page | HTML | a11y tree, slimmed to role/name/state | |
+|---|---|---|---|
+| the sampleOne storefront — 4.5 kB, hand-written, semantic | 4,568 B | 9,554 B | **2.1× bigger** |
+| a github.com repository page — framework-heavy | 440,779 B | 170,112 B | 61% smaller |
+| the MDN Web API index — thousands of links | 239,203 B | 456,597 B | **1.9× bigger** |
+
+A page that is mostly wrapper divs, inline styles and hydration payload
+compresses enormously. A page that is mostly content does not, because HTML
+spells a link in about forty bytes and an accessibility node costs about sixty
+once its role, name and nodeId are counted. This is `bb bench`'s 78%-to-97%
+range again, and quoting somebody's best case as a general behaviour is the
+exact thing `marketing/linkedin.md` says not to do — including when the best
+case is somebody else's.
+
+**So the byte count is not the reason to use the tree.** The reason is that
+`{"role":"button","name":"Add to cart","disabled":true}` survives a class
+rename, a div restructure and a CSS refactor, and a selector does not. A
+scenario asserting on six nodes carries six nodes; what the whole tree would
+have cost never comes up.
 
 The corollary is the part worth stealing: **every one of them names its
 fallback**. Playwright's ARIA snapshot degrades to a selector. ARTEMIS's
