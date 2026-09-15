@@ -222,7 +222,7 @@ The rest turns out to be most of the value:
 | `digest.toml`: twelve named failures with severities | signatures only | `digest.json`, seven seeded buckets, `logs` exits 1 on a high one |
 | `--level`, `--grep`, `--sample` | absent | all three, and they narrow signatures without ever hiding a bucket |
 | `recom`: record, check, replay, refresh | absent | `bb recom`, with the probe vocabulary in the kernel |
-| `dotty`: frames, films, contact sheets from two phones | absent | **still absent** — see below |
+| `dotty`: frames, films, contact sheets from two phones | absent | the browser half, over CDP; films and contact sheets deliberately not — see below |
 
 ### Why the normaliser moved to Rust
 
@@ -250,22 +250,59 @@ generated in-repo `read.py`, and the selftest that checked three hand-copied
 vocabularies had not drifted — a whole mechanism that existed only to work
 around the missing git.
 
-### `dotty` is deliberately still absent
+### `dotty`, the half of it that is cheap
 
 `bb dotty` captured what two phones actually showed: frames, films, contact
-sheets, and a `during` verb that ran a command with both phones recording. It is
-genuinely useful and it is genuinely Android-shaped — `adb exec-out screencap`,
-`screenrecord`, emulator console ports. Porting it means either an Android-only
-verb in a cross-platform package, or a capture abstraction over adb, CDP,
-`simctl` and a desktop screen API, which is a project rather than a module.
+sheets, and a `during` verb that ran a command with both phones recording. The
+first read of this file said it was adb-shaped and that a capture layer over
+adb, CDP, `simctl` and a desktop accessibility API was a project rather than a
+module. That is still true of the whole of it. It turned out not to be true of
+the browser.
 
-What carried instead is the honesty rule it was built around, which is
-surface-independent: **a capture that came back blank is marked BLANK, and a
-recording of a screen that never moved reports its frame count and declines to
-name a file it did not write.** That is the same rule as `unknown` in a recom
-verdict and `unproven` on a unit with no acceptance.
+Two things made the browser half cheap. A WebSocket client is about 120 lines of
+`node:net` and `node:crypto` — the only part of RFC 6455 that CDP needs is that
+client frames are masked and server frames are not — so it needs no `ws` and no
+`puppeteer`, which would pull a second browser into `node_modules`. And
+`Page.captureScreenshot` is one call on a connection that
+`Accessibility.getFullAXTree` is already open on.
 
----
+```
+bb dotty targets                         what pages the browser has open
+bb dotty shot checkout --url http://…    one frame, plus what was on screen as rows
+bb dotty during send --reload -- <cmd>   a frame each side, and what changed between them
+```
+
+**The PNG is for the human; the accessibility summary is for the session.** An
+image costs vision tokens, cannot be grepped and cannot be diffed. The same
+screen as rows — `button "Add to cart" disabled` — is about a hundred tokens for
+a whole page, survives a CSS refactor, and can be compared with the frame taken
+ninety seconds ago. So a capture writes both and the verb prints the summary,
+naming the file rather than showing it. That is the same trade as a signature
+instead of a log line, one surface over.
+
+`film` and `strip` are not ported and will not be: mp4, gif and contact sheets
+need ffmpeg or an image library, and a dependency to make a picture prettier is
+not one this factory can take.
+
+**What carried is the honesty rule.** A frame that came back single-coloured is
+marked BLANK and the verb exits 1, because a black rectangle filed as evidence is
+worse than no evidence — a later session opens it, sees nothing wrong with the
+file, and concludes the screen was blank. Node has `zlib`, so the check is a real
+one: inflate the IDAT, reverse the scanline filters, compare a deterministic grid
+of pixels. A frame that could not be decoded is `null`, never `false`, for the
+same reason `unknown` is not `fresh`.
+
+The diff between two screens is a MULTISET difference, and that is not a detail.
+A product grid has ten identical `button "Add to cart"` nodes; deduplicating them
+makes the one that became disabled invisible, and the page would report "nothing
+changed" while showing something different.
+
+**Android capture stays ARTEMIS's.** It already keeps timelines and video
+replays against a session clock and `mobile_inspect_trace` fetches them, so an
+`adb exec-out screencap` here would be a worse second implementation of a solved
+problem. The seam is the recom record: whatever took the picture, `evidence`
+points at it — which is what the prototype's
+`evidence: ["dotty/out/<stamp>-<label>/"]` always meant.
 
 ## anti-slop, and the question it does not answer
 
