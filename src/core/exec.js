@@ -39,6 +39,32 @@ function resolveBin(bin) {
   return out;
 }
 
+/** The shell a free-form command string runs under, as argv.
+ *
+ *  One implementation, because the shell a command runs under is one fact and
+ *  the box had four copies of it. Three hard-coded `bash -lc`, which does not
+ *  exist on a stock Windows box, so those callers turned every command there
+ *  into a spawn error rather than a verdict; the fourth wrote this rule inline.
+ *  Worse, the kernel had already made the Windows decision in
+ *  `kernel/src/gate.rs::shell` — so on a Windows box WITH git-bash the two
+ *  engines ran the same corpus under different shells and disagreed, which is
+ *  exactly what `test/runjson.test.js` exists to catch.
+ *
+ *  This mirrors that Rust function line for line and must keep mirroring it.
+ *
+ *  `set -o pipefail` is the whole point of the POSIX wrapping: without it a pipe
+ *  eats the exit code and every acceptance passes. cmd.exe has neither that nor
+ *  a `bash` to run it, so on Windows a PIPED command still reports the last
+ *  stage's code — the documented gap, now identical in both engines instead of
+ *  being a place they silently differ.
+ *
+ *  Pure, so the Windows branch is testable on a machine that is not Windows. */
+export function shellCmd(cmd, { merge = false, win = WIN } = {}) {
+  const redir = merge ? " 2>&1" : "";
+  if (win) return [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", `${cmd}${redir}`];
+  return ["bash", "-lc", `set -o pipefail; { ${cmd} ; }${redir}`];
+}
+
 export function run(cmd, { cwd, timeout = 120000, input, env } = {}) {
   const [bin0, ...args] = Array.isArray(cmd) ? cmd : String(cmd).split(/\s+/);
   const bin = resolveBin(bin0);
