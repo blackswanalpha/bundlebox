@@ -8,6 +8,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+// A Windows absolute path is not a module specifier: the ESM loader wants a
+// file:// URL and rejects `D:\\...` as an unknown protocol. Every module in the
+// tree failed to import, so `bb selftest` reported its own tree as broken.
+import { pathToFileURL } from "node:url";
 import { PassThrough } from "node:stream";
 import { spawnSync } from "node:child_process";
 import { PKG_ROOT } from "./core/paths.js";
@@ -22,7 +26,7 @@ check("every module imports", async () => {
   const stack = [path.join(PKG_ROOT, "src")];
   while (stack.length) { const d = stack.pop(); for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) stack.push(p); else if (p.endsWith(".js")) files.push(p); } }
   const failed = [];
-  for (const f of files) { try { await import(f); } catch (e) { failed.push(`${path.relative(PKG_ROOT, f)}: ${String(e.message).split("\n")[0]}`); } }
+  for (const f of files) { try { await import(pathToFileURL(f).href); } catch (e) { failed.push(`${path.relative(PKG_ROOT, f)}: ${String(e.message).split("\n")[0]}`); } }
   return [!failed.length, failed.length ? failed.join("; ") : `${files.length} modules`];
 });
 

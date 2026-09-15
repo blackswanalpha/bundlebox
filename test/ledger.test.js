@@ -105,3 +105,11 @@ test("episodes are attributed by time and null timestamps attribute nothing", as
   const n = await session.measure({ sessionId: "s-nots" });
   assert.equal(n.saved.automation_turns, 0);
 });
+
+test("the transcript directory name is a legal directory name", () => {
+  // `path.join(projects, slug(root))` on Windows used to build
+  // `projects\\C:\\Users\\...\\ws` and die with ENOENT, because slug left the
+  // backslashes and the drive colon in place.
+  assert.ok(!/[\\:]/.test(slug("C:\\Users\\me\\Documents\\ws")), slug("C:\\Users\\me\\Documents\\ws"));
+  assert.equal(slug("/home/me/Documents/my_ws"), "-home-me-Documents-my-ws", "POSIX naming is unchanged");
+});

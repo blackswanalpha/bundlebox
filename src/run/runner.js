@@ -34,7 +34,23 @@ import * as ledger from "../tokens/ledger.js";
 import * as prices from "../tokens/prices.js";
 import * as headroom from "../tokens/headroom.js";
 
-export const ENV_ALLOW = /^(PATH|HOME|USER|SHELL|LANG|LC_ALL|TERM|TMPDIR|SSH_AUTH_SOCK)$|^(XDG_|NODE_|ANTHROPIC_|OPENAI_|GEMINI_|GOOGLE_|CLAUDE_|CODEX_|GIT_)/;
+// Matched case-INSENSITIVELY, and Windows' own names are in the list.
+// `Object.entries(process.env)` hands back the spellings the OS uses: Windows
+// says `Path`, `SystemRoot`, `ComSpec`, not the POSIX ones. A case-sensitive
+// allowlist admitted none of them, so a lane spawned on Windows got an
+// environment with no PATH — the agent binary could not be found — and no
+// SystemRoot, which winsock and much of the Windows API need in order to start
+// at all. The failure was invisible because the lane never got far enough to
+// report it.
+//
+// Still an allowlist, per doctrine 10: this adds the names a Windows process
+// cannot run without, and nothing else.
+export const ENV_ALLOW = new RegExp(
+  "^(PATH|HOME|USER|SHELL|LANG|LC_ALL|TERM|TMPDIR|SSH_AUTH_SOCK"
+  + "|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|SYSTEMDRIVE|TEMP|TMP"
+  + "|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA"
+  + "|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$"
+  + "|^(XDG_|NODE_|ANTHROPIC_|OPENAI_|GEMINI_|GOOGLE_|CLAUDE_|CODEX_|GIT_)", "i");
 
 export function runDir(runId) {
   const d = path.join(VAR, "runs", String(runId));
@@ -69,9 +85,17 @@ export function lanePrompt(lane) {
 }
 
 /** Only what the allowlist admits, plus what the adapter and the wire add. */
-export function laneEnv(extra = {}) {
+export function laneEnv(extra = {}, { source = process.env } = {}) {
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (ENV_ALLOW.test(k) && v != null) env[k] = v;
+  for (const [k, v] of Object.entries(source)) if (ENV_ALLOW.test(k) && v != null) env[k] = v;
+  // Names are kept as the OS spells them, because that is what the child
+  // expects. But Windows environment names are case-insensitive while a plain
+  // JS object's keys are not, and this tool, its adapters and its tests read
+  // `env.PATH`, so the canonical spelling is added when only a variant is there.
+  if (env.PATH == null) {
+    const k = Object.keys(env).find((x) => x.toUpperCase() === "PATH");
+    if (k) env.PATH = env[k];
+  }
   for (const [k, v] of Object.entries(extra)) if (v != null && v !== "") env[k] = String(v);
   return env;
 }
@@ -248,7 +272,14 @@ export async function executeLane(lane, { apply = false, adapter, wire = {}, pr 
     result.acceptance = acc.map((cmd) => {
       const k = kernel.call("gate", { cmd, cwd, timeout: num(cfg.kernel?.gate_timeout || 1800), cap_bytes: 4000 });
       if (k && k.verdict) return { cmd, rc: k.rc ?? 1, tail: String(k.output_tail || "").slice(-400), seconds: k.seconds, timed_out: k.timed_out, via: "kernel" };
-      const r = run(["bash", "-lc", `set -o pipefail; { ${cmd} ; } 2>&1 | tail -c 4000`], { cwd, timeout: num(cfg.kernel?.gate_timeout || 1800) * 1000 });
+      // Without the kernel: the platform's own shell. `bash` and `tail` are not
+      // on a Windows box, so the old line made every acceptance gate fail there
+      // with a shell error rather than a verdict. The output cap moved into JS,
+      // where `run` already holds a 64MB ceiling and only the tail is kept.
+      const sh = process.platform === "win32"
+        ? [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", cmd]
+        : ["bash", "-lc", `set -o pipefail; { ${cmd} ; } 2>&1`];
+      const r = run(sh, { cwd, timeout: num(cfg.kernel?.gate_timeout || 1800) * 1000 });
       return { cmd, rc: r.rc, tail: (r.out + r.err).slice(-400), via: "js" };
     });
     if (result.acceptance.some((a) => a.rc !== 0)) { result.rc = 1; result.why = "acceptance failed"; }

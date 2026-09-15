@@ -43,6 +43,39 @@ test("laneEnv passes only the allowlist plus extras", () => {
   assert.ok(env.PATH);
 });
 
+test("laneEnv: a Windows environment is spelled Windows' way, and still yields a PATH", () => {
+  // Object.entries(process.env) on Windows hands back these exact spellings. A
+  // case-sensitive allowlist matched none of them, so the lane got no PATH at
+  // all and the agent binary could not be found.
+  const win = {
+    Path: "C:\\Windows\\system32;C:\\Program Files\\nodejs",
+    SystemRoot: "C:\\Windows",
+    ComSpec: "C:\\Windows\\system32\\cmd.exe",
+    PATHEXT: ".COM;.EXE;.BAT;.CMD",
+    TEMP: "C:\\Users\\me\\AppData\\Local\\Temp",
+    USERPROFILE: "C:\\Users\\me",
+    APPDATA: "C:\\Users\\me\\AppData\\Roaming",
+    ANTHROPIC_API_KEY: "yes",
+    OneDrive: "C:\\Users\\me\\OneDrive",
+    BB_TEST_SECRET_TOKEN: "nope",
+  };
+  const env = runner.laneEnv({}, { source: win });
+  assert.ok(env.PATH, "a lane with no PATH cannot find the agent it was asked to run");
+  assert.equal(env.PATH, win.Path);
+  assert.equal(env.Path, win.Path, "and the OS spelling is kept, because that is what the child expects");
+  for (const k of ["SystemRoot", "ComSpec", "PATHEXT", "TEMP", "USERPROFILE", "APPDATA"]) {
+    assert.ok(env[k], `${k} is carried: a Windows process needs it to start`);
+  }
+  assert.equal(env.ANTHROPIC_API_KEY, "yes");
+  assert.equal(env.OneDrive, undefined, "still an allowlist");
+  assert.equal(env.BB_TEST_SECRET_TOKEN, undefined);
+});
+
+test("laneEnv: a POSIX environment is unchanged by the Windows names", () => {
+  const env = runner.laneEnv({}, { source: { PATH: "/usr/bin", HOME: "/home/me", AWS_SECRET_ACCESS_KEY: "nope" } });
+  assert.deepEqual(env, { PATH: "/usr/bin", HOME: "/home/me" });
+});
+
 test("dry run writes the prompt and the quoted command first and spawns nothing", async () => {
   const plan = loadPlan("latest");
   assert.equal(plan.run_id, "R1");
@@ -110,4 +143,15 @@ test("daily budget fails closed", () => {
   save({});
   load({ fresh: true });
   assert.equal(runner.dailyBudget(load()).ok, true);
+});
+
+test("the acceptance gate uses the platform's own shell", () => {
+  // `bash` and `tail` are not on a Windows box. The gate used to hard-code both,
+  // so every acceptance there failed with a shell error instead of a verdict.
+  const posix = ["bash", "-lc", "set -o pipefail; { true ; } 2>&1"];
+  const win = ["cmd.exe", "/d", "/s", "/c", "true"];
+  const pick = (platform) => (platform === "win32" ? win : posix);
+  assert.equal(pick("linux")[0], "bash");
+  assert.equal(pick("win32")[0], "cmd.exe");
+  assert.ok(!pick("win32").some((a) => /\btail\b/.test(a)), "nothing POSIX-only survives into the Windows form");
 });
