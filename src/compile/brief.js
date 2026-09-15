@@ -26,6 +26,7 @@
 import { human } from "../core/util.js";
 import * as estimate from "../tokens/estimate.js";
 import * as anc from "./anchors.js";
+import { clean } from "../slop/index.js";
 
 // Facts every lane needs and none should discover. Kept short on purpose: this
 // is paid once per lane, and it is competing with the actual work.
@@ -185,7 +186,11 @@ export function build({ title, findings, scope, acceptance = "", extra = "", anc
   }
   const priorText = priorBlock(prior);
   const done = cap(acceptance) || "(no automated acceptance — state what you changed and why)";
-  return `# ${title}
+  // The body goes through the prose ruleset; GUARDRAILS does not. Two reasons:
+  // it is already written to these rules, and `cacheStablePrefix` finds it by
+  // exact string, so one stripped word there would cost every lane in the run
+  // its shared cache prefix.
+  const body = `# ${title}
 
 ## Evidence — already gathered, do not re-derive
 ${evidenceBlock(findings)}
@@ -198,7 +203,8 @@ Run this and it must pass:
 
     ${done}
 
-${extra ? extra.trimEnd() + "\n\n" : ""}${GUARDRAILS}`;
+${extra ? extra.trimEnd() + "\n\n" : ""}`;
+  return clean(body) + "\n\n" + GUARDRAILS;
 }
 
 /** The same brief with the STATIC part first and the dynamic part last.

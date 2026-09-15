@@ -11,6 +11,7 @@ import { load } from "../core/config.js";
 import { ROOT, rel } from "../core/paths.js";
 import { out } from "../core/log.js";
 import { gitx, repoDir, branch, dirtyFiles, secretSweep } from "./repo.js";
+import { clean } from "../slop/index.js";
 
 const TYPE_FOR = {
   "doc-links": "docs", "doc-drift": "docs",
@@ -51,7 +52,7 @@ export function message({ detector = "", findings = [], scope = [], acceptance =
   for (const f of findings) body.push(`- ${f.id || "?"} ${f.title || f.detector || ""}`.trimEnd());
   const acc = [...new Set((Array.isArray(acceptance) ? acceptance : [acceptance]).filter(Boolean))];
   if (acc.length) body.push("", "Verified by:", ...acc.map((a) => `  ${a}`));
-  return `${type}(${area}): ${subject}\n\n${body.join("\n")}\n`;
+  return clean(`${type}(${area}): ${subject}\n\n${body.join("\n")}`) + "\n";
 }
 
 /** The name the OS itself gives a path, for comparing two spellings of one

@@ -27,6 +27,8 @@ export const MODULES = [
   ["simulate", "./simulate/index.js"],
   ["mainboard", "./mainboard/index.js"],
   ["runbook", "./runbook/index.js"],
+  ["recom", "./recom/index.js"],
+  ["slop", "./slop/index.js"],
   ["frames", "./frames/index.js"],
   ["failsafe", "./failsafe/index.js"],
   ["blackice", "./blackice/index.js"],
@@ -84,12 +86,12 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "mainboard", "oversight", "blackice", "buckmaster", "commandcenter", "pipeline", "scripts"]);
+  "simulate", "runbook", "recom", "mainboard", "oversight", "blackice", "buckmaster", "commandcenter", "pipeline", "scripts"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "blackice", "designlabs"]],
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "bench"]],
-  ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "mainboard", "frames", "failsafe"]],
+  ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
   ["ship", "What closes the loop?", ["git", "fix", "pipeline", "scripts", "cron", "buckmaster", "commandcenter"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
