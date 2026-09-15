@@ -1,0 +1,48 @@
+I wrote an ecommerce service for the sole purpose of finding out whether my own
+tool was worth anything.
+
+Catalogue, cart, checkout, orders, admin. Twelve unit tests. All green.
+
+Then I pointed bundlebox at it over the wire, and it came back with four bugs
+none of those tests could reach:
+
+1. A forged token got 403 "admin only" instead of 401. The difference matters:
+   403 tells whoever forged it that the token parsed.
+2. qty: 1.5 was truncated to 1 and charged. The service was deciding what the
+   customer meant.
+3. Same truncation on the admin stock endpoint. 2.5 units became 2.
+4. DELETE /cart/lines/:id returned 405 for a route that exists — the PATCH
+   handler above it matched the path first and answered on its behalf.
+
+Fourteen scenarios, 76 steps, 8 seconds, 81 requests, zero model tokens. No LLM
+was involved in finding any of it.
+
+Every one of those four lives in the gap the tests don't cover: the status code,
+the route table, the coercion at the edge. You can have a green suite and a
+confident agent and still be wrong in all four places, because neither of them
+is looking there.
+
+The other half, since I keep asking other people for their denominator. To answer
+"does this hold, and what's wrong with it", a session would read the source
+(19,354 tokens) and the log (12,726). Through the tool it reads five tables:
+869 tokens. The log alone goes from 12,726 to 423, because 496 lines collapse to
+29 shapes once every timestamp, uuid and id is erased.
+
+The self-audit, which is the part that should make you trust the rest:
+
+Six steps went red, not four. Two were my corpus's own fault — a scenario left a
+line in the cart, so the next one's "an empty cart can't check out" wasn't
+testing an empty cart. And the static detectors, the half I've written the most
+about, found nine things here and not one of them mattered. The wire-level run
+did all the work. sampleOne is also code I wrote to be measured, which makes it
+friendlier than yours.
+
+The whole thing is public, and the monitor page is built from the JSON the run
+produced rather than typed by hand, so you can check every number against the
+artefact it came from.
+
+  npm i -g bundlebox
+
+github.com/blackswanalpha/bundlebox-projects
+
+#AIcoding #DeveloperTools #Testing #LLM #OpenSource
