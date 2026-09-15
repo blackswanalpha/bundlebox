@@ -58,6 +58,44 @@ test("a signature erases identity and keeps the fact", async () => {
   assert.equal(signature("GET /health 200"), "GET /health #");
 });
 
+// One case per eraser. The lexer is a sequence of named erasers over one scan,
+// and the only property each has to hold is the property the whole file turns
+// on: erase what identifies an OCCURRENCE, keep what identifies the EVENT.
+test("each eraser keeps the event and drops the occurrence", async () => {
+  const { signature } = await import("../src/runbook/digest.js");
+  const sig = (l) => signature(l);
+
+  // timestamp — six digits and two separators, leading, optionally bracketed.
+  assert.equal(sig("2026-01-02T03:04:05Z boom"), "boom");
+  assert.equal(sig("[2026-01-02 03:04:05] boom"), "boom");
+  // ...and a number the line is ABOUT is not a timestamp.
+  assert.ok(sig("2026 boom").includes("boom"));
+
+  // pid/tid — two 3-to-7 digit integers side by side at the head of a line.
+  // The numeric eraser would reach the same TEXT for this input; what the
+  // pid/tid rule buys is that it consumes them as a pair before the scan
+  // starts, so a logcat header cannot be mistaken for a measurement and pick
+  // up a unit from the level letter that follows it.
+  assert.equal(sig("09-14 10:00:00.123  1234  5678 E tag: boom"), "# # E tag: boom");
+
+  // quoted — long payloads go, short ones stay.
+  assert.match(sig('msg "a very long payload string that must be erased"'), /msg "…"/);
+  assert.equal(sig('msg "short"'), 'msg "short"');
+
+  // hex literal — an address is never the fact.
+  assert.equal(sig("at 0xdeadbeef"), "at X");
+
+  // numeric — identity becomes X, a measurement keeps its unit.
+  assert.equal(sig("id 550e8400-e29b-41d4-a716-446655440000"), "id X");
+  assert.equal(sig("took 12.5s"), "took #s");
+  assert.equal(sig("cpu 12.5%"), "cpu #%");
+  assert.notEqual(sig("read 240ms"), sig("read 240"));
+
+  // path — three segments or more is a location.
+  assert.equal(sig("at /a/b/c/d.js"), "at P");
+  assert.equal(sig("at /a/b"), "at /a/b");
+});
+
 test("a level is read from logcat's rank and from the words other runtimes print", async () => {
   const { levelOf } = await import("../src/runbook/digest.js");
   assert.equal(levelOf(LINES[0]), "E");
@@ -134,4 +172,68 @@ test("--level and --grep narrow the signatures and never the buckets", async () 
   const grepped = digest(logs, { since: false, grep: "auth error" });
   assert.equal(grepped.files[0].kept, 2);
   assert.equal(grepped.files[0].distinct, 1);
+});
+
+// ── the admission check ─────────────────────────────────────────────────────
+//
+// `up` refusing a set is the one place the runbook says no, and the cost of
+// getting it wrong is asymmetric. Refuse when it would have fit and a person
+// passes --force and stops reading the check. Admit when it would not and the
+// box swaps — every timing in every board afterwards is wrong, and the session
+// that reads that board pays to investigate a product that is fine.
+test("a ceiling is parsed, or it is absent — never zero by accident", async () => {
+  const mem = await import("../src/runbook/memory.js");
+  assert.equal(mem.bytes("1G"), 1024 ** 3);
+  assert.equal(mem.bytes("512M"), 512 * 1024 ** 2);
+  assert.equal(mem.bytes("1.5g"), Math.round(1.5 * 1024 ** 3));
+  assert.equal(mem.bytes(2048), 2048);
+  assert.equal(mem.bytes("  256m  "), 256 * 1024 ** 2);
+  // A typo must read as "no ceiling declared", not as a ceiling of zero: zero
+  // would admit anything and the check would be silently off.
+  assert.equal(mem.bytes("1Gb!"), null);
+  assert.equal(mem.bytes("lots"), null);
+  assert.equal(mem.bytes(""), null);
+  assert.equal(mem.bytes(0), null);
+  assert.equal(mem.bytes(-1), null);
+  assert.equal(mem.bytes(undefined), null);
+});
+
+test("admission sums ceilings against what is free, and names what had none", async () => {
+  const mem = await import("../src/runbook/memory.js");
+  const free = mem.available();
+  assert.ok(free.bytes > 0 && free.via, "available memory is measured and says how");
+
+  // Asking for more than exists, with the reserve on top, is refused and the
+  // refusal says what it would have needed.
+  const tooBig = mem.admit([{ id: "a", memory: `${Math.ceil(free.bytes / 1024 ** 3) + 64}G` }], [], { reserve: 1024 ** 3 });
+  assert.equal(tooBig.ok, false);
+  assert.match(tooBig.why, /not enough memory/);
+  assert.match(tooBig.why, /--force/);
+
+  // A tiny ask fits, and `held` reports what is already running separately from
+  // `ask`, because the two are never added into one number a reader can misread.
+  const fits = mem.admit([{ id: "a", memory: "1M" }], [{ id: "b", memory: "8M" }], { reserve: 0 });
+  assert.equal(fits.ok, true);
+  assert.equal(fits.ask, 1024 ** 2);
+  assert.equal(fits.held, 8 * 1024 ** 2);
+  assert.equal(fits.why, "");
+
+  // A row with no ceiling counts as zero and is NAMED, so the check reads as a
+  // floor rather than as an answer.
+  const partial = mem.admit([{ id: "a", memory: "1M" }, { id: "b" }], [], { reserve: 0 });
+  assert.deepEqual(partial.undeclared, ["b"]);
+  assert.equal(partial.ask, 1024 ** 2, "an undeclared ceiling adds nothing, it does not refuse everything");
+});
+
+test("the declared system is readable without touching the running one", async () => {
+  const svc = await import("../src/runbook/services.js");
+  // `all` is derived last and always means every declared service, so a row
+  // that also names itself `all` cannot make the group list it twice.
+  const g = svc.groups();
+  assert.ok(Object.prototype.hasOwnProperty.call(g, "all"), "every workspace gets `all` free");
+  for (const [name, ids] of Object.entries(g)) {
+    assert.equal(ids.length, new Set(ids).size, `group ${name} lists a service twice`);
+    for (const id of ids) assert.ok(svc.byId(id), `group ${name} names ${id}, which is not declared`);
+  }
+  assert.deepEqual(svc.groupOf("no-such-group-anywhere"), []);
 });

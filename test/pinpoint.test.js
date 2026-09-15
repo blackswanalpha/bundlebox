@@ -64,6 +64,11 @@ test("prompt: the exact section order, gates, traps, process rules", async () =>
     "## Where — located already, do not search",
     "## The regions this touches — quoted, current, do not re-read the files",
     "## Scope — the only files you may edit",
+    // Ranked candidates the budget could not afford are NAMED rather than
+    // dropped: naming one costs about fifteen tokens, budgeting one costs its
+    // whole size times churn. Measured on SWE-bench Verified, the file the fix
+    // belonged in was usually just outside the scope.
+    "## If the scope does not hold it — ranked, not budgeted",
     "## Evidence already on file — do not re-derive",
     "## Done when",
     "## What this brief does not settle",

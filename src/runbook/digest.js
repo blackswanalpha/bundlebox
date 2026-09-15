@@ -49,114 +49,147 @@ export function levelOf(line) {
 
 /** Erase everything that differs between two occurrences of the same event.
  *  One pass, no backtracking; every branch consumes at least one character. */
+// ── the lexer ───────────────────────────────────────────────────────────────
+//
+// `signature` is one scan over a line, erasing identity and keeping the fact.
+// It was one 119-line function, which is the length at which nobody reads the
+// middle of it — so each eraser is now named, takes the line and a position,
+// and returns how far it consumed and what it emitted. The scan itself is the
+// short function at the bottom that runs them in order.
+//
+// Every eraser follows one rule and it is the rule the whole file turns on:
+// erase what identifies an OCCURRENCE, keep what identifies the EVENT. A uuid
+// is identity. `240ms` is the fact, so the unit survives and the number does
+// not. Two lines that differ only in identity must produce the same signature,
+// and two lines that differ in the fact must not.
+
+/** A leading timestamp: at least six digits and two separators. Anything less
+ *  is a number the line is ABOUT, and erasing it would lose the fact. */
+function eatTimestamp(line, n) {
+  let j = 0;
+  if (j < n && (line[j] === "[" || line[j] === "(")) j++;
+  const start = j;
+  let digits = 0, seps = 0;
+  while (j < n) {
+    const c = line.charCodeAt(j);
+    if (isDigit(c)) { digits++; j++; }
+    else if ("-:./T,+".includes(line[j])) { seps++; j++; }
+    else if (line[j] === " " && seps > 0 && digits >= 4 && j + 1 < n && isDigit(line.charCodeAt(j + 1))) { seps++; j++; }
+    else if (line[j] === "Z" && digits >= 6) { j++; break; }
+    else break;
+  }
+  if (digits >= 6 && seps >= 2 && j > start) {
+    if (j < n && (line[j] === "]" || line[j] === ")")) j++;
+    return j;
+  }
+  return 0;
+}
+
+/** logcat puts `<pid> <tid>` between the timestamp and the level. Two long
+ *  integers side by side at the head of a line are never the fact. */
+function eatPidTid(line, i, n) {
+  let j = i, nums = 0;
+  while (nums < 2) {
+    while (j < n && line[j] === " ") j++;
+    const s = j;
+    while (j < n && isDigit(line.charCodeAt(j))) j++;
+    if (j - s < 3 || j - s > 7) break;
+    nums++;
+  }
+  return nums === 2 ? { out: "# # ", i: j } : null;
+}
+
+/** A long quoted string is a payload, not an event. A short one is the fact. */
+function eatQuoted(line, i, n) {
+  if (line[i] !== '"') return null;
+  let j = i + 1;
+  while (j < n && line[j] !== '"') { if (line[j] === "\\") j++; j++; }
+  return j < n && j - (i + 1) >= 24 ? { out: '"…"', i: j + 1 } : null;
+}
+
+/** `0xDEADBEEF` — an address, never the fact. */
+function eatHexLiteral(line, i, n) {
+  if (!(line[i] === "0" && i + 2 < n && (line[i + 1] === "x" || line[i + 1] === "X") && isHex(line.charCodeAt(i + 2)))) return null;
+  let j = i + 2;
+  while (j < n && isHex(line.charCodeAt(j))) j++;
+  return { out: "X", i: j };
+}
+
+/** A number, a uuid, a hash, or a measurement.
+ *
+ *  The distinction that matters: a uuid or a hash is IDENTITY and becomes `X`;
+ *  a measurement is the FACT, so the digits become `#` and the unit survives —
+ *  `read 240ms` and `read 240MB` must not collapse to one signature.
+ *
+ *  `boundary` keeps the eraser off the tail of an identifier: the `2` in
+ *  `h2` is part of a name, not a number the line is reporting. */
+function eatNumeric(line, i, n) {
+  const c = line.charCodeAt(i);
+  if (!(isDigit(c) || (isHex(c) && !isDigit(c)))) return null;
+  const start = i;
+  let j = i, dashes = 0, anyAlpha = false;
+  while (j < n) {
+    const d = line.charCodeAt(j);
+    if (isDigit(d)) j++;
+    else if (isHex(d)) { anyAlpha = true; j++; }
+    else if (line[j] === "-" && j + 1 < n && isHex(line.charCodeAt(j + 1)) && j - start >= 8) { dashes++; j++; }
+    else break;
+  }
+  const run = j - start;
+  const boundary = start === 0 || !(isAlnum(line.charCodeAt(start - 1)) || line[start - 1] === "_");
+  if (boundary && ((dashes === 4 && run >= 32) || (run >= 12 && anyAlpha))) return { out: "X", i: j };
+  if (boundary && !anyAlpha) {
+    let k = start;
+    while (k < n && (isDigit(line.charCodeAt(k)) || (line[k] === "." && k + 1 < n && isDigit(line.charCodeAt(k + 1))))) k++;
+    const unitStart = k;
+    let u = k;
+    while (u < n && u - unitStart < 2 && /[a-z]/i.test(line[u])) u++;
+    const unit = line.slice(unitStart, u).toLowerCase();
+    const known = ["ms", "s", "kb", "mb", "gb", "b", "k", "m", "g", "%"].includes(unit);
+    let out = "#", next = k;
+    if (known) { out += line.slice(unitStart, u); next = u; }
+    if (next < n && line[next] === "%") { out += "%"; next++; }
+    return { out, i: next };
+  }
+  return null;
+}
+
+/** A path of three or more segments. One or two is usually the fact
+ *  (`GET /health`, `src/app.js`). */
+function eatPath(line, i, n) {
+  if (!(line[i] === "/" && i + 1 < n && (isAlnum(line.charCodeAt(i + 1)) || line[i + 1] === "_" || line[i + 1] === "."))) return null;
+  let j = i, segs = 0;
+  while (j < n && line[j] === "/") {
+    j++;
+    const s = j;
+    while (j < n && (isAlnum(line.charCodeAt(j)) || "_-.@+".includes(line[j]))) j++;
+    if (j === s) { j = s; break; }
+    segs++;
+  }
+  return segs >= 3 ? { out: "P", i: j } : null;
+}
+
+const ERASERS = [eatQuoted, eatHexLiteral, eatNumeric, eatPath];
+
+/** One line, stripped to the event it reports. */
 export function signature(line) {
   const n = line.length;
-  const at = (k) => line.charCodeAt(k);
   let out = "";
-  let i = 0;
-
-  // A leading timestamp: at least six digits and two separators. Anything less
-  // is a number the line is about, and erasing it would lose the fact.
-  {
-    let j = 0;
-    if (j < n && (line[j] === "[" || line[j] === "(")) j++;
-    const start = j;
-    let digits = 0, seps = 0;
-    while (j < n) {
-      const c = at(j);
-      if (isDigit(c)) { digits++; j++; }
-      else if ("-:./T,+".includes(line[j])) { seps++; j++; }
-      else if (line[j] === " " && seps > 0 && digits >= 4 && j + 1 < n && isDigit(at(j + 1))) { seps++; j++; }
-      else if (line[j] === "Z" && digits >= 6) { j++; break; }
-      else break;
-    }
-    if (digits >= 6 && seps >= 2 && j > start) {
-      if (j < n && (line[j] === "]" || line[j] === ")")) j++;
-      i = j;
-    }
-  }
+  let i = eatTimestamp(line, n);
   while (i < n && line[i] === " ") i++;
-
-  // logcat puts `<pid> <tid>` between the timestamp and the level. Two long
-  // integers side by side at the head of a line are never the fact.
-  {
-    let j = i, nums = 0;
-    while (nums < 2) {
-      while (j < n && line[j] === " ") j++;
-      const s = j;
-      while (j < n && isDigit(at(j))) j++;
-      if (j - s < 3 || j - s > 7) break;
-      nums++;
-    }
-    if (nums === 2) { out += "# # "; i = j; while (i < n && line[i] === " ") i++; }
-  }
+  const pid = eatPidTid(line, i, n);
+  if (pid) { out += pid.out; i = pid.i; while (i < n && line[i] === " ") i++; }
 
   let lastSpace = false;
   while (i < n) {
-    const c = at(i);
-
-    if (line[i] === '"') {
-      let j = i + 1;
-      while (j < n && line[j] !== '"') { if (line[j] === "\\") j++; j++; }
-      if (j < n && j - (i + 1) >= 24) { out += '"…"'; i = j + 1; lastSpace = false; continue; }
-    }
-
-    if (line[i] === "0" && i + 2 < n && (line[i + 1] === "x" || line[i + 1] === "X") && isHex(at(i + 2))) {
-      let j = i + 2;
-      while (j < n && isHex(at(j))) j++;
-      out += "X"; i = j; lastSpace = false; continue;
-    }
-
-    if (isDigit(c) || (isHex(c) && !isDigit(c))) {
-      const start = i;
-      let j = i, dashes = 0, anyAlpha = false;
-      while (j < n) {
-        const d = at(j);
-        if (isDigit(d)) j++;
-        else if (isHex(d)) { anyAlpha = true; j++; }
-        else if (line[j] === "-" && j + 1 < n && isHex(at(j + 1)) && j - start >= 8) { dashes++; j++; }
-        else break;
-      }
-      const run = j - start;
-      const boundary = start === 0 || !(isAlnum(at(start - 1)) || line[start - 1] === "_");
-      if (boundary && ((dashes === 4 && run >= 32) || (run >= 12 && anyAlpha))) {
-        out += "X"; i = j; lastSpace = false; continue;
-      }
-      if (boundary && !anyAlpha) {
-        let k = start;
-        while (k < n && (isDigit(at(k)) || (line[k] === "." && k + 1 < n && isDigit(at(k + 1))))) k++;
-        const unitStart = k;
-        let u = k;
-        while (u < n && u - unitStart < 2 && /[a-z]/i.test(line[u])) u++;
-        const unit = line.slice(unitStart, u).toLowerCase();
-        const known = ["ms", "s", "kb", "mb", "gb", "b", "k", "m", "g", "%"].includes(unit);
-        out += "#";
-        if (known) { out += line.slice(unitStart, u); i = u; } else i = k;
-        if (i < n && line[i] === "%") { out += "%"; i++; }
-        lastSpace = false; continue;
-      }
-    }
-
-    // A path of three or more segments. One or two is usually the fact
-    // (`GET /health`, `src/app.js`).
-    if (line[i] === "/" && i + 1 < n && (isAlnum(at(i + 1)) || line[i + 1] === "_" || line[i + 1] === ".")) {
-      let j = i, segs = 0;
-      while (j < n && line[j] === "/") {
-        j++;
-        const s = j;
-        while (j < n && (isAlnum(at(j)) || "_-.@+".includes(line[j]))) j++;
-        if (j === s) { j = s; break; }
-        segs++;
-      }
-      if (segs >= 3) { out += "P"; i = j; lastSpace = false; continue; }
-    }
-
+    let hit = null;
+    for (const eat of ERASERS) { hit = eat(line, i, n); if (hit) break; }
+    if (hit) { out += hit.out; i = hit.i; lastSpace = false; continue; }
     if (line[i] === " " || line[i] === "\t") {
       if (!lastSpace && out.length) { out += " "; lastSpace = true; }
       i++;
       continue;
     }
-
     lastSpace = false;
     out += line[i];
     i++;

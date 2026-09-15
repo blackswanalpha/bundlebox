@@ -67,6 +67,6 @@ export function bare(problem, { files = [], cap = BARE_READ_CAP } = {}) {
 export async function packed(problem, { files = [], maxFiles = 6 } = {}) {
   const pinpoint = await import("../pinpoint/index.js");
   const b = await pinpoint.build(problem, { files, maxFiles, kind: "fix" });
-  return { tokens: estimate.text(b.prompt, "prose"), scope: b.scope, anchors: b.anchors.length,
-    verdict: b.verdict, projected: b.projected, path: b.path };
+  return { tokens: estimate.text(b.prompt, "prose"), scope: b.scope, candidates: b.candidates || [],
+    anchors: b.anchors.length, verdict: b.verdict, projected: b.projected, path: b.path };
 }

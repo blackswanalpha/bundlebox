@@ -33,3 +33,12 @@ expert/**/__pycache__/
 # local artefact even though the verb that reads it is not. `bb bench init`
 # rebuilds it anywhere in under a second.
 .bundlebox/bench/
+
+# The auditor keeps two kinds of artefact side by side and they have opposite
+# rules. A CHARTER is derived from the tree and is re-derived when the tree
+# moves, so it is regenerable and does not belong in git — committing one means
+# reviewing a diff nobody wrote. A REVIEW is a dated record a person or a model
+# produced, it is never edited, and its whole value is being a fixed point to
+# measure drift against, so it is committed.
+.bundlebox/auditor/*/charter.json
+.bundlebox/auditor/*/charter.md

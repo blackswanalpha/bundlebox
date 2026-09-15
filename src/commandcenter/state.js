@@ -46,7 +46,13 @@ export function benchState() {
   };
 }
 
-export function state({ sessions = 25, fold = false } = {}) {
+/** Everything the page shows.
+ *
+ *  `write` is not a detail: the command centre serves this over HTTP and is
+ *  declared read-only, so the one derived cache underneath it (session titles)
+ *  must be readable without being written back. A read route that writes is
+ *  still a write route. */
+export function state({ sessions = 25, fold = false, write = true } = {}) {
   const findings = store.get("findings", []);
   const open = findings.filter((f) => f.status === "open");
   const units = store.get("units", []);
@@ -100,7 +106,7 @@ export function state({ sessions = 25, fold = false } = {}) {
     version: readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0",
     pipeline: stages.gaps(),
     window: monitor.snapshot({ fold }),
-    sessions: monitor.sessions({ limit: sessions }),
+    sessions: monitor.sessions({ limit: sessions, write }),
     saved: {
       turns: turnsSaved, local_seconds: Math.round(localSeconds),
       note: "turns the local verbs displaced, counted from work actually done. An ESTIMATE of cost avoided, never added to what was used.",

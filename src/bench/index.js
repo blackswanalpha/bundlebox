@@ -24,6 +24,9 @@ import { human, now, stamp, table } from "../core/util.js";
 import * as store from "../core/store.js";
 import * as suite from "./suite.js";
 import { bare, packed, BARE_READ_CAP } from "./arms.js";
+import * as swebench from "./swebench.js";
+
+export { swebench };
 
 export const DIR = () => path.join(OUT, "bench");
 export const LATEST = () => path.join(DIR(), "latest.json");
@@ -138,6 +141,63 @@ async function cmd({ _, flags }) {
     out(report(r));
     return 0;
   }
+  // The one-task form, used by `swebench` to measure inside a checkout of
+  // another repository. A child process rooted there is the only honest way to
+  // run the arms against a tree that is not this one: the workspace root is
+  // resolved once per process, so measuring another tree means being another
+  // process in it — which is also exactly what a person running `bb` there gets.
+  if (sub === "arm") {
+    const f = String(flags.file || "");
+    const task = readJson(f, null);
+    if (!task || !task.problem) { warn("bb bench arm --file <task.json>  (needs {\"problem\": \"...\"})"); return 2; }
+    const t0 = Date.now();
+    const a = bare(task.problem, { files: task.files || [], cap: Number(task.cap) || cap });
+    const b = await packed(task.problem, { files: task.files || [], maxFiles: Number(task.maxFiles) || maxFiles });
+    const payload = { id: task.id || "", bare: a.tokens, packed: b.tokens,
+      bare_files: a.files.map((x) => x.file), packed_files: b.scope,
+      // Two file sets, because they cost differently and a benchmark that
+      // merged them would be measuring the cheaper one and reporting the
+      // dearer one. `packed_files` is the scope a session may edit; `named`
+      // also counts the ranked pointers the brief hands it for free.
+      packed_named: [...new Set([...(b.scope || []), ...((b.candidates || []).map((c) => c.file))])],
+      bare_considered: a.considered, verdict: b.verdict, terms: a.terms,
+      seconds: Math.round((Date.now() - t0) / 100) / 10 };
+    emit(payload);
+    return 0;
+  }
+
+  if (sub === "swebench") {
+    const what = _[1] && !_[1].startsWith("-") ? _[1] : "run";
+    if (what === "show") {
+      const r = swebench.latest();
+      if (!r) { warn("no SWE-bench run stored. bb bench swebench run"); return 2; }
+      if (flags.json) { emit(r); return 0; }
+      out(swebench.report(r));
+      return 0;
+    }
+    if (what === "instances") {
+      const d = await swebench.fetchInstances({ limit: Number(flags.limit) || 100, refresh: !!flags.refresh });
+      if (d.rc) { warn(d.why); return d.rc; }
+      if (flags.json) { emit({ dataset: d.dataset, at: d.at, rows: d.rows.length }); return 0; }
+      out(`  ${d.rows.length} instance(s) cached from ${d.dataset}`);
+      const byRepo = {};
+      for (const r of d.rows) byRepo[r.repo] = (byRepo[r.repo] || 0) + 1;
+      out(table(Object.entries(byRepo).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v]), { header: ["repo", "instances"] }));
+      return 0;
+    }
+    if (what === "run") {
+      const r = await swebench.run({ n: Number(flags.n) || 12, offset: Number(flags.offset) || 0,
+        repos: String(flags.repos || ""), cap, maxFiles, write: flags.write !== false, log: flags.json ? () => {} : out });
+      if (r.rc) { warn(r.why); return r.rc; }
+      if (flags.json) { emit(r); return 0; }
+      out("");
+      out(swebench.report(r));
+      return 0;
+    }
+    warn(`unknown swebench sub-verb: ${what}. run | show | instances`);
+    return 2;
+  }
+
   if (sub === "run") {
     const id = (_[1] && !_[1].startsWith("-") ? _[1] : String(flags.suite || "")) || "default";
     const r = await run(id, { cap, maxFiles, write: flags.write !== false });
@@ -146,24 +206,30 @@ async function cmd({ _, flags }) {
     out(report(r));
     return 0;
   }
-  warn(`unknown bench sub-verb: ${sub}. run | init | suites | show`);
+  warn(`unknown bench sub-verb: ${sub}. run | init | suites | show | arm | swebench`);
   return 2;
 }
 
 export const commands = {
   bench: {
     help: "the ablation benchmark: what a task costs with the factory and without it (no tokens)",
-    usage: "bb bench [run [suite]] | init [--limit N] | suites | show [--json] [--cap 10]",
+    usage: "bb bench [run [suite]] | init [--limit N] | suites | show | swebench run [--n 12] [--repos a,b] [--json] [--cap 10]",
     long: [
       "  bb bench run                     measure every task in the default suite, both arms",
       "  bb bench init                    derive a suite from the open findings that name a file",
       "  bb bench show --json             the last run as data",
+      "  bb bench swebench run --n 12     the same two arms on public SWE-bench Verified instances",
+      "  bb bench swebench show           the last SWE-bench run",
+      "  bb bench swebench instances      which repositories the cached instances come from",
       "",
       "BARE   search the tree for the task's terms and read the top --cap files whole.",
       "PACKED one `bb pinpoint` prompt for the same task.",
       "",
       "Both arms are measured with the same estimator over text on disk; neither calls a model.",
       "Tasks where packed costs more are printed, not dropped.",
+      "",
+      "SWE-bench here measures LOCALISATION (are the maintainer's own changed files in the packed",
+      "window?) and context cost. It is NOT a resolve rate: that needs the official harness and a model.",
     ].join("\n"),
     run: cmd,
   },

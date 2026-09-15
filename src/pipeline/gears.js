@@ -107,9 +107,9 @@ export const GEARS = [
     name: "audit", description: "which areas have no current audit, and the briefs that would produce one",
     on: ["hand"],
     stages: [
-      { verb: "blackice", args: ["drift"], optional: true, description: "reports describing a tree that has since moved" },
-      { verb: "blackice", args: ["plan"], description: "what is missing, ranked by what auditing it is worth" },
-      { verb: "blackice", args: ["pack"], description: "the briefs. Stops here: sending is a decision" },
+      { verb: "auditor", args: ["drift"], optional: true, description: "charters that need re-deriving and reviews describing a tree that has moved" },
+      { verb: "auditor", args: ["plan"], description: "areas with no declared bar, and reviews worth writing, ranked" },
+      { verb: "auditor", args: ["pack"], description: "the briefs. Stops here: sending is a decision" },
     ],
   }),
   gear({

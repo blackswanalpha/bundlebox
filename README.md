@@ -138,9 +138,12 @@ MCP server entry. `bb unwire` removes only its own blocks.
 | `recom` | has this automation already been run, and is its result still true; a record declares the facts it rests on and they are re-probed on every read — `fresh`, `stale` naming what moved, or `unknown`. `bb recom gate <id> -- <cmd>` wires that verdict straight to the decision, so an expensive drive happens only when its answer stopped holding | 0 |
 | `dotty` | what the screen showed, over the Chrome DevTools Protocol with no dependency: a PNG for a person and an accessibility summary for the session, a frame each side of a command, and a BLANK verdict on a frame that is a picture of nothing | 0 |
 | `slop` | the prose ruleset every brief, commit message and PR body is stripped by before a lane is billed for it | 0 |
-| `frames`, `blackice` | a dataframe over the factory's own data with evals as JSON; per-area dated audits, ingested as findings and checked for drift | 0 |
+| `frames` | a dataframe over the factory's own data with evals as JSON files a person can argue with | 0 |
+| `auditor` | the bar declared BEFORE the work — scope, standards, governance, assurance, derived from the tree's own signals — then `gate` checks it after, where `unproven` never reads as green. Dated per-area reviews are ingested as findings and checked for drift | 0 |
 | `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
 | `pipeline`, `buckmaster`, `bridge`, `scripts` | gears with gates and fingerprinted skips; episodes, signals, rules, model, memory, outcomes; the one packed doorway to an agent; tagged scripts | 0 (bridge spends with `--run --spend`) |
+| `snapgen skeleton`, `blast`, `callers` | a file's declarations without its bodies (13x less to read on this tree); what a diff can reach through import edges and what reading it costs; who imports a symbol, reported apart from who merely names it | 0 |
+| `bench swebench` | the same two arms on public SWE-bench Verified instances: does the packed window contain the files the maintainer's own patch touched, and what did it cost. Localisation and context, never a resolve rate | 0 |
 | `wire`, `mcp`, `hook` | install into agents; serve over MCP; the hook handlers | 0 |
 | `init`, `doctor`, `selftest`, `update`, `kernel`, `cron` | setup; what this box can run; silent-failure checks; the updater; the kernel; the unattended worker | 0 |
 
@@ -197,12 +200,23 @@ a wrong assumption costs the review that catches it.
 file with the state embedded. It binds to loopback, has no write route, and
 nothing on it calls a model.
 
+It **pushes** rather than polls. The store is files, so the filesystem already
+knows when something changed: `/api/stream` watches it, recomputes the state
+once per change however many tabs are open, and sends it. A 10s timer was wrong
+in both directions — a run that finished was invisible for nine seconds, and an
+idle workspace recomputed everything six times a minute per open tab. The header
+always says which state the connection is in (`live`, `polling`,
+`reconnecting`, `static`), because a dashboard that cannot tell you it has lost
+the server is worse than one that is plainly offline: the stale numbers still
+look like numbers.
+
 | route | what it answers |
 |---|---|
 | `GET /` | the page: what the factory saved, the window, the pipeline, every session |
 | `GET /health` | `{ok, service, version}` — the one route that answers without reading the store |
 | `GET /api/state` | everything the page renders, as JSON |
 | `GET /api/bench` | the last `bb bench` run: bare, packed, saved, per task |
+| `GET /api/stream` | server-sent events: the state, pushed when the store changes |
 
 ## Architecture
 

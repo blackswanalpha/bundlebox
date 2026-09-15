@@ -6,6 +6,7 @@
 // contents. Adding a section is a row here and a `$("#id")` there.
 import { style } from "./style.js";
 import { script } from "./script.js";
+import { mark, faviconHref } from "./brand.js";
 
 export { style } from "./style.js";
 export { script } from "./script.js";
@@ -31,11 +32,15 @@ export function html(state, { live = false } = {}) {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>bundlebox command centre</title>
+<link rel="icon" href="${faviconHref()}">
+<link rel="apple-touch-icon" href="${faviconHref()}">
+<meta name="color-scheme" content="light dark">
 <style>${style}</style>
 </head><body>
 <header class="bar"><div class="wrap">
-  <div class="brand">bundlebox <span id="ws"></span></div>
+  <a class="brand" href="/" aria-label="bundlebox command centre">${mark(22)}<b>bundlebox</b> <span id="ws"></span></a>
   <div class="spacer"></div>
+  <div class="link" id="link" title="connection to the workspace"><i></i><span>connecting</span></div>
   <div class="meta" id="stamp"></div>
 </div></header>
 <section><div class="wrap">

@@ -22,6 +22,7 @@ import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
+import { rank } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 
 export { ambiguity } from "./ambiguity.js";
@@ -41,6 +42,15 @@ const STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "fo
 
 /** Words of three or more letters minus the stoplist, plus the camel/snake
  *  parts of each, so "userToken" also hits `token`. */
+/** The most files a brief will ever name. Past this the prompt stops being a
+ *  located scope and becomes a directory listing, whatever the budget allows. */
+export const GROW_CAP = 24;
+/** How many ranked-but-unaffordable files the brief names as pointers. Naming
+ *  one costs about fifteen tokens; budgeting one to be read costs its whole
+ *  size times the churn factor. Twelve is where the list stops being a lead and
+ *  starts being a directory. */
+export const CANDIDATE_CAP = 12;
+
 export function terms(problem) {
   const seen = new Set(), out = [];
   const push = (w) => { const l = w.toLowerCase(); if (l.length < 3 || STOP.has(l) || seen.has(l)) return; seen.add(l); out.push(w); };
@@ -134,12 +144,8 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
   const explicit = [...files.map((f) => rel(abs(f))), ...pathHits(ts)];
   const sym = await snapgen.symbolHits(ts);
   const grep = sym.length < 3 ? grepHits(ts) : [];
-  const score = new Map();
-  const bump = (f, n) => score.set(f, (score.get(f) || 0) + n);
-  for (const f of explicit) bump(f, 10);
-  for (const h of sym) bump(h.file, 3);
-  for (const h of grep) bump(h.file, 1);
-  let scope = [...score].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).map(([f]) => f).slice(0, maxFiles);
+  const ranked = rank(problem, { explicit, sym, grep });
+  let scope = ranked.slice(0, maxFiles);
   let anchors = [];
   const seen = new Set();
   for (const h of sym) {
@@ -157,9 +163,51 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
     anchors = anchors.filter((a) => scope.includes(a.path));
     ev = evalOf();
   }
+  // ── and then the other direction ──────────────────────────────────────────
+  //
+  // Shrinking was the only move this had, and on a large tree that is exactly
+  // the wrong one. Measured on SWE-bench Verified: the packed prompt came out
+  // at 2–5k tokens against a 120k floor, with the ranked candidate immediately
+  // below the cut often holding the file the fix belonged in. A window a
+  // session has already paid the priming cost for and then uses 3% of is not
+  // thrift, it is a miss — `underfilled` has said so since the budget model was
+  // written and nothing acted on it.
+  //
+  // So: take the next-ranked candidate while the unit is under the FLOOR and
+  // the addition still FITS. It stops at the first file that would not fit, at
+  // the floor, or at GROW_CAP, whichever comes first. Nothing is ever added
+  // past FITS, so the budget contract is unchanged.
+  const grown = [];
+  for (const f of ranked.slice(scope.length)) {
+    if (!ev.underfilled || scope.length >= GROW_CAP) break;
+    scope.push(f);
+    const next = evalOf();
+    if (next.verdict !== "FITS") { scope.pop(); break; }
+    grown.push(f);
+    ev = next;
+  }
+  // ── the candidates the budget could not afford ────────────────────────────
+  //
+  // Everything below the scope used to be thrown away. That is wrong by an
+  // order of magnitude in cost: a file in scope is budgeted to be READ, which
+  // costs its whole size times churn, while NAMING one costs about fifteen
+  // tokens. Measured on SWE-bench Verified, the file the maintainer actually
+  // changed sat just outside the scope on most large-repository instances —
+  // the ranker had found it and the budget threw it out silently.
+  //
+  // So the brief names them, with the line that ranked them and an explicit
+  // instruction that they are not in scope. A session that finds the scope does
+  // not hold the answer now has somewhere to go that is not a search.
+  const inScope = new Set(scope);
+  const bestHit = new Map();
+  for (const h of sym) if (!bestHit.has(h.file)) bestHit.set(h.file, h);
+  const candidates = ranked.filter((f) => !inScope.has(f)).slice(0, CANDIDATE_CAP)
+    .map((f) => ({ file: f, symbol: bestHit.get(f)?.symbol || "", line: bestHit.get(f)?.line || 0,
+      tokens: estimate.file(abs(f)) }));
+
   const gates = detectGates(ROOT);
   const b = {
-    problem: String(problem).trim(), kind, terms: ts, scope, cut, anchors,
+    problem: String(problem).trim(), kind, terms: ts, scope, cut, grown, candidates, ranked: ranked.length, anchors,
     symbols: sym.filter((h) => scope.includes(h.file)).slice(0, 12), grep: grep.slice(0, 6),
     evidence: evidence(scope, ts), gates, traps: traps(scope, ts), oversight: oversight(scope), process: processRules(),
     projected: ev.projected, ceiling: ev.ceiling, verdict: ev.verdict, headroom: ev.headroom, payload_saved: ev.payload_saved,
@@ -195,6 +243,11 @@ export function prompt(b) {
   L.push("", "## Scope — the only files you may edit");
   for (const f of b.scope) L.push(`- \`${f}\` (~${human(estimate.file(abs(f)))} tokens)`);
   if (b.cut.length) L.push(`- ask before opening these: ${b.cut.map((c) => `\`${c}\``).join(", ")} (cut for budget)`);
+  if (b.candidates && b.candidates.length) {
+    L.push("", "## If the scope does not hold it — ranked, not budgeted",
+      "These matched the problem's words and did not fit the read budget. They are NOT in scope: do not edit them. Open one only when the scope above turns out not to contain the cause, and say which one you opened and why.");
+    for (const c of b.candidates) L.push(`- \`${c.file}${c.line ? `:${c.line}` : ""}\`${c.symbol ? ` — \`${c.symbol}\`` : ""} (~${human(c.tokens)} tokens whole)`);
+  }
   L.push("", "## Evidence already on file — do not re-derive");
   if (b.evidence.length) for (const e of b.evidence) L.push(`- [${e.detector}/${e.severity}] ${e.title}${e.fix_hint ? ` → ${e.fix_hint}` : ""}`);
   else L.push("- no open finding touches this scope");
