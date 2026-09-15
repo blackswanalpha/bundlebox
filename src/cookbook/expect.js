@@ -110,6 +110,23 @@ export function check(expect, body, status, ms) {
 }
 
 /** The `run` and `static` halves, which share the vocabulary but not the body. */
+/** The expectation keys that read a BODY rather than a stream. A command whose
+ *  stdout is JSON — `bb dotty shot --json`, `bb findings --json`, anything with
+ *  a `--json` flag — should be assertable the way a response is, instead of
+ *  through `stdout_contains` against a serialised object, which breaks on key
+ *  order and reads as slop. */
+export const BODY_KEYS = KEYS.filter((k) => k.startsWith("json") || ["each", "contains", "not_both"].includes(k));
+
+/** stdout as a body, or null when it is not one. Only an object or an array
+ *  counts: a command printing the bare word `true` has not returned a body, and
+ *  treating it as one would make `json` assertions pass against nothing. */
+export function stdoutBody(stdout) {
+  const t = String(stdout || "").trim();
+  if (!t || !/^[[{]/.test(t)) return null;
+  try { const v = JSON.parse(t); return v && typeof v === "object" ? v : null; }
+  catch { return null; }
+}
+
 export function checkCmd(expect, { rc, stdout, stderr, ms }) {
   const why = [];
   let n = 0;
@@ -123,6 +140,24 @@ export function checkCmd(expect, { rc, stdout, stderr, ms }) {
     }
   }
   if (e && typeof e.max_ms === "number") { n++; if (ms > e.max_ms) why.push(`took ${Math.round(ms)}ms, budget ${e.max_ms}ms`); }
+
+  // Body assertions against stdout. The sub-block carries only body keys, so
+  // `status` and `max_ms` cannot fire twice — `rc` and `max_ms` are the
+  // command's own and are handled above.
+  const bodyWanted = e ? BODY_KEYS.filter((k) => e[k] !== undefined) : [];
+  if (bodyWanted.length) {
+    const body = stdoutBody(stdout);
+    if (body === null) {
+      n += bodyWanted.length;
+      why.push(`stdout is not a JSON object or array, so ${bodyWanted.join(", ")} could not be checked (add --json to the command?)`);
+    } else {
+      const sub = Object.fromEntries(bodyWanted.map((k) => [k, e[k]]));
+      const r = check(sub, body, rc, ms);
+      n += asserts(sub).n;
+      why.push(...r.why);
+    }
+  }
+
   // A bare `run` with no expect block means "this must succeed" — otherwise it
   // is a step that ran a command and checked nothing.
   if (n === 0 && !e) { n = 1; if (rc !== 0) why.push(`rc ${rc} and nothing was asserted; a bare \`run\` step expects 0`); }

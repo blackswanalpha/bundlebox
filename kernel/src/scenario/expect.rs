@@ -155,6 +155,12 @@ const KEYS: &[&str] = &["status", "status_in", "max_ms", "json", "json_not", "js
     "json_len_at_least", "json_len_at_most", "json_gte", "json_lte", "json_matches", "each", "contains", "not_both",
     "rc", "stdout_contains", "stderr_contains", "contains_text", "absent_text", "matches"];
 
+/// The expectation keys that read a BODY rather than a stream or a status.
+/// Mirrors `BODY_KEYS` in src/cookbook/expect.js; `test/cookbook.test.js` pins
+/// the two engines to identical answers on a corpus that uses them.
+pub const BODY_KEYS: &[&str] = &["json", "json_not", "json_in", "json_type", "json_present", "json_absent",
+    "json_len_at_least", "json_len_at_most", "json_gte", "json_lte", "json_matches", "each", "contains", "not_both"];
+
 /// How many expectation keys a block actually carries, and which keys it used
 /// that this runner does not implement. A key nobody implements is silently
 /// green, which is the failure mode `check` exists to prevent.

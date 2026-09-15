@@ -5,7 +5,7 @@
 //! An unresolved `{{token}}` is an error here rather than a literal comparison:
 //! a corpus that silently compares against the string "{{item}}" is green for
 //! the wrong reason.
-use super::expect::{asserts, check, each_pair};
+use super::expect::{asserts, check, each_pair, BODY_KEYS};
 use super::{s, Run, Step};
 use crate::http::{parse_url, Conn, Resp};
 use crate::json::Json;
@@ -204,6 +204,36 @@ pub fn cmd_step(run: &Run, step: &Json, vars: &BTreeMap<String, Json>, name: &st
         }
     }
     if let Some(b) = expect.get("max_ms").and_then(|v| v.as_f64()) { n += 1; if ms > b { why.push(format!("took {:.0}ms, budget {:.0}ms", ms, b)); } }
+
+    // Body assertions against stdout. A command with a `--json` flag should be
+    // assertable the way a response is, rather than through `stdout_contains`
+    // against a serialised object, which breaks on key order.
+    //
+    // The sub-block carries only body keys, so `status` and `max_ms` inside
+    // `check` cannot fire a second time; `rc` and `max_ms` are the command's own
+    // and were handled above. Kept in step with `src/cookbook/expect.js`, which
+    // does exactly this — two engines that disagreed about what a corpus
+    // asserts would produce a board that is green on one and red on the other.
+    let body_keys: Vec<&str> = BODY_KEYS.iter().copied().filter(|k| expect.get(k).is_some()).collect();
+    if !body_keys.is_empty() {
+        let parsed = { let t = stdout.trim();
+            if t.starts_with('{') || t.starts_with('[') { crate::json::parse(t).ok() } else { None } };
+        match parsed {
+            None => {
+                n += body_keys.len();
+                why.push(format!("stdout is not a JSON object or array, so {} could not be checked (add --json to the command?)", body_keys.join(", ")));
+            }
+            Some(body) => {
+                let mut sub = Json::obj();
+                for k in &body_keys { if let Some(v) = expect.get(k) { sub.set(k, v.clone()); } }
+                let mut got = Json::obj();
+                let (an, _) = asserts(&sub);
+                n += an;
+                why.extend(check(&sub, &body, rc as u16, ms, &mut got));
+                if let Json::Obj(m) = &got { if !m.is_empty() { evidence.set("got", got.clone()); } }
+            }
+        }
+    }
     if timed_out { why.push(format!("timed out after {:.0}s", run.timeout.as_secs_f64())); }
     if n == 0 && expect == Json::Null { n = 1; if rc != 0 { why.push(format!("rc {} and nothing was asserted; a bare `run` step expects 0", rc)); } }
     let state = if !why.is_empty() { "failed" } else if n == 0 { "empty" } else { "passed" };

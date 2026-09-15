@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as kernel from "../core/kernel.js";
 import { run as execRun } from "../core/exec.js";
-import { check, checkCmd, asserts } from "./expect.js";
+import { check, checkCmd, asserts, stdoutBody } from "./expect.js";
 import { subst, clockOf, at, show } from "./tokens.js";
 
 const RED = new Set(["failed", "error"]);
@@ -167,6 +167,16 @@ function cmdStep(spec, step, vars, name) {
   evidence.stdout = tail(r.out, spec.cap);
   if (String(r.err).trim()) evidence.stderr = tail(r.err, Math.min(spec.cap, 1200));
   const { why, n } = checkCmd(expect, { rc: r.rc, stdout: r.out, stderr: r.err, ms });
+  // A command that printed JSON can hand a value to the next step, exactly as a
+  // response does. Without this a scenario has to re-run the command to get at
+  // a field it already printed.
+  if (step.save && typeof step.save === "object") {
+    const body = stdoutBody(r.out);
+    if (body) for (const [k, p2] of Object.entries(step.save)) {
+      const v = at(body, show(subst(p2, spec.clock, vars, [])));
+      if (v !== undefined) vars[k] = v;
+    }
+  }
   return { name, kind: "cmd", state: why.length ? "failed" : n === 0 ? "empty" : "passed", status: r.rc, ms, why, request: cmd, evidence };
 }
 
