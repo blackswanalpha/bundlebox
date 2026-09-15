@@ -145,37 +145,50 @@ examples — they are the evidence, not the news.
 
 ## Post 4 — sampleOne (what the tool found in a service written to test it)
 
-Full text in `post-4-sampleone.txt`. 399 words — the shortest of the four on
-purpose, because the four bugs are the post and everything else is support.
+Full text in `post-4-sampleone.txt`. 489 words.
 
-The order is the argument. **Lead with the four bugs, not with −97.3%.** The
-token number is real and it is in there, but it is the second half, introduced
-by the one line that earns it (`since I keep asking other people for their
-denominator`). A reader who only skims the first eight lines should still come
-away with the actual claim: a green test suite and a confident agent are blind
-in the same place, and that place is the wire.
+The order is the argument. **Lead with the five bugs, not with −95%.** The token
+number is real and it is in there, but it is the second half, introduced by the
+one line that earns it. A reader who only skims the first ten lines should still
+come away with the actual claim: a green test suite and a confident agent are
+blind in the same two places, the wire and the screen.
 
-The four are ordered by how uncomfortable they are, not by severity: the 403
-first because it is a security answer that looks like a correct one, the
-truncations second because everyone has written that line, the 405 last because
-it is the one a reader will recognise from their own router.
+The five are ordered by how uncomfortable they are, not by severity: the 403
+first because it is a security answer that looks like a correct one, the two
+truncations next because everyone has written that line, the 405 fourth because
+a reader will recognise it from their own router, and the ten identically-named
+buttons last because it is the one that is not a bug in the usual sense — the
+feature worked, nobody could tell the controls apart, and the test was reduced
+to counting.
 
-The self-audit paragraph is three admissions and all three must stay:
+The accessibility-tree paragraph is the most quotable thing in the post and it
+is also the one most likely to be argued with, which is the point: 28,059 tokens
+for the raw tree against 1,812 for the DOM it was supposed to replace, and 302
+once filtered. Keep the three numbers together. Two of them alone is an
+advertisement.
 
-1. Six steps went red, not four — two were the corpus's own fault.
-2. The static detectors, the half these posts have mostly been about, found
-   nine things and none of them mattered here.
-3. sampleOne is code written to be measured, so it is friendlier than the
+**The self-audit now leads with the number going DOWN.** An earlier draft of
+this post said 97%; re-measured it is 95%, because the old figure averaged six
+runs of the log instead of one. Post 2 is a whole post about not quoting your
+best case as your behaviour, and the draft did exactly that. Admitting it is
+worth more than the two points.
+
+The other two admissions stay:
+
+1. Four of the test scenarios were wrong, not the product's — each assumed state
+   an earlier scenario had already changed, so they asserted on the order of the
+   suite rather than on the product.
+2. sampleOne is code written to be measured, so it is friendlier than the
    reader's.
 
-Cutting (2) is the tempting one and it is the one that would make the post
-dishonest — it is the only place a reader learns which half of the tool did the
-work on this particular tree.
+Cutting the first of those is tempting and would make the post dishonest: it is
+the only place a reader learns how much of the red was the author's own fault.
 
 The link is to `bundlebox-projects`, not to `bundlebox`, because the claim is
-checkable there: the monitor page is generated from the run's own JSON, so
-every number has an artefact behind it.
+checkable there: the monitor page is generated from the run's own JSON, so every
+number has an artefact behind it.
 
-**Do not post this while the sampleOne work is still on a branch.** The whole
-close is "the whole thing is public, check my numbers"; if the link 404s or the
-monitor page is missing, the post argues against itself. Merge first.
+**Do not write "last time I posted" into this.** It has never been published —
+the 97% figure lived in a draft and in a README, not in anything anybody read.
+A self-audit paragraph containing a false claim about its own history is worse
+than no self-audit.
