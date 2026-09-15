@@ -47,12 +47,28 @@ surfaced four of the seven bugs above.
 
 Status, honestly: v0.2.0 is tagged and every gate is green — 225 tests, 23
 expert tests, 25 silent-failure checks, zero open high-severity findings. It is
-not on npm yet. The release stalled on a job requesting `macos-13`, a runner
-image GitHub retired. It did not fail. It sat in the queue with no runner
-assigned, reporting "queued", and would have done so for six hours before timing
-out.
+not on npm yet, and getting it there produced two more examples of the thing
+this post is about.
 
-Seventh one this week. Same shape.
+The first was silent. A build job asked for `macos-13`, a runner image GitHub
+has retired. It did not fail. It sat in the queue with no runner assigned,
+reporting "queued", and would have done that for six hours before timing out.
+Four other builds succeeded behind it and the publish step, which waits on all
+five, simply never started. Thirty-four minutes to notice, and the only clue was
+an empty runner field in the API.
+
+The second was loud. npm refused the publish with a 403 naming the exact policy
+and the exact fix. Two minutes to diagnose, and the remaining work is a setting
+on my account, not a mystery.
+
+Same release, same afternoon, same person being careless. The difference in cost
+between those two is the entire argument. A system that fails loudly is cheap
+even when it fails often. A system that fails by looking fine bills you in hours
+you did not know you were spending — and the only defence is checks that assert
+the presence of work done, not the absence of errors.
+
+Which is what the twenty-five silent-failure checks in this release are. One of
+them now asserts that the cron line contains the flag that makes it run.
 
 MIT, zero npm dependencies, works with Claude Code, Codex, Gemini CLI, Cursor,
 Copilot, OpenCode and Aider.

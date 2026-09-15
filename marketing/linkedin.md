@@ -125,12 +125,18 @@ Do not lead with 97%.
 
 ## Post 3 — silent failures (v0.2.0 progress)
 
-Full text in `post-3-silent-failures.txt`. One thesis, six examples, and the
-seventh is the release itself still being stuck as you post it — which is the
-point, not an embarrassment. Do not soften the status paragraph: "tagged, green,
-not on npm yet, here is why" is more credible than waiting a day and claiming a
-clean launch.
+Full text in `post-3-silent-failures.txt`. One thesis — every bug closed this
+week failed by looking like it was working — five examples from the codebase,
+then the release itself supplying two more.
 
-If the release has landed by the time you post, replace that paragraph with the
-npm line and keep the macos-13 story as the sixth example. The post still works.
+The ending is the argument, so do not cut it for length. It sets the retired
+`macos-13` runner (silent: sat queued for 34 minutes, never errored) against
+npm's 403 (loud: named the policy and the fix, two minutes). Same afternoon,
+same carelessness, two orders of magnitude apart in cost. That contrast is what
+makes the post an argument rather than a changelog.
 
+Do not soften "not on npm yet". A post that claims a clean launch while the
+release is stuck is the exact failure mode it is complaining about.
+
+When it does publish, swap that one clause for the npm line and keep both
+examples — they are the evidence, not the news.
