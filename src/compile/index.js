@@ -4,10 +4,10 @@ import { ROOT } from "../core/paths.js";
 import { out, emit, warn } from "../core/log.js";
 import { table } from "../core/util.js";
 import * as store from "../core/store.js";
-import { compileUnits, detectGates, summary } from "./compiler.js";
+import { compileUnits, detectGates, userGates, summary } from "./compiler.js";
 import * as context from "./context.js";
 
-export { compileUnits, detectGates, summary } from "./compiler.js";
+export { compileUnits, detectGates, userGates, summary } from "./compiler.js";
 export * as anchors from "./anchors.js";
 export * as brief from "./brief.js";
 export * as context from "./context.js";
@@ -46,12 +46,20 @@ export const commands = {
     help: "what proves a change here (detected, merged with kernel.gates)",
     usage: "bb gates [--list] [--json]",
     run: async ({ flags }) => {
-      const g = detectGates(ROOT);
-      if (flags.json) { emit(g); return 0; }
-      // --list shows every slot, empty ones included; the default shows what is set.
-      const rows = ["quick", "full", "lint", "typecheck", "test"].filter((k) => flags.list || g[k]).map((k) => [k, g[k] || "-"]);
-      out(rows.length ? table(rows, { header: ["gate", "command"] }) : "  no gates detected");
-      out(`  source: ${g.source || "none detected"}${g.quick ? "" : "  (no quick gate: fix units compile with only the re-scan; other kinds are unproven)"}`);
+      // One row per declared scope, because a workspace of projects has one
+      // gate per project and printing only the root's says "none detected"
+      // over a config that set four.
+      const scopes = [...new Set([".", ...Object.keys(userGates())])].sort();
+      const resolved = Object.fromEntries(scopes.map((s) => [s, detectGates(ROOT, s)]));
+      if (flags.json) { emit(resolved); return 0; }
+      const rows = [];
+      for (const s of scopes) {
+        const g = resolved[s];
+        for (const k of ["quick", "full", "lint", "typecheck", "test"]) if (flags.list || g[k]) rows.push([s, k, g[k] || "-"]);
+      }
+      out(rows.length ? table(rows, { header: ["scope", "gate", "command"] }) : "  no gates detected");
+      const root = resolved["."];
+      out(`  source: ${root.source || "declared in kernel.gates"}${root.quick || rows.length ? "" : "  (no quick gate: fix units compile with only the re-scan; other kinds are unproven)"}`);
       return 0;
     },
   },

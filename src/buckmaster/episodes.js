@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as store from "../core/store.js";
 import { VAR } from "../core/paths.js";
-import { now, median, sum, human, shortId, pad } from "../core/util.js";
+import { now, median, sum, human, shortId, pad, sha1 } from "../core/util.js";
 
 /** Fallback only, labelled ESTIMATE wherever it is printed. The measured figure
  *  is the median of (output + cache_write) over this workspace's own turns. */
@@ -63,6 +63,119 @@ export function write(row) {
 }
 
 export const rows = (o) => store.rows("episodes", o);
+
+// ── what a verb displaced ───────────────────────────────────────────────────
+//
+// What each verb reads and makes, and what a session would have spent to get
+// the same answer. Counted off the store AFTER the verb ran; a verb with no
+// entry yields `produced: null` and zero turns, never a guess.
+//
+// This table lives here rather than in the pipeline because the pipeline is no
+// longer its only caller. A verb typed by hand displaces exactly the same work
+// as the same verb inside a gear, and two tables would eventually disagree
+// about how much.
+//
+// `digest` is what makes a hand-typed verb countable at all. Running `bb scan`
+// five times does not save five times over: the second run returns the answer
+// the first one already gave. The digest is taken over what the verb PRODUCED,
+// so a repeat is recognised as a repeat and claims nothing. An entry with no
+// digest claims nothing either — a repeat cannot be told from fresh work, and
+// doctrine 2 says degrade to zero rather than to a plausible number.
+const openFindings = () => store.get("findings", []).filter((f) => f && f.status === "open");
+const dig = (xs) => (Array.isArray(xs) && xs.length ? sha1(xs.map(String).sort().join("\n")).slice(0, 12) : xs && xs.length === 0 ? "empty" : null);
+
+export const YIELD = {
+  scan: () => {
+    const o = openFindings();
+    const ran = (store.get("scan", {}) || {}).ran || [];
+    return { produced: o.length, produces: ["findings"], reads: [],
+      turns: turns({ files_read: Math.min(60, o.length * 2), searches: ran.length, rows: o.length }),
+      digest: dig(o.map((f) => f.id)) };
+  },
+  findings: () => {
+    // A read of an answer `scan` already produced. It shares scan's digest on
+    // purpose: after a scan, listing the findings displaces nothing more.
+    const o = openFindings();
+    return { produced: o.length, produces: ["findings"], reads: ["findings"],
+      turns: turns({ files_read: Math.min(60, o.length * 2), rows: o.length }), digest: dig(o.map((f) => f.id)) };
+  },
+  compile: () => {
+    const u = store.get("units", []), o = openFindings();
+    return { produced: u.length, produces: ["units"], reads: ["findings"],
+      turns: turns({ files_read: Math.min(20, o.length), rows: o.length }), digest: dig(u.map((x) => x.id)) };
+  },
+  route: () => {
+    const l = store.get("lanes", []), u = store.get("units", []);
+    return { produced: l.length, produces: ["lanes"], reads: ["units"],
+      turns: turns({ commands: 3, rows: u.length }), digest: dig(l.map((x) => `${x.id}:${x.run_id || ""}`)) };
+  },
+  context: () => ({ produced: null, produces: ["context"], reads: [], turns: turns({ commands: 1 }), digest: null }),
+  "oversight scan": () => { const o = store.get("oversight", {}) || {}; return { produced: null, produces: ["oversight"], reads: ["findings"], turns: turns({ files_read: 6, commands: 2 }), digest: dig(Object.keys(o)) }; },
+  "oversight guidelines": () => ({ produced: null, produces: ["guidelines"], reads: ["oversight"], turns: 0, digest: null }),
+  "snapgen build": () => ({ produced: null, produces: ["snapgen"], reads: [], turns: 0, digest: null }),
+  "designlabs check": (detail) => ({ produced: detail?.rules ?? null, produces: ["designlabs"], reads: ["designlabs"],
+    turns: turns({ files_read: Math.min(30, detail?.screens ?? 0), commands: 2, rows: detail?.rules ?? 0 }), digest: detail?.digest ?? null }),
+  "designlabs tables": () => ({ produced: null, produces: ["designlabs-tables"], reads: ["designlabs"], turns: 0, digest: null }),
+  "buckmaster signals": () => { const s = store.get("signals", {}) || {}; const n = (s.sessions || []).length; return { produced: n, produces: ["signals"], reads: ["transcripts"], turns: turns({ files_read: Math.min(30, n), commands: 2 }), digest: dig((s.sessions || []).map((x) => x.session_id || x.id || "")) }; },
+  "buckmaster rules": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["rules"], reads: ["signals"], turns: turns({ commands: 1 }), digest: dig((r.recommendations || []).map((x) => x.id || x.rule || "")) }; },
+  "buckmaster recommend": () => { const r = store.get("rules", {}) || {}; return { produced: (r.recommendations || []).length, produces: ["recommendations"], reads: ["rules", "signals"], turns: turns({ commands: 1 }), digest: dig((r.recommendations || []).map((x) => x.id || x.rule || "")) }; },
+  "buckmaster memory": () => { const m = store.get("memory", []); return { produced: Array.isArray(m) ? m.length : null, produces: ["memory"], reads: ["signals", "episodes", "scripts"], turns: turns({ files_read: 4 }), digest: dig(Array.isArray(m) ? m.map((x) => x.id || x.key || "") : null) }; },
+  "buckmaster episodes": () => ({ produced: store.rows("episodes").length, produces: ["episode-report"], reads: ["episodes"], turns: turns({ commands: 1 }), digest: null }),
+  "tokens ledger": () => { const n = store.rows("usage").length; return { produced: n, produces: ["usage"], reads: ["transcripts"], turns: turns({ files_read: Math.min(20, n ? 1 + Math.floor(n / 50) : 0) }), digest: n ? `usage:${n}` : "empty" }; },
+  "session list": () => ({ produced: null, produces: ["sessions"], reads: ["usage"], turns: 0, digest: null }),
+  "scripts scan": () => { const s = store.get("scripts", []); return { produced: s.length, produces: ["scripts"], reads: [], turns: turns({ files_read: s.length, searches: 2 }), digest: dig(s.map((x) => x.path || x.id || "")) }; },
+  doctor: () => ({ produced: null, produces: ["doctor"], reads: [], turns: turns({ commands: 3 }), digest: null }),
+  "git status": () => ({ produced: null, produces: ["git"], reads: [], turns: turns({ commands: 1 }), digest: null }),
+  run: () => ({ produced: null, produces: ["runs"], reads: ["lanes"], turns: 0, digest: null }),
+};
+
+// A verb whose answer does not land in the store leaves its own count here for
+// the CLI hook to pick up. Taken on read, so it can never leak into the next
+// verb of the same process.
+let _published = null;
+export const publish = (d) => { _published = d && typeof d === "object" ? d : null; };
+export const takeDetail = () => { const d = _published; _published = null; return d; };
+
+/** The yield of one verb key, never throwing. `detail` is whatever the caller
+ *  counted itself, for verbs whose answer does not land in the store. */
+export function yieldOf(key, detail = null) {
+  const fn = YIELD[key] || YIELD[String(key).split(" ")[0]];
+  if (!fn) return { produced: null, produces: [key], reads: [], turns: 0, digest: null };
+  try { return { digest: null, ...fn(detail) }; } catch { return { produced: null, produces: [key], reads: [], turns: 0, digest: null }; }
+}
+
+/** Has this exact answer been given already? A repeat displaces nothing.
+ *
+ *  Matched on the digest alone, not on (verb, digest): the digest identifies
+ *  the ANSWER, and whichever verb produced it first is the one that displaced
+ *  the work. `bb findings` straight after `bb scan` is the case this is for —
+ *  it prints the set `scan` just computed and adds nothing to the bill. */
+export function seen(digest, limit = 400) {
+  if (!digest) return false;
+  for (const e of store.rows("episodes", { limit })) {
+    if (e.detail && e.detail.digest === digest) return true;
+  }
+  return false;
+}
+
+/** Record one hand-typed verb. Every invocation is a row, because the log is
+ *  what `learn` trains on; only a FRESH answer carries turns, because only a
+ *  fresh answer displaced any. */
+export function record({ verb, rc = 0, seconds = 0, run_id = "", features = {}, detail = null } = {}) {
+  const y = yieldOf(verb, detail);
+  const repeat = seen(y.digest);
+  const why = y.digest == null
+    ? "no digest for this verb: a repeat cannot be told from fresh work, so nothing is claimed"
+    : repeat ? "this answer was already given: the turns were displaced then, not now" : "";
+  return write({
+    kind: "verb", verb, rc, seconds, run_id,
+    features: { ...features, produced: y.produced },
+    produced: y.produced, reads: y.reads, produces: y.produces,
+    turns_saved: repeat || y.digest == null ? 0 : y.turns,
+    state: "ran", detail: { digest: y.digest, turns_if_fresh: y.turns, why },
+  });
+}
+
 
 /** Rewrite `useful` on the rows named in `labels` ({id: -1|0|1}). The log is
  *  append-only for everything else; a label is the one field that is decided

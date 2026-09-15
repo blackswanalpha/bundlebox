@@ -130,11 +130,23 @@ export function scopeName(scope) {
 
 /** Conventional Commits. Scope is the feature area, never the repo name; the
  *  body carries the finding ids and the acceptance so the reviewer reads WHY. */
-export function message({ detector = "", findings = [], scope = [], acceptance = [] } = {}) {
+export function message({ detector = "", findings = [], scope = [], acceptance = [], files = [] } = {}) {
   const dets = [...new Set([detector, ...findings.map((f) => f && f.detector)].filter(Boolean))];
   const one = dets.length === 1 ? dets[0] : "";
   const n = findings.length;
   const area = scopeName(scope);
+  // No findings means the scope was given by hand, and bundlebox does not know
+  // WHY these files changed. Saying "closes 0 findings" is a claim about
+  // nothing; naming the files and admitting the gap is the honest subject.
+  if (!n) {
+    const body0 = ["No findings were named, so this commit was scoped by hand and bundlebox",
+      "cannot say what it closes. Staged:"];
+    for (const f of files.slice(0, 20)) body0.push(`- ${f}`);
+    if (files.length > 20) body0.push(`- ... and ${files.length - 20} more`);
+    const acc0 = [...new Set((Array.isArray(acceptance) ? acceptance : [acceptance]).filter(Boolean))];
+    if (acc0.length) body0.push("", "Verified by:", ...acc0.map((a) => `  ${a}`));
+    return `chore(${area}): ${files.length} file${files.length === 1 ? "" : "s"} in ${area}\n\n${body0.join("\n")}\n`;
+  }
   const type = one ? typeFor(one) : "fix";
   const subject = one ? `close ${n} ${one} finding${n === 1 ? "" : "s"} in ${area}` : `close ${n} static-analysis findings in ${area}`;
   const body = [`Closes ${n} finding${n === 1 ? "" : "s"} from bundlebox detectors:`];
@@ -157,13 +169,26 @@ export function commit({ cwd = ROOT, scope = [], findings = [], detector = "", a
   const real = (p) => { try { return fs.realpathSync(p); } catch { return p; } };
   const dReal = real(d), rootReal = real(ROOT);
   const local = want.map((p) => path.relative(dReal, path.isAbsolute(p) ? real(p) : path.join(rootReal, p)).replace(/\\/g, "/")).filter((p) => p && !p.startsWith(".."));
+  // Every scope path landed outside this checkout. Almost always the scope was
+  // written relative to the repo when it is read relative to the WORKSPACE, and
+  // "none inside the unit scope" does not say that.
+  if (!local.length) {
+    // Relativised from the REAL paths, not through rel(): on Windows a temp
+    // directory has a short-name form, so rel() falls back to the absolute path
+    // and the suggestion comes out as `C:\\Users\\...\\proj/src`. The basename is
+    // the honest fallback when the repo is not under the workspace at all.
+    const r = path.relative(rootReal, dReal).replace(/\\/g, "/");
+    const prefix = r && !r.startsWith("..") ? r : path.basename(dReal);
+    return { ok: false, changed: false, repo: rel(d),
+      why: `every scope path is outside ${prefix}: scope is workspace-relative, so name ${want.map((x) => `${prefix}/${x}`).slice(0, 3).join(", ")}` };
+  }
   const inScope = (p) => local.some((s) => p === s || p.startsWith(s.replace(/\/$/, "") + "/"));
   const staged = changed.filter((r) => inScope(r.path)).map((r) => r.path);
   const outside = changed.filter((r) => !inScope(r.path)).map((r) => r.path);
   const leaked = secretSweep(staged);
   if (leaked.length) return { ok: false, changed: false, repo: rel(d), why: `secret-shaped paths refused before commit: ${leaked.join(", ")}`, leaked };
   if (!staged.length) return { ok: false, changed: false, repo: rel(d), why: `${changed.length} dirty file(s), none inside the unit scope`, outside_scope: outside };
-  const text = message({ detector, findings, scope: want, acceptance });
+  const text = message({ detector, findings, scope: want, acceptance, files: staged });
   if (!apply) return { ok: true, changed: true, dry_run: true, repo: rel(d), staged, outside_scope: outside, message: text };
   const a = gitx(["add", "--", ...staged], d);
   if (a.rc !== 0) return { ok: false, changed: false, repo: rel(d), why: (a.err || a.out).trim().slice(-300) };
@@ -396,14 +421,28 @@ const line = (key, r) => {
   return `  ${mark}${key.padEnd(7)}${dry.padEnd(10)} ${detail}`;
 };
 
+/** Where `bb git` acts when nobody said: the workspace root when it is a repo,
+ *  otherwise its one subrepo. A workspace of projects carries git per project,
+ *  and refusing at the top is the wrong answer to a shape `bb init` already
+ *  detects and records in `workspace.subrepos`. */
+export function defaultRepo() {
+  if (gitOk(ROOT)) return ROOT;
+  const subs = (load().workspace?.subrepos || []).filter((d) => gitOk(path.join(ROOT, d)));
+  if (subs.length === 1) return path.join(ROOT, subs[0]);
+  if (subs.length > 1) throw new Error(`${subs.length} repositories here (${subs.join(", ")}) and no --cwd: name the one to act on`);
+  return ROOT;
+}
+
 export const commands = {
   git: {
     help: "commit, push, draft PR, ready, merge and review, with the workspace rules as code",
-    usage: "bb git commit [--lane L01 | --scope a,b] [--apply] | push [--apply] | pr [--lane L01] [--apply] | ready <n> [--apply] | merge <n> [--override-gate] [--apply] | review <n> [--write] | status",
+    usage: "bb git commit [--lane L01 | --scope a,b] [--apply] | push [--apply] | pr [--lane L01] [--apply] | ready <n> [--apply] | merge <n> [--override-gate] [--apply] | review <n> [--write] | status   [--cwd <dir>]",
     run: async ({ _, flags }) => {
       const sub = _[0] || "status";
       const apply = !!flags.apply;
-      const cwd = flags.cwd ? path.resolve(String(flags.cwd)) : ROOT;
+      // Resolved against the workspace, not the process: `--cwd demo` means the
+      // project, wherever the shell happens to be.
+      const cwd = flags.cwd ? path.resolve(ROOT, String(flags.cwd)) : defaultRepo();
       const show = (key, r) => { if (flags.json) emit(r); else { out(line(key, r)); if (r.outside_scope?.length) out(`      ${r.outside_scope.length} dirty file(s) OUTSIDE the unit scope, left uncommitted: ${r.outside_scope.slice(0, 4).join(", ")}`); if (r.message && r.dry_run) out(r.message.split("\n").map((l) => "      " + l).join("\n")); } return r.ok ? 0 : 1; };
       try {
         if (sub === "commit") {

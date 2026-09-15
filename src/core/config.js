@@ -59,8 +59,28 @@ export const DEFAULTS = {
     enabled: ["doc-links", "todo-census", "secret-scan", "big-file", "merge-markers",
               "worktree-hygiene", "dead-exports", "duplicate-blocks", "god-file",
               "orphan-files", "dead-deps", "doc-drift", "lockfile-drift", "stale-evidence",
-              "missing-tests", "debug-leftovers"],
+              "missing-tests", "debug-leftovers", "ui-generic"],
     promote_at: "medium",
+  },
+  designlabs: {
+    // Where a project's design studio lives, relative to the workspace root.
+    dir: "designlabs",
+    // How many generic tells a tree may carry before `bb designlabs check` fails.
+    generic_max: 2,
+    // Floors before a tell is worth reporting at all: a four-line stylesheet
+    // has one radius and one shadow because it is four lines, not because
+    // nobody decided. Data, so a tiny tree can lower them.
+    generic_min: { palette: 6, radius: 5, shadow: 5, space: 20 },
+    // The interaction floor this toolkit holds. WCAG 2.2 SC 2.5.8 says 24;
+    // both mobile platforms say 44, and that is the number worth failing on.
+    min_target_px: 44,
+    // Doherty: under 400ms the user stays in the loop. Over it, they leave.
+    max_motion_ms: 400,
+    // The six a screen must draw before it is a screen and not a picture.
+    required_states: ["rest", "loading", "empty", "error", "partial", "offline"],
+    // Sources bb may fetch itself. Everything else in sources.json is `web`
+    // and needs an agent holding a web tool; bb never scrapes what forbids it.
+    fetch_allow: ["fontsource", "wcag", "lawsofux", "motion-dev"],
   },
   git: {
     allow_push: true,
