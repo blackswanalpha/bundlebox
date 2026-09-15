@@ -122,3 +122,21 @@ still not move`), and the self-audit paragraph is not modesty, it is what makes
 the first half credible.
 
 Do not lead with 97%.
+
+## Post 3 — silent failures (v0.2.0 progress)
+
+Full text in `post-3-silent-failures.txt`. One thesis — every bug closed this
+week failed by looking like it was working — five examples from the codebase,
+then the release itself supplying two more.
+
+The ending is the argument, so do not cut it for length. It sets the retired
+`macos-13` runner (silent: sat queued for 34 minutes, never errored) against
+npm's 403 (loud: named the policy and the fix, two minutes). Same afternoon,
+same carelessness, two orders of magnitude apart in cost. That contrast is what
+makes the post an argument rather than a changelog.
+
+Do not soften "not on npm yet". A post that claims a clean launch while the
+release is stuck is the exact failure mode it is complaining about.
+
+When it does publish, swap that one clause for the npm line and keep both
+examples — they are the evidence, not the news.

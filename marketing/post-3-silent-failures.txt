@@ -1,0 +1,78 @@
+Every bug I shipped this week failed by looking like it was working.
+
+I spent the week pointing my own tool at my own repo. bundlebox is a CLI that
+runs before an AI coding agent and answers — for free — the questions the agent
+would otherwise pay tokens to answer: where does this symbol live, what proves a
+change here, what did the last session cost. Seven findings later, the pattern
+was the same every time. Not one of them threw an error.
+
+The cron line. `bb cron install` had been writing a crontab entry without the
+flag that makes it do anything. So every thirty minutes, on the dot, a worker
+woke up, reported "would-run" for each stage, wrote a clean log line, and went
+back to sleep. A green log, a correct schedule, an installed worker, and zero
+work done since the day it was set up.
+
+The coverage number. The matcher that decides whether a test corpus exercises a
+CLI compared the FIRST TOKEN of the command. Every command in a CLI shares it.
+So one test step running `bb scan` marked all twenty-three documented commands
+as covered, and a corpus with a single step reported 100%.
+
+The error rate. A load-test metric read every run ever stored and took the
+worst. One bad run — against a service that happened to be down that afternoon —
+pinned "100% error rate" to the dashboard permanently. The only way to clear it
+was to delete files, which is not a fix, it is tampering.
+
+The closer. A clean run could never close the findings a failed run opened,
+because the code only wrote findings when it FOUND some. Silence meant "nothing
+to say" where it should have meant "the problem is gone."
+
+And a `.gitignore` line. `dir/` instead of `dir/*`. Git cannot re-include a file
+inside an excluded directory, so the three exception lines under it were dead
+text. The test corpus I had just written would have been silently absent from
+every clone.
+
+None of these show up in a test suite, because they are all the ABSENCE of
+something. That is the whole design bet behind the tool: a check that only
+verifies the happy path cannot tell a working system from a stopped one.
+
+So v0.2.0 adds the instrument for it. `bb bench` runs the same task twice — once
+with the tool in front of it, once without — and both arms are token counts over
+files on disk, so neither calls a model and two runs return the same number. If
+it ever starts returning zero, a test fails. A measurement you cannot catch
+drifting is not a measurement.
+
+It also adds a corpus that runs the tool against itself in CI. That went from
+exercising 0% of what the README documents to 96.6%, and writing it is what
+surfaced four of the seven bugs above.
+
+Status, honestly: v0.2.0 is tagged and every gate is green — 225 tests, 23
+expert tests, 25 silent-failure checks, zero open high-severity findings. It is
+not on npm yet, and getting it there produced two more examples of the thing
+this post is about.
+
+The first was silent. A build job asked for `macos-13`, a runner image GitHub
+has retired. It did not fail. It sat in the queue with no runner assigned,
+reporting "queued", and would have done that for six hours before timing out.
+Four other builds succeeded behind it and the publish step, which waits on all
+five, simply never started. Thirty-four minutes to notice, and the only clue was
+an empty runner field in the API.
+
+The second was loud. npm refused the publish with a 403 naming the exact policy
+and the exact fix. Two minutes to diagnose, and the remaining work is a setting
+on my account, not a mystery.
+
+Same release, same afternoon, same person being careless. The difference in cost
+between those two is the entire argument. A system that fails loudly is cheap
+even when it fails often. A system that fails by looking fine bills you in hours
+you did not know you were spending — and the only defence is checks that assert
+the presence of work done, not the absence of errors.
+
+Which is what the twenty-five silent-failure checks in this release are. One of
+them now asserts that the cron line contains the flag that makes it run.
+
+MIT, zero npm dependencies, works with Claude Code, Codex, Gemini CLI, Cursor,
+Copilot, OpenCode and Aider.
+
+github.com/blackswanalpha/bundlebox
+
+#DeveloperTools #AIcoding #Observability #OpenSource #SoftwareEngineering
