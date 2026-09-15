@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bundlebox — what one question costs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* One accent, one de-emphasis grey: the small bar is the point and the large
+     one is context, so this is an emphasis chart rather than two identities.
+     #008C99 passes the palette validator on lightness, chroma and contrast. */
+  :root {
+    --paper: #FAF8F2;
+    --ink: #191A14;
+    --ink-2: #454738;
+    --muted: #6B6D5F;
+    --rule: #E0DACB;
+    --accent: #008C99;
+    --context: #7F7B6B;
+    --font-display: "Newsreader", Georgia, serif;
+    --font-text: "IBM Plex Sans", Helvetica, sans-serif;
+    --font-figure: "IBM Plex Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1200px; height: 627px; background: var(--paper); color: var(--ink);
+         font-family: var(--font-text); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .card { height: 100%; padding: 44px 64px 38px; display: flex; flex-direction: column; }
+
+  .top { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
+  .mark { font-family: var(--font-display); font-size: 21px; font-weight: 500; letter-spacing: -0.01em; }
+  .mark i { font-style: normal; color: var(--accent); }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+  h1 { font-family: var(--font-display); font-size: 40px; line-height: 1.08; font-weight: 400;
+       letter-spacing: -0.02em; margin: 22px 0 4px; max-width: 22ch; }
+  .sub { font-size: 15px; color: var(--muted); margin: 0 0 24px; }
+
+  .rows { display: grid; gap: 22px; }
+  .row { display: grid; grid-template-columns: 262px minmax(0, 1fr); align-items: center; gap: 22px; }
+  .label { font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-2); line-height: 1.35; }
+  .label small { display: block; letter-spacing: 0; text-transform: none; font-size: 12.5px; color: var(--muted); }
+  .track { display: flex; align-items: center; gap: 12px; }
+  .bar { height: 42px; border-radius: 0 4px 4px 0; }
+  .bar.context { background: var(--context); }
+  .bar.accent { background: var(--accent); }
+  .value { font-family: var(--font-figure); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .value.accent { color: var(--accent); }
+
+  .facts { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--rule);
+           display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 28px; }
+  .fact dt { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .fact dd { margin: 5px 0 0; font-size: 15px; color: var(--ink-2); line-height: 1.4; }
+  .fact dd b { font-family: var(--font-figure); font-size: 20px; font-weight: 500; color: var(--ink); display: block; margin-bottom: 2px; }
+
+  .foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;
+          border-top: 1px solid var(--rule); padding-top: 20px; }
+  .hero { display: flex; align-items: baseline; gap: 14px; }
+  .hero b { font-family: var(--font-text); font-size: 66px; font-weight: 600; letter-spacing: -0.03em; line-height: 0.9; color: var(--accent); }
+  .hero span { font-size: 16px; color: var(--ink-2); max-width: 30ch; line-height: 1.4; }
+  .source { font-size: 12.5px; color: var(--muted); text-align: right; line-height: 1.6; }
+  .source b { font-weight: 500; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div class="mark">bundlebox<i>.</i></div>
+    <div class="kicker">measured, not estimated</div>
+  </div>
+
+  <h1>What one question about your code costs</h1>
+  <p class="sub">Tokens are what an AI assistant bills you by. This is the same question, asked twice.</p>
+
+  <div class="rows">
+    <div class="row">
+      <div class="label">Without bundlebox<small>the assistant reads the service and its logs</small></div>
+      <div class="track">
+        <div class="bar context" style="width: 700px"></div>
+        <div class="value">60,300</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">With bundlebox<small>it asks the tool, which already knows</small></div>
+      <div class="track">
+        <div class="bar accent" style="width: 7px"></div>
+        <div class="value accent">519</div>
+      </div>
+    </div>
+  </div>
+
+  <dl class="facts">
+    <div class="fact">
+      <dt>What the AI was paid</dt>
+      <dd><b>$1.10</b>for the one job that needed writing</dd>
+    </div>
+    <div class="fact">
+      <dt>What it never had to read</dt>
+      <dd><b>$6–$20</b>of looking things up, done by the tool instead</dd>
+    </div>
+    <div class="fact">
+      <dt>What the tool costs to run</dt>
+      <dd><b>nothing</b>it never calls an AI itself</dd>
+    </div>
+  </dl>
+
+  <div class="foot">
+    <div class="hero">
+      <b>116×</b>
+      <span>less, for the same answer, from a tool that charges nothing</span>
+    </div>
+    <div class="source">
+      <b>sampleTwo</b> — an on-call service, built and measured in the open<br>
+      github.com/blackswanalpha/bundlebox
+    </div>
+  </div>
+</div>
+</body>
+</html>

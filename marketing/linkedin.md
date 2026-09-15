@@ -192,3 +192,54 @@ number has an artefact behind it.
 the 97% figure lived in a draft and in a README, not in anything anybody read.
 A self-audit paragraph containing a false claim about its own history is worse
 than no self-audit.
+
+## Post 5 — sampleTwo (what the saving looks like to somebody who does not code)
+
+`marketing/post-5-sampletwo.txt`, with `marketing/post-5-sampletwo.png` attached.
+The image is generated from `post-5-sampletwo-image.html` at 1200×627, so the
+numbers on it can be changed in one place and re-shot.
+
+**This one is deliberately not for engineers.** Posts 2, 3 and 4 argue with a
+reader who already knows what a token is. This one is written for the person who
+signs off on the bill and has never seen a context window. Every technical term
+that survives is glossed in the sentence that uses it, and the two words the post
+never says are "context" and "corpus".
+
+The order is the argument again, and it is a different argument from post 4.
+There the five bugs led and the percentage followed. Here **the number leads**,
+because the reader being addressed came for the number:
+
+1. one service, one sentence on what it does
+2. assistants charge for reading — the one mechanical fact the rest depends on
+3. 60,300 against 519, stated flat, with "same questions, same answers" under it
+4. *why*, in four short sentences, none of which require the reader to know anything
+5. the build total, with the upper bound refused out loud
+6. $1.10 — what the AI was paid
+7. the bug, last, as the thing that was not being looked for
+
+**The refused number is the most important line in the post.** `bb session`
+reports the automation saving as a range: $6.34 at the low bound and $19.90 at
+the high one. The high one charges every displaced turn the whole window it would
+have re-sent, which over-counts, and bundlebox says so itself. Quoting $20 would
+double the headline and Post 2 is a whole post about not doing that. Naming both
+and then declining the flattering one is worth more than the fourteen dollars.
+
+**116× is a ratio, not a percentage, on purpose.** −99.1% and 116× are the same
+measurement; the percentage reads as a rounding error to a non-technical reader
+and the multiple does not. The image carries the multiple; the post carries both
+raw numbers so nobody has to take the ratio on trust.
+
+**The snooze bug is told without a single technical word.** "Quiet this alert for
+twenty minutes" and "it went straight past the engineer to their boss" is the
+whole of it. The fact that makes it land — twenty-six passing tests, each watching
+one step, and the bug living in the order of the steps — is the last line before
+the links, and it is the only place the post asks the reader to hold two ideas at
+once.
+
+**What was cut:** the escalation policy, the virtual clock, deduplication,
+rotations, the detector counts, the corpus surfaces, `escalation_shift_ms`, and
+every command. Anybody who wants those follows the link. Putting one of them in
+to sound credible would cost the reader who is the point of the post.
+
+The link is to `bundlebox-projects` rather than `bundlebox`, for the same reason
+post 4 does it: the claim is checkable there, against the files the run wrote.

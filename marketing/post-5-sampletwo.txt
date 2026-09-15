@@ -1,0 +1,56 @@
+I built a second service last week for one reason: to find out what my own tool
+saves when somebody uses it on real work.
+
+The service is an on-call system — the thing that wakes an engineer up when a
+website breaks at three in the morning.
+
+Here is the part worth knowing if you pay for an AI coding assistant.
+
+Assistants charge by the token, and reading is where most of the money goes.
+Before one can tell you anything useful about your software, it reads: the code,
+the logs, the tests, the history.
+
+To answer the everyday questions about this one service — is it running, what is
+broken, did anything fail — an assistant reads 60,300 tokens.
+
+bundlebox answers the same questions in 519.
+
+Same questions. Same answers. 116 times less.
+
+The reason is not clever. Most of what an assistant reads is not thinking, it is
+looking. Is the service up? A request answers it. Which tests fail? Running the
+tests answers it. What changed since yesterday? A comparison answers it. None of
+those need intelligence, and a small program does them in under a second for
+nothing.
+
+Across the whole build, about 1.2 million tokens of reading never had to happen.
+Priced conservatively that is roughly $6. There is an upper figure of $20 that
+charges every displaced turn the full window it would have re-sent, and I would
+not quote it — I have written a whole post about not passing your best case off
+as your behaviour.
+
+The AI itself was paid exactly once: $1.10, to write one page that genuinely
+needed writing.
+
+Paying for the thinking and not for the looking is the whole point of this kind
+of tooling.
+
+One more thing, because it is the part I did not expect.
+
+While measuring, the tool found a real bug I would have shipped. The system has a
+snooze button — quiet this alert for twenty minutes. Snoozing worked. But the
+moment the twenty minutes were up, the alert went straight past the engineer to
+their boss, instantly, instead of giving them the twenty minutes it had just
+promised.
+
+Twenty-six tests passed over that bug. Every one of them watched a single step,
+and the bug was in the order of the steps.
+
+Everything is public, and every number here came out of a file the run produced
+rather than off a slide.
+
+  npm i -g bundlebox
+
+github.com/blackswanalpha/bundlebox-projects
+
+#AI #DeveloperTools #Productivity #OpenSource
