@@ -10,7 +10,11 @@ const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-ledger-"))
 const root = path.join(tmp, "ws");
 fs.mkdirSync(path.join(root, ".bundlebox"), { recursive: true });
 process.env.BB_ROOT = root;
+// os.homedir() reads USERPROFILE on Windows and HOME on POSIX, so a test that
+// sets only HOME points the adapters at the real profile there and finds
+// nothing. Both, so the scratch dir is the home on either.
 process.env.HOME = tmp;
+process.env.USERPROFILE = tmp;
 const ledger = await import("../src/tokens/ledger.js");
 const session = await import("../src/tokens/session.js");
 const store = await import("../src/core/store.js");

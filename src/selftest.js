@@ -146,7 +146,7 @@ check("an unknown model has tokens and no cost", async () => {
 
 check("findings: a vanished finding closes, a returning one re-opens", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "bb-self-"));
-  const script = `process.env.BB_ROOT=${JSON.stringify(root)};const s=await import(${JSON.stringify(path.join(PKG_ROOT, "src/core/store.js"))});
+  const script = `process.env.BB_ROOT=${JSON.stringify(root)};const s=await import(${JSON.stringify(pathToFileURL(path.join(PKG_ROOT, "src/core/store.js")).href)});
 const f={detector:"x",path:"a",key:"k",title:"t",severity:"low",files:["a"],evidence:{}};
 const a=s.mergeFindings([f],{detectors:new Set(["x"])});const b=s.mergeFindings([],{detectors:new Set(["x"])});const c=s.mergeFindings([f],{detectors:new Set(["x"])});
 console.log(JSON.stringify([a[0].status,b[0].status,c[0].status,c[0].seen_count]))`;

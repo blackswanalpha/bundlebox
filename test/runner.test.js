@@ -15,7 +15,7 @@ const { loadPlan } = await import("../src/run/index.js");
 const { save, load } = await import("../src/core/config.js");
 
 const units = [
-  { id: "U1", title: "fix links", brief: "Fix the dead link in README.", acceptance: "true", scope: ["README.md"] },
+  { id: "U1", title: "fix links", brief: "Fix the dead link in README.", acceptance: process.platform === "win32" ? "cd ." : "true", scope: ["README.md"] },
   { id: "U2", title: "no gate", brief: "Rename a thing.", acceptance: "", scope: ["a.js"] },
 ];
 const lanes = [
