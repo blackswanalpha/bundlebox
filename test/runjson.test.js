@@ -8,7 +8,11 @@
 // once through the kernel — and compared.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { checkCmd, stdoutBody, BODY_KEYS } from "../src/cookbook/expect.js";
+import { shellCmd } from "../src/core/exec.js";
 
 const PAYLOAD = JSON.stringify({
   label: "catalogue", blank: false, nodes: 3,
@@ -74,13 +78,20 @@ test("the kernel and the JS engine agree about a run step with body keys", async
   if (!kernel.available()) return t.skip("no kernel binary on this box");
 
   const { run } = await import("../src/cookbook/engine.js");
-  // `node -p` rather than a shell heredoc: this has to run where the runner
-  // does, and Windows has no `cat`.
-  const emit = `node -p ${JSON.stringify(`JSON.stringify(${PAYLOAD})`)}`;
+  // A script FILE, not an inline `node -p "...JSON..."`. The payload is full of
+  // double quotes, and bash and cmd.exe disagree about `\"` — so an inline
+  // command made this test a probe of shell quoting, and it failed on Windows
+  // for a reason that has nothing to do with what it is asserting. The contract
+  // under test is "both engines read a body key out of stdout"; the command
+  // that produces that stdout should be the least interesting part of it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bb-runjson-"));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* tmp is tmp */ } });
+  fs.writeFileSync(path.join(dir, "emit.js"), `process.stdout.write(${JSON.stringify(PAYLOAD)});\n`);
+  const emit = "node emit.js";
   const spec = {
     base: "http://127.0.0.1:1", rpm: 0, parallel: 1, timeout_ms: 20000,
     timezone: "UTC", tz_offset_minutes: 0, headers: {}, vars: {}, actors: {}, setup: [],
-    root: process.cwd(), cap_bytes: 1200, max_429: 0,
+    root: dir, cap_bytes: 1200, max_429: 0,
     scenarios: [{
       id: "screen", surface: "ui", severity: "low", title: "the screen has what it should",
       steps: [
@@ -116,4 +127,63 @@ test("every body key is one the kernel also knows", async (t) => {
   // Two lists that drifted would be one engine checking a key the other
   // ignored, which is exactly the silent divergence this feature could cause.
   assert.deepEqual([...theirs].sort(), [...BODY_KEYS].sort());
+});
+
+test("both engines choose the same shell, and neither hard-codes bash on Windows", () => {
+  // The defect this pins: `src/cookbook/engine.js` hard-coded `bash -lc` while
+  // the kernel had already decided on cmd.exe for Windows. On a Windows box
+  // WITH git-bash both engines ran, under DIFFERENT shells, and disagreed about
+  // the same corpus — which is the one failure mode the test above cannot see
+  // now that its command no longer depends on shell quoting.
+  const posix = shellCmd("a | b", { win: false });
+  assert.deepEqual(posix, ["bash", "-lc", "set -o pipefail; { a | b ; }"]);
+  assert.deepEqual(shellCmd("a | b", { win: false, merge: true }),
+    ["bash", "-lc", "set -o pipefail; { a | b ; } 2>&1"]);
+
+  const win = shellCmd("a | b", { win: true });
+  assert.equal(win[0], process.env.ComSpec || "cmd.exe");
+  assert.deepEqual(win.slice(1), ["/d", "/s", "/c", "a | b"]);
+  assert.deepEqual(shellCmd("a | b", { win: true, merge: true }).slice(1), ["/d", "/s", "/c", "a | b 2>&1"]);
+  assert.ok(!win.includes("bash"), "a stock Windows box has no bash, and a spawn error is not a verdict");
+
+  // And it still mirrors the Rust. Coarse on purpose — it catches the flags
+  // moving apart, which is what actually happened, without pinning formatting.
+  const rust = fs.readFileSync(path.join(process.cwd(), "kernel", "src", "gate.rs"), "utf8");
+  const shell = rust.slice(rust.indexOf("pub fn shell"), rust.indexOf("pub fn op_gate"));
+  for (const token of ['"/d"', '"/s"', '"/c"', '"bash"', '"-lc"', "set -o pipefail"]) {
+    assert.ok(shell.includes(token), `kernel/src/gate.rs::shell no longer carries ${token}; the two engines have drifted`);
+  }
+});
+
+test("nothing in src/ hard-codes a shell except the one branch that may", () => {
+  // The defect came back three times before it was noticed, because each caller
+  // reached for `bash -lc` on its own and nothing was watching. This is the
+  // watch: one allowlisted hit, with the reason it is allowed.
+  //
+  // `src/runbook/lifecycle.js` passes `bash -lc` to systemd-run, which is
+  // Linux-only and gated on `useSystemd()`, so a box that reaches that line has
+  // a bash by construction. Every other caller must go through `shellCmd`.
+  const ALLOWED = new Map([
+    ["src/core/exec.js", "this IS shellCmd — the one implementation everything else must call"],
+    ["src/runbook/lifecycle.js", "systemd-run is Linux-only and gated on useSystemd()"],
+  ]);
+  const root = path.join(process.cwd(), "src");
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(f); continue; }
+      if (!f.endsWith(".js")) continue;
+      const text = fs.readFileSync(f, "utf8");
+      // The literal argv form, however it is quoted or spaced.
+      if (/["'`]bash["'`]\s*,\s*\[?\s*["'`]-lc["'`]/.test(text)) hits.push(path.relative(process.cwd(), f).split(path.sep).join("/"));
+    }
+  };
+  walk(root);
+  const unexpected = hits.filter((h) => !ALLOWED.has(h));
+  assert.deepEqual(unexpected, [],
+    `these hard-code a shell instead of calling exec.shellCmd, and will fail to spawn on a stock Windows box: ${unexpected.join(", ")}`);
+  // And the allowlist is not allowed to rot: an entry that no longer matches is
+  // an entry that is silently permitting nothing.
+  for (const [file, why] of ALLOWED) assert.ok(hits.includes(file), `${file} no longer hard-codes bash (${why}); drop it from the allowlist`);
 });

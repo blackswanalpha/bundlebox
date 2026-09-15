@@ -23,7 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as kernel from "../core/kernel.js";
-import { run as execRun } from "../core/exec.js";
+import { run as execRun, shellCmd } from "../core/exec.js";
 import { check, checkCmd, asserts, stdoutBody } from "./expect.js";
 import { subst, clockOf, at, show } from "./tokens.js";
 
@@ -161,7 +161,7 @@ function cmdStep(spec, step, vars, name) {
   const evidence = { cmd };
   if (missing.length) return { name, kind: "cmd", state: "error", status: null, ms: 0, why: [`unresolved token(s): ${[...new Set(missing)].join(", ")}`], request: cmd, evidence };
   const t0 = Date.now();
-  const r = execRun(["bash", "-lc", `set -o pipefail; { ${cmd} ; }`], { cwd: spec.root, timeout: spec.timeoutMs });
+  const r = execRun(shellCmd(cmd), { cwd: spec.root, timeout: spec.timeoutMs });
   const ms = Date.now() - t0;
   evidence.rc = r.rc;
   evidence.stdout = tail(r.out, spec.cap);

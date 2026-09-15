@@ -26,7 +26,7 @@ import * as stages from "../pipeline/stages.js";
 import * as episodes from "../buckmaster/episodes.js";
 import { BB_DIR, PKG_ROOT, rel } from "../core/paths.js";
 import { readJson } from "../core/config.js";
-import { run as execRun } from "../core/exec.js";
+import { run as execRun, shellCmd } from "../core/exec.js";
 import { out, warn, emit, hr } from "../core/log.js";
 import { pad, table } from "../core/util.js";
 
@@ -186,7 +186,9 @@ async function cmd({ _, flags }) {
     if (!op) { warn(`no op \`${id}\`. bb failsafe ops`); return 2; }
     if (!flags.apply) { out(`  ${op.cmd}\n\n  ${op.why}. --apply runs it.`); return 0; }
     if (op.cmd.includes("<")) { warn(`\`${op.cmd}\` has a placeholder in it; run it yourself with the value filled in`); return 2; }
-    const r = execRun(["bash", "-lc", op.cmd], { timeout: 900000 });
+    // stdout and stderr are reported separately below, so the shell must not
+    // merge them.
+    const r = execRun(shellCmd(op.cmd), { timeout: 900000 });
     out(r.out.trimEnd());
     if (r.err.trim()) warn(r.err.trim().slice(-500));
     return r.rc;

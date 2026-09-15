@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { load } from "../core/config.js";
-import { run, which, git } from "../core/exec.js";
+import { run, which, git, shellCmd } from "../core/exec.js";
 import { VAR, ROOT, rel } from "../core/paths.js";
 import * as store from "../core/store.js";
 import { now, sha1, human } from "../core/util.js";
@@ -272,14 +272,11 @@ export async function executeLane(lane, { apply = false, adapter, wire = {}, pr 
     result.acceptance = acc.map((cmd) => {
       const k = kernel.call("gate", { cmd, cwd, timeout: num(cfg.kernel?.gate_timeout || 1800), cap_bytes: 4000 });
       if (k && k.verdict) return { cmd, rc: k.rc ?? 1, tail: String(k.output_tail || "").slice(-400), seconds: k.seconds, timed_out: k.timed_out, via: "kernel" };
-      // Without the kernel: the platform's own shell. `bash` and `tail` are not
-      // on a Windows box, so the old line made every acceptance gate fail there
-      // with a shell error rather than a verdict. The output cap moved into JS,
-      // where `run` already holds a 64MB ceiling and only the tail is kept.
-      const sh = process.platform === "win32"
-        ? [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", cmd]
-        : ["bash", "-lc", `set -o pipefail; { ${cmd} ; } 2>&1`];
-      const r = run(sh, { cwd, timeout: num(cfg.kernel?.gate_timeout || 1800) * 1000 });
+      // Without the kernel: the platform's own shell, chosen in ONE place
+      // (`exec.shellCmd`) so this can never drift from what the kernel does.
+      // The output cap moved into JS, where `run` already holds a 64MB ceiling
+      // and only the tail is kept.
+      const r = run(shellCmd(cmd, { merge: true }), { cwd, timeout: num(cfg.kernel?.gate_timeout || 1800) * 1000 });
       return { cmd, rc: r.rc, tail: (r.out + r.err).slice(-400), via: "js" };
     });
     if (result.acceptance.some((a) => a.rc !== 0)) { result.rc = 1; result.why = "acceptance failed"; }

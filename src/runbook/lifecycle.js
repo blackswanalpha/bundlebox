@@ -20,7 +20,7 @@ import { spawn } from "node:child_process";
 import * as kernel from "../core/kernel.js";
 import { VAR, rel, abs } from "../core/paths.js";
 import { readJson, writeJson } from "../core/config.js";
-import { run as execRun, which } from "../core/exec.js";
+import { run as execRun, which, shellCmd } from "../core/exec.js";
 import { now } from "../core/util.js";
 import { services, byId, FILE } from "./services.js";
 import * as mem from "./memory.js";
@@ -64,6 +64,10 @@ export function up(id, { apply = false } = {}) {
     }
     if (s.cpu) args.push(`--property=CPUQuota=${s.cpu}`);
     for (const [k, v] of Object.entries(s.env || {})) args.push(`--setenv=${k}=${v}`);
+    // `bash` on PURPOSE, and not `shellCmd`: this branch is gated on
+    // `useSystemd()`, systemd-run is Linux-only, and a Linux box has bash. The
+    // line below is the one that had to change, because it is the branch a
+    // Windows box actually takes.
     args.push("bash", "-lc", s.cmd);
     const r = execRun(["systemd-run", ...args], { timeout: 30000 });
     if (r.rc !== 0) return { rc: r.rc, id, state: "failed", why: (r.err || r.out).trim().slice(-300) };
@@ -71,7 +75,12 @@ export function up(id, { apply = false } = {}) {
     return { rc: 0, id, state: "up", via: "systemd", unit: unit(id), log: rel(logFile) };
   }
   const fd = fs.openSync(logFile, "a");
-  const child = spawn("bash", ["-lc", s.cmd], { cwd, detached: true, stdio: ["ignore", fd, fd], env: { ...process.env, ...(s.env || {}) } });
+  // The no-cage fallback, and the branch every non-Linux box takes. It used to
+  // hard-code bash, so `bb runbook up` on Windows failed to spawn at all rather
+  // than starting an uncaged service. `down()` already degrades correctly there:
+  // the process-group kill throws and it falls back to killing the pid.
+  const [shBin, ...shArgs] = shellCmd(s.cmd);
+  const child = spawn(shBin, shArgs, { cwd, detached: true, stdio: ["ignore", fd, fd], env: { ...process.env, ...(s.env || {}) } });
   child.unref();
   setState(id, { id, pid: child.pid, started: now(), cmd: s.cmd, log: rel(logFile), via: "spawn" });
   return { rc: 0, id, state: "up", via: "spawn", pid: child.pid, log: rel(logFile),
