@@ -140,3 +140,40 @@ release is stuck is the exact failure mode it is complaining about.
 
 When it does publish, swap that one clause for the npm line and keep both
 examples — they are the evidence, not the news.
+
+## Post 4 — sampleOne (what the tool found in a service written to test it)
+
+Full text in `post-4-sampleone.txt`. 399 words — the shortest of the four on
+purpose, because the four bugs are the post and everything else is support.
+
+The order is the argument. **Lead with the four bugs, not with −97.3%.** The
+token number is real and it is in there, but it is the second half, introduced
+by the one line that earns it (`since I keep asking other people for their
+denominator`). A reader who only skims the first eight lines should still come
+away with the actual claim: a green test suite and a confident agent are blind
+in the same place, and that place is the wire.
+
+The four are ordered by how uncomfortable they are, not by severity: the 403
+first because it is a security answer that looks like a correct one, the
+truncations second because everyone has written that line, the 405 last because
+it is the one a reader will recognise from their own router.
+
+The self-audit paragraph is three admissions and all three must stay:
+
+1. Six steps went red, not four — two were the corpus's own fault.
+2. The static detectors, the half these posts have mostly been about, found
+   nine things and none of them mattered here.
+3. sampleOne is code written to be measured, so it is friendlier than the
+   reader's.
+
+Cutting (2) is the tempting one and it is the one that would make the post
+dishonest — it is the only place a reader learns which half of the tool did the
+work on this particular tree.
+
+The link is to `bundlebox-projects`, not to `bundlebox`, because the claim is
+checkable there: the monitor page is generated from the run's own JSON, so
+every number has an artefact behind it.
+
+**Do not post this while the sampleOne work is still on a branch.** The whole
+close is "the whole thing is public, check my numbers"; if the link 404s or the
+monitor page is missing, the post argues against itself. Merge first.
