@@ -55,6 +55,24 @@ export async function rows() {
   let agents = [];
   try { agents = (await import("./adapters/index.js")).detect(); } catch (e) { r.push(row("adapters", "warn", String(e.message).split("\n")[0])); }
   r.push(row("agents", agents.length ? "ok" : "warn", agents.length ? agents.map((a) => `${a.name}${a.version ? " " + a.version : ""}`).join(", ") : "none on PATH", agents.length ? "" : "install claude, codex, gemini, opencode or aider, or set lanes.custom_command"));
+
+  // A mobile driver is optional and its absence is not a warning: most
+  // repositories have no phone. What IS a warning is a registered driver whose
+  // project directory has moved, because an agent with a dead MCP server sees
+  // no tools rather than an error.
+  try {
+    const art = await import("./recom/artemis.js");
+    const w = art.wired();
+    const d = art.devices();
+    if (w.length) {
+      const broken = w.filter((x) => x.project_exists === false);
+      const attached = d.devices.filter((x) => x.state === "device");
+      r.push(row("mobile driver", broken.length ? "warn" : "ok",
+        `artemis in ${w.map((x) => x.agent).join(", ")}${attached.length ? `, ${attached.length} device(s) attached` : ", no device attached"}`,
+        broken.length ? `${broken.map((x) => x.cwd).join(", ")} does not exist; re-run \`uv run artemis mcp --install\` from the checkout` : ""));
+      r.push(row("mobile gate", "ok", "bb recom gate mobile/<id> -- <drive>  decides whether a drive has to happen", ""));
+    }
+  } catch { /* the driver check must never be the reason doctor cannot answer */ }
   r.push(row("lane agent", "ok", cfg.lanes.agent === "auto" ? `auto → ${agents[0]?.name || "none"}` : cfg.lanes.agent));
   const hr = which("headroom");
   r.push(row("headroom", hr ? "ok" : "warn", hr ? `${hr} (wire ${cfg.headroom.enabled ? "enabled" : "disabled"})` : "not installed (optional compression proxy)", ""));

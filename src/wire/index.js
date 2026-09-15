@@ -11,16 +11,31 @@ import path from "node:path";
 import { ROOT, rel } from "../core/paths.js";
 import { load } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
-import { AGENTS, ORDER, INSTRUCTIONS, START, END, CLAUDE_HOOKS, isOurHook, detectAgents } from "./agents.js";
+import { AGENTS, ORDER, INSTRUCTIONS, instructions, START, END, CLAUDE_HOOKS, isOurHook, detectAgents } from "./agents.js";
+import { wired as artemisWired } from "../recom/artemis.js";
+
+// Whether this box has a mobile driver registered decides whether the block
+// carries the sentence about one. Read once per process rather than per file:
+// `bb wire --apply` writes the same block into ten files and they must not
+// differ because a device was unplugged between two of them.
+let _mobile = null;
+export function mobileWired() {
+  if (_mobile !== null) return _mobile;
+  _mobile = artemisWired().length > 0;
+  return _mobile;
+}
+export const setMobileWired = (v) => { _mobile = Boolean(v); };
+const block = () => instructions({ mobile: mobileWired() });
 
 // ── edit transforms: (before | null) -> after | null (null = delete/absent) ──
 
 export function addBlock(before) {
   const cur = before || "";
   const i = cur.indexOf(START), j = cur.indexOf(END);
-  if (i >= 0 && j > i) return cur.slice(0, i) + INSTRUCTIONS + cur.slice(j + END.length);
-  if (!cur.trim()) return INSTRUCTIONS + "\n";
-  return cur.replace(/\s*$/, "") + "\n\n" + INSTRUCTIONS + "\n";
+  const text = block();
+  if (i >= 0 && j > i) return cur.slice(0, i) + text + cur.slice(j + END.length);
+  if (!cur.trim()) return text + "\n";
+  return cur.replace(/\s*$/, "") + "\n\n" + text + "\n";
 }
 export function removeBlock(before) {
   if (before == null) return null;
@@ -218,7 +233,7 @@ function preview(r, root) {
   const p = path.isAbsolute(r.path) && !r.path.startsWith(root) ? r.path : rel(r.path);
   const lines = [`  ${r.action.padEnd(9)} ${p}${r.note ? `   (${r.note})` : ""}`];
   if (r.action === "create" || r.action === "modify") {
-    const body = r.kind === "block" ? INSTRUCTIONS : r.after;
+    const body = r.kind === "block" ? block() : r.after;
     const shown = String(body).split("\n").slice(0, r.kind === "block" ? 3 : 8);
     for (const l of shown) lines.push(`             | ${l}`);
     if (String(body).split("\n").length > shown.length) lines.push("             | ...");
