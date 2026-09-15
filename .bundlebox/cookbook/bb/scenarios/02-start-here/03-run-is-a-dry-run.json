@@ -1,0 +1,28 @@
+{
+ "id": "start-run-dry",
+ "surface": "start-here",
+ "severity": "high",
+ "title": "`bb run` without --apply spawns nothing",
+ "question": "is the dry run actually dry \u2014 does it say so, and does it stay at rc 0 without spending?",
+ "rule": [
+  "README: every verb is a dry run until --apply. Only `run` and `bridge send` can spend tokens.",
+  "cli.js prints: `Every verb is a dry run until --apply.`"
+ ],
+ "steps": [
+  {
+   "name": "run reports without spawning",
+   "run": "node bin/bb.js run",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "the contract is stated where a reader will see it",
+   "run": "node bin/bb.js help",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "dry run until --apply"
+   }
+  }
+ ]
+}

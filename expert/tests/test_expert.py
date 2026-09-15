@@ -9,7 +9,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-from bundlebox_expert import confidence, memory, model, rules, signals, throttle, triage  # noqa: E402
+from bundlebox_expert import confidence, coverage, memory, model, rules, signals, throttle, triage, world  # noqa: E402
 
 
 class Expert(unittest.TestCase):
@@ -121,6 +121,74 @@ class Expert(unittest.TestCase):
         r = subprocess.run([sys.executable, "-m", "bundlebox_expert", "rules"], input=json.dumps({"signals": {}}), capture_output=True, text=True, env={**os.environ, "PYTHONPATH": HERE})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["verdict"], "lean")
+
+
+class Coverage(unittest.TestCase):
+    """The matcher that decides whether a corpus exercises what a document declares.
+
+    Every check here is a shape that once reported the wrong number silently:
+    100% from a single step, 0% from a corpus that covered everything, a
+    permanent gap for a command no corpus may run, and a phantom route that was
+    really a deliberate 404 probe.
+    """
+
+    def test_one_command_does_not_cover_every_command(self):
+        # The original rule matched on the first token, so `bb scan` covered
+        # `bb compile` and a one-step corpus read as 100%.
+        self.assertTrue(coverage.match_cmd("bb scan", "bb scan --json"))
+        self.assertFalse(coverage.match_cmd("bb compile", "bb scan --json"))
+        self.assertTrue(coverage.match_cmd("bb cookbook", "bb cookbook run --base x"))
+
+    def test_a_checkout_invocation_is_the_same_capability_as_the_documented_one(self):
+        for called in ["node bin/bb.js scan", "./bin/bb.js scan", "timeout 10 node bin/bb.js scan",
+                       "BB_KERNEL=/nope node bin/bb.js scan --json"]:
+            self.assertTrue(coverage.match_cmd("bb scan", called), called)
+
+    def test_a_declared_flag_must_actually_have_been_passed(self):
+        # `--apply` is the difference between a report and a change; a corpus
+        # that ran the dry half must not report the apply half as covered.
+        self.assertFalse(coverage.match_cmd("bb run --apply", "node bin/bb.js run"))
+        self.assertTrue(coverage.match_cmd("bb run --apply", "node bin/bb.js run --apply"))
+
+    def test_every_segment_of_a_shell_line_is_a_call(self):
+        self.assertTrue(coverage.match_cmd("bb update", "node bin/bb.js update; test $? -le 2"))
+        self.assertTrue(coverage.match_cmd("bb mcp", "printf x | timeout 5 node bin/bb.js mcp | head -1"))
+
+    def test_an_excluded_capability_leaves_the_denominator_with_its_reason(self):
+        w = {"capabilities": [
+            {"id": "cmd:bb scan", "kind": "cmd", "cmd": "bb scan", "surface": ""},
+            {"id": "cmd:bb run --apply", "kind": "cmd", "cmd": "bb run --apply", "surface": ""},
+        ], "rules": []}
+        c = {"scenarios": [{"id": "s1", "steps": [{"run": "node bin/bb.js scan"}]}],
+             "excluded": [{"match": "bb run --apply", "why": "it spends"}]}
+        p = coverage.plan(w, c)
+        self.assertEqual(p["declared"], 1)
+        self.assertEqual(p["declared_total"], 2)
+        self.assertEqual(p["coverage_pct"], 100.0)
+        self.assertEqual(p["excluded"][0]["why"], "it spends")
+
+    def test_a_404_probe_is_not_a_phantom_route(self):
+        w = {"capabilities": [{"id": "http:GET /health", "kind": "http", "method": "GET", "path": "/health", "surface": ""}], "rules": []}
+        c = {"scenarios": [{"id": "s1", "steps": [
+            {"do": "GET /health", "expect": {"status": 200}},
+            {"do": "GET /api/write", "expect": {"status": 404}},
+        ]}]}
+        self.assertEqual(coverage.plan(w, c)["phantom_calls"], [])
+
+    def test_a_route_that_is_really_missing_is_still_reported(self):
+        w = {"capabilities": [{"id": "http:GET /health", "kind": "http", "method": "GET", "path": "/health", "surface": ""}], "rules": []}
+        c = {"scenarios": [{"id": "s1", "steps": [{"do": "GET /ghost", "expect": {"status": 200}}]}]}
+        self.assertEqual(coverage.plan(w, c)["phantom_calls"], ["GET /ghost"])
+
+
+class World(unittest.TestCase):
+    def test_a_formula_and_a_cd_are_not_capabilities(self):
+        # Both were extracted as commands and stayed permanently uncovered,
+        # pulling the coverage percentage down for a reason no corpus could fix.
+        self.assertEqual(world._clean_cmd("projected = overhead + brief + payload x churn"), "")
+        self.assertEqual(world._clean_cmd("cd your-repo"), "")
+        self.assertEqual(world._clean_cmd("and the scenario runner, the load simulator"), "")
+        self.assertEqual(world._clean_cmd("bb scan --json"), "bb scan --json")
 
 
 if __name__ == "__main__":

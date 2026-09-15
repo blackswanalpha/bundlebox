@@ -1,0 +1,34 @@
+{
+ "id": "wire-dry",
+ "surface": "wiring-into-agents",
+ "severity": "high",
+ "title": "wiring an agent is a dry run until --apply, and unwiring removes only bb's own block",
+ "question": "does `bb wire` show what it would write without writing it?",
+ "rule": [
+  "README: `bb wire --apply` installs the instructions block, the MCP entry and the hooks.",
+  "`bb unwire` removes only bundlebox's blocks, MCP entries and hook rows."
+ ],
+ "steps": [
+  {
+   "name": "wire without --apply reports and writes nothing",
+   "run": "node bin/bb.js wire",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "unwire without --apply is equally dry",
+   "run": "node bin/bb.js unwire",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "agents lists what is installed on this box",
+   "run": "node bin/bb.js agents",
+   "expect": {
+    "rc": 0
+   }
+  }
+ ]
+}

@@ -44,12 +44,19 @@ export const GEARS = [
     ],
   }),
   gear({
-    name: "measure", description: "what sessions cost and what the local path displaced",
+    name: "measure", description: "what sessions cost, what the local path displaced, and what packing a task is worth",
     on: ["cron", "session-end", "hand"],
     stages: [
       { verb: "tokens", args: ["ledger"], description: "fold the transcripts into the ledger" },
       { verb: "session", args: ["list"], description: "the sessions measured so far" },
       { verb: "buckmaster", args: ["episodes"], description: "turns displaced per verb" },
+      // The ablation runs on the tick, not by hand, because it is the one
+      // number on the page that is MEASURED on both sides and it goes stale the
+      // moment the tree moves. `init` is re-derived first: a suite whose tasks
+      // are last week's findings measures last week's tree.
+      { verb: "bench", args: ["init"], when: "open_findings > 0", description: "a suite from the findings that name a file" },
+      { verb: "bench", args: ["run"], when: "open_findings > 0", skip_if_fresh: true, inputs: source,
+        description: "both arms, per task; the packed arm against a search and a read" },
     ],
   }),
   gear({

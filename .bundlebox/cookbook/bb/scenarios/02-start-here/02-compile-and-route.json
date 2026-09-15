@@ -1,0 +1,34 @@
+{
+ "id": "start-compile-route",
+ "surface": "start-here",
+ "severity": "high",
+ "title": "findings become packed units and units become lanes, before anything spends",
+ "question": "do compile and route run to completion with no model call?",
+ "rule": [
+  "README: `bb compile` turns open findings into packed work units and `bb route` packs them into lanes. Both are free."
+ ],
+ "steps": [
+  {
+   "name": "compile packs findings into units",
+   "run": "node bin/bb.js compile",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "route packs units into lanes",
+   "run": "node bin/bb.js route",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "the context check answers with a verdict",
+   "run": "node bin/bb.js context src/cli.js",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "FITS"
+   }
+  }
+ ]
+}

@@ -1,0 +1,60 @@
+{
+  "title": "bb",
+  "who": "an engineer who has just installed bb in a repo and is finding out what it will and will not do",
+  "base": "http://127.0.0.1:7788",
+  "timezone": "UTC",
+  "tz_offset_minutes": 0,
+  "rpm": 0,
+  "parallel": 1,
+  "headers": {},
+  "vars": {},
+  "actors": {},
+  "setup": [
+    {
+      "name": "the command centre answers before anything claims to have tested it",
+      "do": "GET /health",
+      "expect": {
+        "status": 200
+      }
+    }
+  ],
+  "from_world": "bb",
+  "excluded": [
+    {
+      "match": "bb run --apply",
+      "why": "opens a paid agent. The corpus proves the DRY run spawns nothing; proving the apply path costs money and is not a board's job."
+    },
+    {
+      "match": "bb wire --apply",
+      "why": "writes into every agent config on the box. The corpus proves the dry run reports without writing."
+    },
+    {
+      "match": "bb update --apply",
+      "why": "installs a new bundlebox over the one running the corpus."
+    },
+    {
+      "match": "bb kernel build",
+      "why": "a cargo build, minutes long, and the box may have no toolchain. `bb doctor` reports which runtime serves each op instead."
+    },
+    {
+      "match": "bb kernel install",
+      "why": "downloads a release binary to ~/.bundlebox/bin and needs a network."
+    },
+    {
+      "match": "npm i -g bundlebox",
+      "why": "changes the machine outside the workspace."
+    },
+    {
+      "match": "bb tokens profile --probe",
+      "why": "the probe opens three real one-turn sessions to measure lane overhead. It SPENDS; `bb tokens profile` with no flag is the free half of the same answer."
+    },
+    {
+      "match": "bb genesis send calendar --run --spend",
+      "why": "hands a pack to a paid agent. The corpus proves the pack is written; sending it is the one step that costs."
+    },
+    {
+      "match": "bb genesis docs/PRD.md --base http://127.0.0.1:4400",
+      "why": "a documented example against a service this repo does not run. The same verb is exercised against README.md, which is here."
+    }
+  ]
+}

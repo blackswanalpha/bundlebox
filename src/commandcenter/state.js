@@ -14,12 +14,37 @@ import * as cookbook from "../cookbook/index.js";
 import * as corpus from "../cookbook/corpus.js";
 import * as simulate from "../simulate/index.js";
 import * as genesis from "../genesis/index.js";
+import * as bench from "../bench/index.js";
 import { ROOT, VAR, PKG_ROOT, rel } from "../core/paths.js";
 import { readJson } from "../core/config.js";
 import { now } from "../core/util.js";
 
 const SEV = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 const num = (x) => (Number.isFinite(Number(x)) ? Number(x) : 0);
+
+/** The measured half of "what did the factory save": the ablation bench.
+ *
+ *  `saved.turns` above is an ESTIMATE and is labelled one. This is not: both
+ *  arms are token counts over text on disk, so the page can put a percentage on
+ *  a card without the card being a claim. When no bench has been run the block
+ *  says so rather than showing a zero, because a zero here reads as "it saved
+ *  nothing" and the truth is "nobody measured".
+ */
+export function benchState() {
+  const last = bench.latest();
+  const runs = bench.history({ limit: 40 });
+  if (!last) return { state: "never run", how: "bb bench run", runs: [], tasks: [] };
+  const t = last.totals || {};
+  return {
+    state: "measured", suite: last.suite, at: last.at, kind: last.kind || "MEASURED", method: last.method || "",
+    bare: num(t.bare), packed: num(t.packed), saved: num(t.saved), saved_pct: num(t.saved_pct),
+    ratio: t.ratio ?? null, tasks_measured: num(t.measured), tasks_total: num(t.tasks),
+    losses: num(t.losses), errors: num(t.errors), bare_read_cap: last.bare_read_cap,
+    tasks: (last.tasks || []).map((x) => ({ id: x.id, title: x.title, bare: num(x.bare), packed: num(x.packed),
+      saved: num(x.saved), saved_pct: num(x.saved_pct), error: x.error || "" })),
+    runs: runs.map((r) => ({ at: r.at, bare: num(r.bare), packed: num(r.packed), saved: num(r.saved), saved_pct: num(r.saved_pct) })),
+  };
+}
 
 export function state({ sessions = 25, fold = false } = {}) {
   const findings = store.get("findings", []);
@@ -87,6 +112,7 @@ export function state({ sessions = 25, fold = false } = {}) {
       by_verdict: units.reduce((a, u) => ({ ...a, [u.verdict || "?"]: (a[u.verdict || "?"] || 0) + 1 }), {}) },
     lanes: { total: lanes.length, by_status: lanes.reduce((a, l) => ({ ...a, [l.status || "?"]: (a[l.status || "?"] || 0) + 1 }), {}) },
     episodes: { total: eps.length, by_verb: Object.values(byVerb).sort((a, b) => b.turns_saved - a.turns_saved).slice(0, 14) },
+    bench: benchState(),
     boards, simulations: sims, agents: calls, worlds,
   };
 }

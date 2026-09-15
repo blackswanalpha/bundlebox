@@ -1,0 +1,27 @@
+{
+ "id": "install-runs-from-source",
+ "surface": "install",
+ "severity": "high",
+ "title": "the entrypoint runs with nothing installed",
+ "question": "does `bb` work from a checkout, with no dependencies and no build step?",
+ "rule": [
+  "README: zero dependencies. package.json declares `dependencies: {}` and `bin.bb` is `bin/bb.js`."
+ ],
+ "steps": [
+  {
+   "name": "it prints a version",
+   "run": "node bin/bb.js version",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "0."
+   }
+  },
+  {
+   "name": "STATIC: nothing is installed to make that true",
+   "static": {
+    "file": "package.json",
+    "contains": "\"dependencies\": {}"
+   }
+  }
+ ]
+}

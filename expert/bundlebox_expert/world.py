@@ -57,16 +57,36 @@ def slug(s: str, n: int = 40) -> str:
 def _clean_cmd(raw: str) -> str:
     """A command line out of prose, or "".
 
-    Two things are rejected rather than kept: an inline comment (everything from
-    ` #`) and any line holding an arrow or a run of spaces, which is a formatted
-    table, not something you can execute. Keeping those produced capabilities
-    like `bb compile   ->  units …`, which no corpus can ever exercise.
+    Four things are rejected rather than kept: an inline comment (everything
+    from ` #`); any line holding an arrow or a run of spaces, which is a
+    formatted table rather than something you can execute; an assignment or an
+    equation, which is a formula the document is stating (`projected = overhead
+    + brief + ...` became a capability no corpus could ever run); and a
+    placeholder argument in angle brackets or a documented stand-in such as
+    `cd your-repo`, which names a directory only the reader has.
+
+    Each of those produced a capability that stayed permanently uncovered and
+    pulled the coverage percentage down for a reason that had nothing to do
+    with the corpus.
     """
     cmd = raw.strip().lstrip("$ ").strip()
     cmd = re.split(r"\s+#", cmd)[0].strip()
     if not cmd or len(cmd) > 160 or "->" in cmd or "  " in cmd or "|" in cmd:
         return ""
-    return cmd if re.match(r"^[a-z][\w.\-/]*\s", cmd) else ""
+    # `a = b` and `a == b` are statements about values, not programs to run.
+    if re.search(r"(?<![!<>=])=(?!=)", cmd.split()[0] if cmd.split() else cmd) or " = " in cmd:
+        return ""
+    # `cd` changes the shell's directory and exercises nothing.
+    if re.match(r"^cd\b", cmd):
+        return ""
+    if not re.match(r"^[a-z][\w.\-/]*\s", cmd):
+        return ""
+    # A comma is prose. Fenced blocks in a README hold diagrams and prose lines
+    # as often as they hold commands, and `and the scenario runner, the load
+    # simulator` matched every rule above it while being a sentence.
+    if "," in cmd or cmd.startswith(("and ", "or ", "the ", "a ", "an ", "with ", "for ", "plus ", "then ")):
+        return ""
+    return cmd
 
 
 def _sentences(block):

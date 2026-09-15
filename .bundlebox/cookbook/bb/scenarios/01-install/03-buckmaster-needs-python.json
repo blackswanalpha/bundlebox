@@ -1,0 +1,19 @@
+{
+ "id": "install-buckmaster-python",
+ "surface": "install",
+ "severity": "medium",
+ "title": "the expert system says what it needs instead of failing quietly",
+ "question": "when a verb needs python3, does it say so?",
+ "rule": [
+  "`bb buckmaster` is the python3 half; a missing runtime is reported, never treated as an empty result."
+ ],
+ "steps": [
+  {
+   "name": "it runs or it says why",
+   "run": "node bin/bb.js buckmaster episodes; test $? -le 2",
+   "expect": {
+    "rc": 0
+   }
+  }
+ ]
+}

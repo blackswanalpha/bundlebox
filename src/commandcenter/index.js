@@ -13,11 +13,13 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { OUT, rel } from "../core/paths.js";
-import { load as loadCfg } from "../core/config.js";
+import { OUT, PKG_ROOT, rel } from "../core/paths.js";
+import { load as loadCfg, readJson } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
-import { state } from "./state.js";
+import { state, benchState } from "./state.js";
 import { html } from "./page.js";
+
+const VERSION = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
 
 export const FILE = () => path.join(OUT, "commandcenter", "index.html");
 
@@ -38,7 +40,12 @@ export function serve({ port = 0, host = "127.0.0.1", sessions = 25 } = {}) {
     try {
       const url = new URL(req.url, `http://${h}:${p}`);
       if (req.method !== "GET") return send(405, "text/plain", "read-only");
+      // `/health` is the one route that must answer without reading the store:
+      // a health probe that fails because a ledger is mid-write reports the
+      // service down when it is up, and `bb runbook` believes it.
+      if (url.pathname === "/health") return send(200, "application/json", JSON.stringify({ ok: true, service: "bundlebox-commandcenter", version: VERSION(), at: new Date().toISOString() }));
       if (url.pathname === "/api/state") return send(200, "application/json", JSON.stringify(state({ sessions, fold: url.searchParams.get("fold") === "1" })));
+      if (url.pathname === "/api/bench") return send(200, "application/json", JSON.stringify(benchState()));
       if (url.pathname === "/" || url.pathname === "/index.html") return send(200, "text/html; charset=utf-8", html(null, { live: true }));
       return send(404, "text/plain", "not found");
     } catch (e) { send(500, "text/plain", String(e.message || e)); }
@@ -84,6 +91,7 @@ export const commands = {
       "  bb commandcenter                 serve on 127.0.0.1:7788 and refetch every 10s",
       "  bb commandcenter build           a single self-contained HTML file with the state embedded",
       "",
+      "Routes: /  /health  /api/state  /api/bench",
       "Read-only, loopback, no write route. Nothing on the page calls a model.",
     ].join("\n"),
     run: cmd,

@@ -1,0 +1,28 @@
+{
+ "id": "install-kernel-optional",
+ "surface": "install",
+ "severity": "high",
+ "title": "the Rust kernel is an accelerator, never a requirement",
+ "question": "does the box report which runtime serves each op, and keep working when the kernel is not the one?",
+ "rule": [
+  "README: the kernel is optional; `bb doctor` says which runtime serves each op."
+ ],
+ "steps": [
+  {
+   "name": "doctor names a runtime per op",
+   "run": "node bin/bb.js doctor",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "kernel"
+   }
+  },
+  {
+   "name": "the estimator answers with the kernel forced off",
+   "run": "BB_KERNEL=/nonexistent node bin/bb.js tokens estimate package.json",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "tokens"
+   }
+  }
+ ]
+}

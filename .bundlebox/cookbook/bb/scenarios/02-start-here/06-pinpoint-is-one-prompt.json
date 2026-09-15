@@ -1,0 +1,28 @@
+{
+ "id": "start-pinpoint",
+ "surface": "measured-vs-estimated",
+ "severity": "high",
+ "title": "one problem becomes one budgeted prompt",
+ "question": "does `bb pinpoint` write a prompt that fits, naming the files and the gate?",
+ "rule": [
+  "README: PACKED is the one `bb pinpoint` prompt for the task."
+ ],
+ "steps": [
+  {
+   "name": "it locates a problem and reports a verdict",
+   "run": "node bin/bb.js pinpoint \"the token estimator under-counts code\"",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "FITS"
+   }
+  },
+  {
+   "name": "and names the files it chose",
+   "run": "node bin/bb.js pinpoint \"the token estimator under-counts code\" --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).scope.length?'has-scope':'no-scope'))\"",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "has-scope"
+   }
+  }
+ ]
+}

@@ -1,0 +1,451 @@
+{
+  "name": "bb",
+  "base": "",
+  "surfaces": [
+    {
+      "id": "install",
+      "title": "Install",
+      "why": "heading at line 44",
+      "line": 44,
+      "rules": 1,
+      "capabilities": 4
+    },
+    {
+      "id": "start-here",
+      "title": "Start here",
+      "why": "heading at line 67",
+      "line": 67,
+      "rules": 0,
+      "capabilities": 16
+    },
+    {
+      "id": "wiring-into-agents",
+      "title": "Wiring into agents",
+      "why": "heading at line 97",
+      "line": 97,
+      "rules": 0,
+      "capabilities": 2
+    },
+    {
+      "id": "measured-vs-estimated",
+      "title": "Measured vs estimated",
+      "why": "heading at line 153",
+      "line": 153,
+      "rules": 1,
+      "capabilities": 5
+    },
+    {
+      "id": "the-command-centre",
+      "title": "The command centre",
+      "why": "heading at line 178",
+      "line": 178,
+      "rules": 0,
+      "capabilities": 5
+    },
+    {
+      "id": "architecture",
+      "title": "Architecture",
+      "why": "heading at line 192",
+      "line": 192,
+      "rules": 1,
+      "capabilities": 0
+    },
+    {
+      "id": "releases",
+      "title": "Releases",
+      "why": "heading at line 242",
+      "line": 242,
+      "rules": 1,
+      "capabilities": 2
+    }
+  ],
+  "surfaces_dropped": [
+    "the-verbs",
+    "the-budget-model",
+    "configuration",
+    "documentation"
+  ],
+  "actors": [],
+  "rules": [
+    {
+      "id": "R1",
+      "text": "It never calls a model itself.",
+      "modality": "must_not",
+      "surface": "",
+      "line": 19,
+      "why": "line 19",
+      "constants": []
+    },
+    {
+      "id": "R2",
+      "text": "Two known gaps remain on Windows — a **piped** acceptance gate reports the last command's exit code rather than the first failure, because `cmd.exe` has no `set -o pipefail` (unpiped gates are exact), and `bb session` may not find transcripts, because the name Claude Code gives its projects directory there has not been verified.",
+      "modality": "must_not",
+      "surface": "install",
+      "line": 52,
+      "why": "line 52",
+      "constants": []
+    },
+    {
+      "id": "R3",
+      "text": "Two kinds of number appear in every report and are never added: used and cache-saved are measured off the transcript; automation-saved is an estimate printed as a range.",
+      "modality": "must_not",
+      "surface": "measured-vs-estimated",
+      "line": 155,
+      "why": "line 155",
+      "constants": []
+    },
+    {
+      "id": "R4",
+      "text": "It speaks `http` only, because TLS would be a dependency it must build without — the JavaScript engine runs when the base is `https`, when the kernel is absent, or when a corpus uses a pattern outside the kernel's documented subset, and the board names which engine ran and why.",
+      "modality": "must",
+      "surface": "architecture",
+      "line": 207,
+      "why": "line 207",
+      "constants": []
+    },
+    {
+      "id": "R5",
+      "text": "The optional wire integration talks to [headroom](https://github.com/headroomlabs-ai/headroom) over the process boundary and never imports it.",
+      "modality": "must_not",
+      "surface": "releases",
+      "line": 251,
+      "why": "line 251",
+      "constants": []
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "cmd:bb bench",
+      "kind": "cmd",
+      "cmd": "bb bench",
+      "surface": "measured-vs-estimated",
+      "line": 161,
+      "why": "line 161, inline"
+    },
+    {
+      "id": "cmd:bb bench init",
+      "kind": "cmd",
+      "cmd": "bb bench init",
+      "surface": "measured-vs-estimated",
+      "line": 166,
+      "why": "line 166, bash block"
+    },
+    {
+      "id": "cmd:bb bench run",
+      "kind": "cmd",
+      "cmd": "bb bench run",
+      "surface": "measured-vs-estimated",
+      "line": 167,
+      "why": "line 167, bash block"
+    },
+    {
+      "id": "cmd:bb bench show --json",
+      "kind": "cmd",
+      "cmd": "bb bench show --json",
+      "surface": "measured-vs-estimated",
+      "line": 168,
+      "why": "line 168, bash block"
+    },
+    {
+      "id": "cmd:bb buckmaster",
+      "kind": "cmd",
+      "cmd": "bb buckmaster",
+      "surface": "install",
+      "line": 62,
+      "why": "line 62, inline"
+    },
+    {
+      "id": "cmd:bb buckmaster episodes",
+      "kind": "cmd",
+      "cmd": "bb buckmaster episodes",
+      "surface": "",
+      "line": 36,
+      "why": "line 36, inline"
+    },
+    {
+      "id": "cmd:bb commandcenter",
+      "kind": "cmd",
+      "cmd": "bb commandcenter",
+      "surface": "start-here",
+      "line": 92,
+      "why": "line 92, bash block"
+    },
+    {
+      "id": "cmd:bb commandcenter build",
+      "kind": "cmd",
+      "cmd": "bb commandcenter build",
+      "surface": "the-command-centre",
+      "line": 181,
+      "why": "line 181, inline"
+    },
+    {
+      "id": "cmd:bb compile",
+      "kind": "cmd",
+      "cmd": "bb compile",
+      "surface": "start-here",
+      "line": 76,
+      "why": "line 76, bash block"
+    },
+    {
+      "id": "cmd:bb cookbook check && bb cookbook run",
+      "kind": "cmd",
+      "cmd": "bb cookbook check && bb cookbook run",
+      "surface": "start-here",
+      "line": 90,
+      "why": "line 90, bash block"
+    },
+    {
+      "id": "cmd:bb doctor",
+      "kind": "cmd",
+      "cmd": "bb doctor",
+      "surface": "start-here",
+      "line": 72,
+      "why": "line 72, bash block"
+    },
+    {
+      "id": "cmd:bb findings",
+      "kind": "cmd",
+      "cmd": "bb findings",
+      "surface": "start-here",
+      "line": 75,
+      "why": "line 75, bash block"
+    },
+    {
+      "id": "cmd:bb genesis docs/PRD.md --base http://127.0.0.1:4400",
+      "kind": "cmd",
+      "cmd": "bb genesis docs/PRD.md --base http://127.0.0.1:4400",
+      "surface": "start-here",
+      "line": 86,
+      "why": "line 86, bash block"
+    },
+    {
+      "id": "cmd:bb genesis pack",
+      "kind": "cmd",
+      "cmd": "bb genesis pack",
+      "surface": "start-here",
+      "line": 88,
+      "why": "line 88, bash block"
+    },
+    {
+      "id": "cmd:bb genesis plan",
+      "kind": "cmd",
+      "cmd": "bb genesis plan",
+      "surface": "start-here",
+      "line": 87,
+      "why": "line 87, bash block"
+    },
+    {
+      "id": "cmd:bb genesis send calendar --run --spend",
+      "kind": "cmd",
+      "cmd": "bb genesis send calendar --run --spend",
+      "surface": "start-here",
+      "line": 89,
+      "why": "line 89, bash block"
+    },
+    {
+      "id": "cmd:bb init",
+      "kind": "cmd",
+      "cmd": "bb init",
+      "surface": "start-here",
+      "line": 71,
+      "why": "line 71, bash block"
+    },
+    {
+      "id": "cmd:bb kernel build",
+      "kind": "cmd",
+      "cmd": "bb kernel build",
+      "surface": "install",
+      "line": 57,
+      "why": "line 57, inline"
+    },
+    {
+      "id": "cmd:bb kernel install",
+      "kind": "cmd",
+      "cmd": "bb kernel install",
+      "surface": "install",
+      "line": 57,
+      "why": "line 57, inline"
+    },
+    {
+      "id": "cmd:bb mainboard gaps",
+      "kind": "cmd",
+      "cmd": "bb mainboard gaps",
+      "surface": "start-here",
+      "line": 91,
+      "why": "line 91, bash block"
+    },
+    {
+      "id": "cmd:bb mcp",
+      "kind": "cmd",
+      "cmd": "bb mcp",
+      "surface": "wiring-into-agents",
+      "line": 116,
+      "why": "line 116, inline"
+    },
+    {
+      "id": "cmd:bb pinpoint",
+      "kind": "cmd",
+      "cmd": "bb pinpoint",
+      "surface": "measured-vs-estimated",
+      "line": 173,
+      "why": "line 173, inline"
+    },
+    {
+      "id": "cmd:bb pipeline run intake",
+      "kind": "cmd",
+      "cmd": "bb pipeline run intake",
+      "surface": "",
+      "line": 42,
+      "why": "line 42, inline"
+    },
+    {
+      "id": "cmd:bb route",
+      "kind": "cmd",
+      "cmd": "bb route",
+      "surface": "start-here",
+      "line": 77,
+      "why": "line 77, bash block"
+    },
+    {
+      "id": "cmd:bb run",
+      "kind": "cmd",
+      "cmd": "bb run",
+      "surface": "start-here",
+      "line": 78,
+      "why": "line 78, bash block"
+    },
+    {
+      "id": "cmd:bb run --apply",
+      "kind": "cmd",
+      "cmd": "bb run --apply",
+      "surface": "start-here",
+      "line": 79,
+      "why": "line 79, bash block"
+    },
+    {
+      "id": "cmd:bb scan",
+      "kind": "cmd",
+      "cmd": "bb scan",
+      "surface": "start-here",
+      "line": 74,
+      "why": "line 74, bash block"
+    },
+    {
+      "id": "cmd:bb session",
+      "kind": "cmd",
+      "cmd": "bb session",
+      "surface": "",
+      "line": 36,
+      "why": "line 36, inline"
+    },
+    {
+      "id": "cmd:bb tokens profile --probe",
+      "kind": "cmd",
+      "cmd": "bb tokens profile --probe",
+      "surface": "",
+      "line": 36,
+      "why": "line 36, inline"
+    },
+    {
+      "id": "cmd:bb unwire",
+      "kind": "cmd",
+      "cmd": "bb unwire",
+      "surface": "wiring-into-agents",
+      "line": 101,
+      "why": "line 101, inline"
+    },
+    {
+      "id": "cmd:bb update",
+      "kind": "cmd",
+      "cmd": "bb update",
+      "surface": "releases",
+      "line": 246,
+      "why": "line 246, inline"
+    },
+    {
+      "id": "cmd:bb update --apply",
+      "kind": "cmd",
+      "cmd": "bb update --apply",
+      "surface": "releases",
+      "line": 246,
+      "why": "line 246, inline"
+    },
+    {
+      "id": "cmd:bb wire --apply",
+      "kind": "cmd",
+      "cmd": "bb wire --apply",
+      "surface": "start-here",
+      "line": 73,
+      "why": "line 73, bash block"
+    },
+    {
+      "id": "cmd:npm i -g bundlebox",
+      "kind": "cmd",
+      "cmd": "npm i -g bundlebox",
+      "surface": "install",
+      "line": 47,
+      "why": "line 47, bash block"
+    },
+    {
+      "id": "http:GET /",
+      "kind": "http",
+      "method": "GET",
+      "path": "/",
+      "surface": "the-command-centre",
+      "line": 187,
+      "why": "line 187",
+      "absolute": false,
+      "tier": "simple"
+    },
+    {
+      "id": "http:GET /api/bench",
+      "kind": "http",
+      "method": "GET",
+      "path": "/api/bench",
+      "surface": "the-command-centre",
+      "line": 190,
+      "why": "line 190",
+      "absolute": false,
+      "tier": "simple"
+    },
+    {
+      "id": "http:GET /api/state",
+      "kind": "http",
+      "method": "GET",
+      "path": "/api/state",
+      "surface": "the-command-centre",
+      "line": 189,
+      "why": "line 189",
+      "absolute": false,
+      "tier": "simple"
+    },
+    {
+      "id": "http:GET /health",
+      "kind": "http",
+      "method": "GET",
+      "path": "/health",
+      "surface": "the-command-centre",
+      "line": 188,
+      "why": "line 188",
+      "absolute": false,
+      "tier": "simple"
+    }
+  ],
+  "constants": [],
+  "unknown": [
+    "the base URL the http capabilities are served from — pass --base, nothing in the document says",
+    "who the actors are — no 'as a <role>' or named cast in the document; the corpus will run as one anonymous user"
+  ],
+  "counts": {
+    "lines": 253,
+    "surfaces": 7,
+    "rules": 5,
+    "capabilities": 38,
+    "actors": 0,
+    "constants": 0
+  },
+  "id": "bb",
+  "from": "README.md",
+  "derived_at": "2026-09-15T05:57:53.832Z",
+  "source_bytes": 14733
+}

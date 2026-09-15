@@ -59,7 +59,7 @@ export const DEFAULTS = {
     enabled: ["doc-links", "todo-census", "secret-scan", "big-file", "merge-markers",
               "worktree-hygiene", "dead-exports", "duplicate-blocks", "god-file",
               "orphan-files", "dead-deps", "doc-drift", "lockfile-drift", "stale-evidence",
-              "missing-tests", "debug-leftovers", "ui-generic"],
+              "missing-tests", "debug-leftovers", "ui-generic", "anti-slop"],
     promote_at: "medium",
   },
   designlabs: {

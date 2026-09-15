@@ -1,0 +1,20 @@
+{
+ "id": "wire-mcp",
+ "surface": "wiring-into-agents",
+ "severity": "medium",
+ "title": "the MCP server answers an initialize over stdio",
+ "question": "does `bb mcp` speak the protocol, or does it only claim to?",
+ "rule": [
+  "README: `bb mcp` serves the zero-token verbs as an MCP server over stdio."
+ ],
+ "steps": [
+  {
+   "name": "it answers initialize",
+   "run": "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"bb-corpus\",\"version\":\"1\"}}}' | timeout 10 node bin/bb.js mcp | head -1",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "\"result\""
+   }
+  }
+ ]
+}

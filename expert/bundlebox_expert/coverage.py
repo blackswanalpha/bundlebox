@@ -49,6 +49,88 @@ def match_route(declared: str, called: str) -> bool:
     return j == len(c)
 
 
+INTERPRETERS = {"node", "npx", "npm", "bun", "deno", "python", "python3", "sh", "bash", "uv", "uvx", "poetry"}
+# Wrappers that run something else and are not the capability under test. Their
+# own arguments (`timeout 10`, `FOO=bar`) are stripped with them.
+WRAPPERS = {"timeout", "time", "env", "nohup", "stdbuf", "nice", "command", "exec"}
+SCRIPT_SUFFIX = (".js", ".mjs", ".cjs", ".ts", ".py", ".sh", ".rb")
+SHELL_SPLIT = re.compile(r"\s*(?:\|\||&&|[;|&\n])\s*")
+
+
+def canon_cmd(cmd: str) -> tuple:
+    """The command as a capability, not as a shell line: (words, flags).
+
+    A document says `bb scan`. A corpus running from a checkout says
+    `node bin/bb.js scan`. They are the same capability and a matcher that
+    cannot see it reports 0% coverage on a corpus that covers everything, which
+    is a worse answer than no coverage number at all.
+
+    So: drop the interpreter and reduce the program to its basename without a
+    script suffix. Flags come back separately rather than being discarded,
+    because in this box `--apply` is the difference between a report and a
+    change, and a matcher that treats them as one capability would report the
+    dangerous half as covered by a test of the safe half.
+    """
+    parts = str(cmd).split()
+    words = [w for w in parts if not w.startswith("-")]
+    flags = {w.split("=", 1)[0] for w in parts if w.startswith("-")}
+    while words and (words[0] in INTERPRETERS or words[0] in WRAPPERS
+                     or words[0].replace(".", "", 1).isdigit()
+                     or ("=" in words[0] and "/" not in words[0].split("=", 1)[0])):
+        words = words[1:]
+    if not words:
+        return [], flags
+    prog = words[0].rsplit("/", 1)[-1]
+    for suf in SCRIPT_SUFFIX:
+        if prog.endswith(suf):
+            prog = prog[: -len(suf)]
+            break
+    return [prog] + words[1:], flags
+
+
+def segments_of(line: str) -> list:
+    """A step's `run` is a shell line, not a program name. `bb update; test $?`
+    invokes two programs and exercises both, so each segment is matched on its
+    own -- otherwise a step that checks its own exit code covers nothing."""
+    return [seg for seg in SHELL_SPLIT.split(str(line)) if seg.strip()]
+
+
+def match_cmd(declared: str, called: str) -> bool:
+    """A command capability is covered when a step RUNS it, token by token.
+
+    The first token was the original rule and every capability in a CLI shares
+    it: one scenario running `bb scan` reported all twenty-three `bb *`
+    capabilities as covered, and a corpus with one step read as 100%. So the
+    declared words must be a prefix of the called ones -- `bb cookbook` covers
+    `bb cookbook run --base x` and does not cover `bb compile` -- and every flag
+    the capability declares must actually have been passed.
+    """
+    d, dflags = canon_cmd(declared)
+    if not d:
+        return False
+    for seg in segments_of(called):
+        c, cflags = canon_cmd(seg)
+        if len(d) <= len(c) and c[: len(d)] == d and dflags <= cflags:
+            return True
+    return False
+
+
+def _asserts_absent(expect: dict) -> bool:
+    """Is this step asserting the route is NOT there?
+
+    A 404 probe is the correct way to prove a surface has no write route, and
+    the phantom-call check used to report exactly that step as a call against
+    something the document does not declare -- turning a deliberate negative
+    test into a finding. A step expecting 404 or 405 is asserting absence, and
+    absence is not a phantom.
+    """
+    codes = []
+    if "status" in expect:
+        codes.append(expect["status"])
+    codes.extend(expect.get("status_in") or [])
+    return bool(codes) and all(c in (404, 405, 410) for c in codes)
+
+
 def _steps(corpus: dict):
     for sc in corpus.get("scenarios", []):
         for st in sc.get("steps", []):
@@ -65,36 +147,74 @@ def exercised(corpus: dict) -> dict:
     http, cmds, files = [], {}, {}
     for sc, st in _steps(corpus):
         spec = str(st.get("do") or "")
-        keys = set((st.get("expect") or {}).keys())
+        expect = st.get("expect") or {}
+        keys = set(expect.keys())
         deep = bool(keys - {"status", "status_in", "max_ms"})
         if spec:
             parts = spec.split()
             if len(parts) >= 2:
-                http.append({"method": parts[0].upper(), "path": parts[1], "scenario": sc.get("id", ""), "deep": deep})
+                http.append({"method": parts[0].upper(), "path": parts[1], "scenario": sc.get("id", ""),
+                             "deep": deep, "absent": _asserts_absent(expect)})
         cmd = str(st.get("run") or "")
         if cmd:
-            cmds.setdefault(cmd.split()[0] if cmd.split() else cmd, []).append(sc.get("id", ""))
+            cmds.setdefault(cmd, []).append(sc.get("id", ""))
         stat = st.get("static") or {}
         if stat.get("file"):
             files.setdefault(stat["file"], []).append(sc.get("id", ""))
     return {"http": http, "cmds": cmds, "files": files}
 
 
+def out_of_scope(corpus: dict) -> list:
+    """What this corpus DECLARES it will not run, and why.
+
+    Not every capability a document states can be exercised by a corpus. `bb run
+    --apply` opens a paid agent; `bb kernel install` writes a binary to the
+    machine; `npm i -g` changes the box. A corpus that ran them would be a
+    corpus nobody dares run, and one that stayed silent about them would report
+    the same gap forever with no way to close it.
+
+    So the persona names them with a reason. They leave the denominator and are
+    reported on their own line: `covered of in-scope, N declared out of scope`.
+    An excluded capability is still visible -- the reason is the point, and a
+    corpus that excluded everything would say so in the same sentence.
+    """
+    rows = []
+    for x in corpus.get("excluded", []) or []:
+        if isinstance(x, str):
+            rows.append({"match": x, "why": ""})
+        elif isinstance(x, dict) and x.get("match"):
+            rows.append({"match": str(x["match"]), "why": str(x.get("why", ""))})
+    return rows
+
+
+def _excluded_by(cap: dict, rows: list):
+    for r in rows:
+        if cap["id"] == r["match"] or cap.get("cmd", "") == r["match"] or cap["id"].endswith(":" + r["match"]):
+            return r
+    return None
+
+
 def plan(world: dict, corpus: dict, limit: int = 40) -> dict:
     ex = exercised(corpus)
+    skipped = out_of_scope(corpus)
     rules = world.get("rules", [])
     by_surface = {}
     for r in rules:
         by_surface.setdefault(r.get("surface", ""), []).append(r)
 
-    covered, shallow, specs = [], [], []
+    covered, shallow, specs, excluded = [], [], [], []
     calls_unmatched = list(ex["http"])
     for cap in world.get("capabilities", []):
+        hit = _excluded_by(cap, skipped)
+        if hit:
+            excluded.append({"id": cap["id"], "why": hit["why"] or "declared out of scope by the persona"})
+            continue
         if cap["kind"] == "http":
             hits = [h for h in ex["http"] if h["method"] == cap["method"] and match_route(cap["path"], h["path"])]
         elif cap["kind"] == "cmd":
-            head = cap["cmd"].split()[0] if cap["cmd"].split() else cap["cmd"]
-            hits = [{"scenario": s, "deep": True} for s in ex["cmds"].get(head, [])]
+            hits = [{"scenario": s, "deep": True}
+                    for called, ids in ex["cmds"].items() if match_cmd(cap["cmd"], called)
+                    for s in ids]
         else:
             hits = []
         for h in hits:
@@ -125,14 +245,17 @@ def plan(world: dict, corpus: dict, limit: int = 40) -> dict:
         })
     specs.sort(key=lambda s: (-s["score"], s["capability"]))
 
-    declared = len(world.get("capabilities", []))
+    declared = len(world.get("capabilities", [])) - len(excluded)
     return {
         "declared": declared,
+        "declared_total": len(world.get("capabilities", [])),
         "covered": len(covered),
         "shallow": len(shallow),
+        "excluded": excluded,
         "coverage_pct": round(100.0 * len(covered) / declared, 1) if declared else None,
         "deep_pct": round(100.0 * (len(covered) - len(shallow)) / declared, 1) if declared else None,
-        "phantom_calls": sorted({"%s %s" % (c["method"], c["path"]) for c in calls_unmatched if "method" in c}),
+        "phantom_calls": sorted({"%s %s" % (c["method"], c["path"])
+                                 for c in calls_unmatched if "method" in c and not c.get("absent")}),
         "shallow_capabilities": [s["id"] for s in shallow],
         "specs": specs[:limit],
         "specs_total": len(specs),

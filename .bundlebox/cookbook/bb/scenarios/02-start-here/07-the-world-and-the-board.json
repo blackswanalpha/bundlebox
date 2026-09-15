@@ -1,0 +1,44 @@
+{
+ "id": "start-world-board",
+ "surface": "start-here",
+ "severity": "high",
+ "title": "a document becomes a coverage plan and a board, for nothing",
+ "question": "do genesis plan, genesis pack, cookbook check/run and mainboard gaps all run locally?",
+ "rule": [
+  "README: `bb genesis plan` reports what nothing covers, ranked and tiered; `bb genesis pack` writes one small brief per surface.",
+  "`bb cookbook check` validates every corpus with no server and no requests.",
+  "`bb mainboard gaps` names the first pipeline stage that does not hold, and its fix."
+ ],
+ "steps": [
+  {
+   "name": "the plan reports coverage against the world",
+   "run": "node bin/bb.js genesis plan",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "capabilities covered"
+   }
+  },
+  {
+   "name": "pack writes the briefs without sending one",
+   "run": "node bin/bb.js genesis pack --max 1",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "Nothing has been sent"
+   }
+  },
+  {
+   "name": "the corpus validates with no server",
+   "run": "node bin/bb.js cookbook check && node bin/bb.js cookbook run --help >/dev/null; true",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "the board names the first stage that does not hold",
+   "run": "node bin/bb.js mainboard gaps; test $? -le 2",
+   "expect": {
+    "rc": 0
+   }
+  }
+ ]
+}

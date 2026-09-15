@@ -1,0 +1,54 @@
+{
+ "id": "bench-ablation",
+ "surface": "measured-vs-estimated",
+ "severity": "high",
+ "title": "the bench measures both arms and publishes the losses",
+ "question": "does `bb bench` report a bare arm, a packed arm and the tasks where packing cost more?",
+ "rule": [
+  "README: BARE searches the tree and reads the top files whole; PACKED is one `bb pinpoint` prompt.",
+  "Both arms are counted by the same estimator over text on disk; neither calls a model.",
+  "A task that costs more packed than bare is printed in the table, not dropped."
+ ],
+ "steps": [
+  {
+   "name": "a suite can be derived from the findings",
+   "run": "node bin/bb.js bench init",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "task"
+   }
+  },
+  {
+   "name": "suites lists it",
+   "run": "node bin/bb.js bench suites",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "default"
+   }
+  },
+  {
+   "name": "a run reports both arms",
+   "run": "node bin/bb.js bench run",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "packed"
+   }
+  },
+  {
+   "name": "and says the number is measured, not claimed",
+   "run": "node bin/bb.js bench show",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "MEASURED"
+   }
+  },
+  {
+   "name": "the same run twice on the same tree gives the same total \u2014 a bench that drifts is not a measurement",
+   "run": "a=$(node bin/bb.js bench run --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).totals.bare)))\"); b=$(node bin/bb.js bench run --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).totals.bare)))\"); test \"$a\" = \"$b\" && echo stable",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "stable"
+   }
+  }
+ ]
+}

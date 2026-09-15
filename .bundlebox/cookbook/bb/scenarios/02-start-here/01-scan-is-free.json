@@ -1,0 +1,36 @@
+{
+ "id": "start-scan-free",
+ "surface": "start-here",
+ "severity": "high",
+ "title": "the detectors run without a model and without a network",
+ "question": "does `bb scan` produce findings locally, and does `bb findings` list them?",
+ "rule": [
+  "README: `bb scan` runs the local detectors. No tokens: nothing in the scan path calls a model."
+ ],
+ "steps": [
+  {
+   "name": "scan runs",
+   "run": "node bin/bb.js scan --json",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "detectors"
+   }
+  },
+  {
+   "name": "findings lists what it found",
+   "run": "node bin/bb.js findings --limit 3",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "detector"
+   }
+  },
+  {
+   "name": "one finding explains itself with evidence",
+   "run": "node bin/bb.js findings --json --limit 1 | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);const f=(j.findings||j)[0];process.stdout.write(f&&f.id?'has-id':'no-id')})\"",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "has-id"
+   }
+  }
+ ]
+}

@@ -195,6 +195,37 @@ check("bb help lists every verb", async () => {
   return [n >= 25 && !broken.length, `${n} verbs${broken.length ? `, ${broken.length} modules not loadable: ${broken.map((b) => b.group).join(",")}` : ""}`];
 });
 
+check("the cron line runs the stages instead of reporting them", async () => {
+  const cron = await import("./cron.js");
+  const l = cron.line({});
+  const bad = await cron.unsafeVerbs();
+  // A worker installed without --apply reported `would-run` every half hour and
+  // produced nothing, indefinitely, while looking installed. The other half of
+  // the same check: --apply on a gear that reaches `run` would be a spending
+  // loop on a timer, so the gear's verbs are checked rather than trusted.
+  const runs = l.includes(`pipeline run ${cron.CRON_GEAR} --apply`);
+  return [runs && !bad.length,
+    runs ? (bad.length ? `\`${cron.CRON_GEAR}\` reaches a spending verb: ${bad.join(", ")}` : `--apply present; ${cron.CRON_GEAR} reaches no spending verb`)
+      : "the line is a dry run: every stage would report would-run and do nothing"];
+});
+
+check("the ablation bench measures both arms and is deterministic", async () => {
+  const bench = await import("./bench/index.js");
+  const suite = await import("./bench/suite.js");
+  const tasks = suite.derive({ limit: 2 });
+  if (!tasks.length) return [true, "no finding names a file yet; nothing to measure"];
+  suite.write("_selftest", { title: "selftest", tasks });
+  const a = await bench.run("_selftest", { write: false });
+  const b = await bench.run("_selftest", { write: false });
+  if (a.rc) return [false, a.why];
+  const measured = a.totals.bare > 0 && a.totals.packed > 0;
+  const stable = a.totals.bare === b.totals.bare && a.totals.packed === b.totals.packed;
+  return [measured && stable,
+    !measured ? `an arm measured nothing: bare ${a.totals.bare}, packed ${a.totals.packed}`
+      : !stable ? `two runs over one tree disagreed: ${a.totals.bare}/${a.totals.packed} then ${b.totals.bare}/${b.totals.packed}`
+      : `bare ${a.totals.bare}, packed ${a.totals.packed}, ${a.totals.saved_pct}% over ${a.totals.measured} task(s), stable across two runs`];
+});
+
 // ── the scenario half ───────────────────────────────────────────────────────
 
 check("every shipped eval and playbook entry validates without reading data", async () => {

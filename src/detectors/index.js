@@ -31,10 +31,11 @@ import staleEvidence from "./stale-evidence.js";
 import missingTests from "./missing-tests.js";
 import debugLeftovers from "./debug-leftovers.js";
 import uiGeneric from "./ui-generic.js";
+import antiSlop from "./anti-slop.js";
 
 export const REGISTRY = Object.fromEntries([docLinks, todoCensus, secretScan, bigFile, mergeMarkers,
   worktreeHygiene, deadExports, duplicateBlocks, godFile, orphanFiles, deadDeps, docDrift, lockfileDrift,
-  staleEvidence, missingTests, debugLeftovers, uiGeneric].map((d) => [d.name, d]));
+  staleEvidence, missingTests, debugLeftovers, uiGeneric, antiSlop].map((d) => [d.name, d]));
 
 export const SEVERITY = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
 // Exponential, not linear: a critical was never traded against four lows.
