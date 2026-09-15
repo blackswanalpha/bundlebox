@@ -24,6 +24,7 @@
 //
 // Exit codes: 0 clean · 10 warnings · 11 errors · 30 the compiler itself failed
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ROOT, abs, rel } from "../core/paths.js";
 import { out, warn, emit as emitJson } from "../core/log.js";
@@ -175,7 +176,8 @@ export function prune(objects, { apply = false } = {}) {
   }
   const plan = [];
   for (const [source, objs] of want) {
-    const file = source.startsWith("~") ? source.replace("~", process.env.HOME || "~") : abs(source);
+    // os.homedir(), not process.env.HOME: the latter is unset on Windows.
+    const file = source.startsWith("~") ? path.join(os.homedir(), source.slice(1)) : abs(source);
     let text; try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
     const lines = text.split(/\r?\n/);
     const targets = new Map(objs.map((o) => [normalize(o.text), o]));

@@ -29,6 +29,7 @@
 //   none         no anchor at all — and that is itself the finding, because a
 //                claim nothing can check is a claim nothing can ever retract.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ROOT, OUT, abs } from "../core/paths.js";
 import { diag } from "./heap.js";
@@ -117,7 +118,12 @@ export function resolveAnchor(a, { root = ROOT, base = "" } = {}) {
  *  either the rule is obsolete or the tree is broken, and both need a human.
  *  Everything else is a warning, because a drifted fact is still recoverable
  *  and this pass is not allowed to guess which way. */
-export function resolve(objects, { root = ROOT, home = process.env.HOME || "" } = {}) {
+// `parse` abbreviates a path outside the workspace with `os.homedir()`, so this
+// is the only thing that can expand it back. `process.env.HOME` is unset on
+// Windows — it is USERPROFILE there — which left every `~`-prefixed source with
+// a base directory of `<root>/~/...` and reported its anchors dead on a platform
+// this package ships for.
+export function resolve(objects, { root = ROOT, home = os.homedir() } = {}) {
   const diags = [];
   const counts = { live: 0, drifted: 0, dead: 0, external: 0, none: 0, uncheckable: 0 };
   const baseOf = (source) => {

@@ -97,6 +97,20 @@ test("a URL is external, and this pass never touches the network", () => {
   assert.equal(resolveAnchor({ url: "https://example.com", file: null, symbol: null }).status, "external");
 });
 
+test("a source abbreviated with ~ is expanded from os.homedir(), not $HOME", () => {
+  // `parse` abbreviates paths outside the workspace using os.homedir(). On
+  // Windows `process.env.HOME` is unset — it is USERPROFILE — so expanding with
+  // it gave every such source a base of `<root>/~/...` and called its anchors
+  // dead on a platform this package ships for.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, "memory"), { recursive: true });
+  fs.writeFileSync(path.join(d, "memory", "sibling.md"), "x\n");
+  resetCache(); resetSymbols();
+  const o = make({ kind: "fact", text: "see sibling.md", source: "~/memory/notes.md", anchor: { file: "sibling.md" } });
+  resolve([o], { root: d, home: d });
+  assert.equal(o.resolution, "live", "the ~ never expanded, so the base directory was wrong");
+});
+
 test("a dead anchor on a rule is an error; on a fact it is a warning", () => {
   const d = tmp();
   resetCache(); resetSymbols();
