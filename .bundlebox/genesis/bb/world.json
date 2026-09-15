@@ -53,8 +53,8 @@
     {
       "id": "releases",
       "title": "Releases",
-      "why": "heading at line 249",
-      "line": 249,
+      "why": "heading at line 250",
+      "line": 250,
       "rules": 1,
       "capabilities": 2
     }
@@ -108,8 +108,8 @@
       "text": "The optional wire integration talks to [headroom](https://github.com/headroomlabs-ai/headroom) over the process boundary and never imports it.",
       "modality": "must_not",
       "surface": "releases",
-      "line": 258,
-      "why": "line 258",
+      "line": 259,
+      "why": "line 259",
       "constants": []
     }
   ],
@@ -359,16 +359,16 @@
       "kind": "cmd",
       "cmd": "bb update",
       "surface": "releases",
-      "line": 253,
-      "why": "line 253, inline"
+      "line": 254,
+      "why": "line 254, inline"
     },
     {
       "id": "cmd:bb update --apply",
       "kind": "cmd",
       "cmd": "bb update --apply",
       "surface": "releases",
-      "line": 253,
-      "why": "line 253, inline"
+      "line": 254,
+      "why": "line 254, inline"
     },
     {
       "id": "cmd:bb wire --apply",
@@ -437,7 +437,7 @@
     "who the actors are — no 'as a <role>' or named cast in the document; the corpus will run as one anonymous user"
   ],
   "counts": {
-    "lines": 260,
+    "lines": 261,
     "surfaces": 7,
     "rules": 5,
     "capabilities": 38,
@@ -446,6 +446,6 @@
   },
   "id": "bb",
   "from": "README.md",
-  "derived_at": "2026-09-15T06:21:37.643Z",
-  "source_bytes": 15184
+  "derived_at": "2026-09-15T06:23:32.079Z",
+  "source_bytes": 15279
 }

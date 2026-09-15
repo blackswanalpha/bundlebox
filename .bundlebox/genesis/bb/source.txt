@@ -243,6 +243,7 @@ default lives in `src/core/config.js` with its reason. Measured values live in
 - [whitepaper/bundlebox-whitepaper.md](whitepaper/bundlebox-whitepaper.md)
 - [docs/review-of-the-original.md](docs/review-of-the-original.md): the defects found in the reference implementation
 - [docs/prices.md](docs/prices.md): price table provenance
+- [docs/prior-art.md](docs/prior-art.md): seven projects read, what came back and what did not
 - [CHANGELOG.md](CHANGELOG.md) and [changelogs/](changelogs/)
 - [CONVENTIONS.md](CONVENTIONS.md): how the code is organised, for contributors
 
