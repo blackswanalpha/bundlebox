@@ -21,7 +21,7 @@ const stages = await import("../src/pipeline/stages.js");
 const mainboard = await import("../src/mainboard/index.js");
 const simulate = await import("../src/simulate/index.js");
 const failsafe = await import("../src/failsafe/index.js");
-const blackice = await import("../src/blackice/index.js");
+const auditor = await import("../src/auditor/index.js");
 const runbook = await import("../src/runbook/index.js");
 
 const HOUR = 3600000;
@@ -153,7 +153,7 @@ test("every view declares a question and writes only categories in the taxonomy"
   assert.ok(r.views >= 5);
 });
 
-test("an audit report is ingested only where it carries checkable evidence", () => {
+test("a review is ingested only where it carries checkable evidence", () => {
   fs.mkdirSync(path.join(root, "src", "area"), { recursive: true });
   for (const n of ["a.js", "b.js", "c.js"]) fs.writeFileSync(path.join(root, "src", "area", n), "export const x = 1;\n");
   const report = path.join(tmp, "report.md");
@@ -162,22 +162,45 @@ test("an audit report is ingested only where it carries checkable evidence", () 
       { title: "a real one", severity: "high", detail: "d", evidence: { file: "src/area/a.js", line: 1 } },
       { title: "an opinion", severity: "high", detail: "d" },
     ] }), "```"].join("\n"));
-  const r = blackice.record("area", "security", report);
+  const r = auditor.review.record(auditor.areas(), "area", "security", report);
   assert.equal(r.rc, 0, r.why);
   assert.equal(r.recorded, 1);
   assert.equal(r.refused.length, 1);
   assert.match(r.refused[0], /no evidence\.file/);
-  assert.ok(fs.existsSync(path.join(root, r.report)), "the dated record is kept beside the findings");
+  assert.ok(fs.existsSync(path.join(root, r.review)), "the dated record is kept beside the findings");
 });
 
-test("a report knows which tree it described, so drift is answerable", () => {
-  const before = blackice.drift();
+test("a review knows which tree it described, so drift is answerable", () => {
+  const before = auditor.review.drift(auditor.areas());
   assert.ok(before.length);
   assert.equal(before[0].state, "current");
   fs.writeFileSync(path.join(root, "src", "area", "d.js"), "export const y = 2;\n");
-  const after = blackice.drift();
+  const after = auditor.review.drift(auditor.areas());
   assert.equal(after[0].state, "drifted");
   assert.match(after[0].why, /write a new one beside it/);
+});
+
+test("a charter is derived from the area's own signals, and says what it is measured at", () => {
+  const a = auditor.areas().find((x) => x.id === "area");
+  assert.ok(a, "the fixture tree has an `area`");
+  const ch = auditor.charter.derive(a);
+  assert.ok(ch.standards.length, "some standard is always in force");
+  assert.ok(["A", "B", "C"].includes(ch.adal.level));
+  // Every selected standard names the signal that pulled it in: a selection
+  // nobody can argue with is a checklist wearing a framework's clothes.
+  for (const s of ch.standards) assert.ok(s.because, `${s.id} has no reason`);
+  assert.ok(ch.assurance.rule.includes("evidence"));
+});
+
+test("a standard nobody checked is reported unproven, never met", () => {
+  const a = auditor.areas().find((x) => x.id === "area");
+  auditor.charter.write("area", auditor.charter.derive(a));
+  const g = auditor.gate("area");
+  assert.equal(g.rc, 0, g.why);
+  const states = new Set(g.standards.map((s) => s.state));
+  assert.ok(states.has("unproven"), "a fresh tree has standards nobody has evidence for");
+  assert.ok(["CLEAR", "HOLD", "BLOCK", "UNPROVEN"].includes(g.verdict));
+  if (g.counts.unproven) assert.notEqual(g.verdict, "CLEAR", "unproven never reads as clear");
 });
 
 // ── simulation, playbook, logs ──────────────────────────────────────────────

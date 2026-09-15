@@ -27,9 +27,28 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans);l
 a{color:inherit}
 .wrap{max-width:1160px;margin:0 auto;padding:0 28px}
 header.bar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--rule)}
-header.bar .wrap{display:flex;align-items:baseline;gap:18px;height:58px}
-.brand{font-weight:700;letter-spacing:-.02em;font-size:16px}
+header.bar .wrap{display:flex;align-items:center;gap:18px;height:58px}
+/* The header. The mark sits IN the type rather than beside it: aligned on the
+   cap height, taking its colour from the text, so at 22px it reads as one
+   lockup instead of an icon and a word that happen to be adjacent. */
+.brand{display:inline-flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.02em;font-size:16px;
+  text-decoration:none;color:var(--ink)}
+.brand b{font-weight:700}
 .brand span{color:var(--muted);font-weight:400}
+.brand .mark{display:block;flex:0 0 auto;margin-top:-1px}
+.brand:hover .mark{opacity:.85}
+
+/* The connection state. A dashboard that cannot say whether it is still
+   connected is worse than one that is plainly offline, because the stale
+   numbers still look like numbers. */
+.link{display:inline-flex;align-items:center;gap:6px;font:11px/1 var(--mono);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--faint)}
+.link i{width:6px;height:6px;border-radius:50%;background:var(--faint);flex:0 0 auto}
+.link.ok{color:var(--accent)} .link.ok i{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.link.warn{color:var(--amber)} .link.warn i{background:var(--amber)}
+.link.bad{color:var(--red)} .link.bad i{background:var(--red);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.link.bad i{animation:none}}
 .bar .spacer{flex:1}
 .bar .meta{font:12px/1 var(--mono);color:var(--muted)}
 h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 14px}

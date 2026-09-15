@@ -32,7 +32,7 @@ export const MODULES = [
   ["slop", "./slop/index.js"],
   ["frames", "./frames/index.js"],
   ["failsafe", "./failsafe/index.js"],
-  ["blackice", "./blackice/index.js"],
+  ["auditor", "./auditor/index.js"],
   ["monitor", "./monitor/index.js"],
   ["commandcenter", "./commandcenter/index.js"],
   ["oversight", "./oversight/index.js"],
@@ -47,7 +47,7 @@ export const MODULES = [
   ["kernel", "./kernel-cmd.js"],
 ];
 
-export const ALIASES = { scenarios: "cookbook", corpus: "cookbook", board: "mainboard", mb: "mainboard", frames: "frames", dataframes: "frames", cc: "commandcenter", usage: "monitor", sg: "pipeline", switchgear: "pipeline", learn: "buckmaster", bm: "buckmaster", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
+export const ALIASES = { blackice: "auditor", audit: "auditor", scenarios: "cookbook", corpus: "cookbook", board: "mainboard", mb: "mainboard", frames: "frames", dataframes: "frames", cc: "commandcenter", usage: "monitor", sg: "pipeline", switchgear: "pipeline", learn: "buckmaster", bm: "buckmaster", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
 
 const version = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
 
@@ -87,10 +87,11 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "recom", "dotty", "mainboard", "oversight", "blackice", "buckmaster", "commandcenter", "pipeline", "scripts"]);
+  "simulate", "runbook", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "commandcenter", "pipeline", "scripts"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
-  ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "blackice", "designlabs"]],
+  ["govern", "What is the bar, before anything is written?", ["auditor"]],
+  ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "designlabs"]],
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
@@ -140,7 +141,7 @@ function help(cmds, broken, verb) {
 // second, thinner row for the same work would be double counting in the one
 // place that must not double count.
 const SELF_RECORDED = new Set(["run", "pipeline", "bridge", "scripts", "cookbook",
-  "genesis", "simulate", "mainboard", "frames", "blackice"]);
+  "genesis", "simulate", "mainboard", "frames", "auditor"]);
 
 /** One row per verb that did work a session would otherwise have done. The free
  *  verbs run BEFORE a session opens, so without this hook `bb session` reports

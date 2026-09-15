@@ -9,8 +9,10 @@ import { out, emit, warn } from "../core/log.js";
 import { human, pad } from "../core/util.js";
 import * as runner from "../kit/runner.js";
 import { registry, DIR, symbolIndex } from "./tables.js";
+import * as graph from "./graph.js";
 
 export { registry, DIR, symbolIndex } from "./tables.js";
+export * as graph from "./graph.js";
 
 export const tablePath = (name) => registry().path(name);
 export const indexPath = () => path.join(DIR, "INDEX.md");
@@ -51,7 +53,17 @@ const list = (flags) => (typeof flags.only === "string" ? flags.only.split(",").
 export const commands = {
   snapgen: {
     help: "reference tables a session reads instead of searching (no tokens)",
-    usage: "bb snapgen build [--only a,b] [--force] | stale | list | show <table> | index  [--json]",
+    usage: "bb snapgen build [--only a,b] [--force] | stale | list | show <table> | index | skeleton <file> | blast [--since ref] | callers <symbol>  [--json]",
+    long: [
+      "  bb snapgen build                 build every stale reference table",
+      "  bb snapgen show <table>          one table, as a session would read it",
+      "  bb snapgen skeleton <file>       the declarations of a file, not the bodies",
+      "  bb snapgen blast [--since ref]   what the current diff can reach, and what reading it costs",
+      "  bb snapgen callers <symbol>      the files that import the declaring file, and the files that name it",
+      "",
+      "skeleton, blast and callers read the tree and a symbol index. Nothing here calls a model.",
+      "An IMPORT edge is exact. A MENTION is a name match and is reported separately, never folded in.",
+    ].join("\n"),
     run: async ({ _, flags }) => {
       const sub = _[0] || "list";
       const reg = registry();
@@ -88,6 +100,52 @@ export const commands = {
         const p = runner.index(reg);
         if (flags.json) { emit({ index: rel(p) }); return 0; }
         out(readText(p).trimEnd());
+        return 0;
+      }
+      if (sub === "skeleton") {
+        const files = _.slice(1).filter((x) => !String(x).startsWith("-"));
+        if (!files.length) { warn("bb snapgen skeleton <file> [file...]"); return 2; }
+        const rows = files.map((f) => graph.skeleton(f, { cap: Number(flags.cap) || 120 }));
+        if (flags.json) { emit({ skeletons: rows }); return 0; }
+        for (const r of rows) {
+          out(`  ${r.file} — ${r.declarations} declaration(s), ${human(r.tokens_skeleton)} of ${human(r.tokens_whole)} tokens${r.ratio ? ` (${r.ratio}x less to read)` : ""}`);
+          out(r.lines.map((l) => "  " + l).join("\n") || "    (no declarations parsed)");
+          if (r.imported_by.length) out(`\n  imported by: ${r.imported_by.join(", ")}`);
+          out("");
+        }
+        out("  MEASURED: both counts come from bb's own estimator over text on disk.");
+        return 0;
+      }
+      if (sub === "blast") {
+        const named = _.slice(1).filter((x) => !String(x).startsWith("-"));
+        let files = named, how = "named on the command line";
+        if (!files.length) {
+          const c = graph.changedFiles(flags.since ? String(flags.since) : "");
+          if (c.rc) { warn(c.why); return c.rc; }
+          files = c.files; how = c.how;
+        }
+        if (!files.length) { out(`  nothing changed (${how}) — no radius to compute`); return 0; }
+        const b = graph.blast(files, { depth: Number(flags.depth) || 2 });
+        if (flags.json) { emit({ how, ...b }); return 0; }
+        out(`  ${b.changed.length} file(s) changed (${how}) reach ${b.reached.length} more within ${b.levels.length} hop(s)`);
+        out(`  ${human(b.tokens_changed)} tokens changed · ${human(b.tokens_reached)} tokens downstream — that second number is what a reviewer would open to be sure`);
+        for (const l of b.levels) out(`\n  hop ${l.depth} (${l.files.length})\n${l.files.map((f) => "    " + f).join("\n")}`);
+        if (b.also_mentions.length) out(`\n  also MENTIONS a changed symbol by name (heuristic, not an import edge):\n${b.also_mentions.map((f) => "    " + f).join("\n")}`);
+        if (b.unresolved.length) out(`\n  not in the symbol index (not a source file, or newly added): ${b.unresolved.join(", ")}`);
+        return 0;
+      }
+      if (sub === "callers") {
+        const name = _[1];
+        if (!name) { warn("bb snapgen callers <symbol>"); return 2; }
+        const g = graph.graph();
+        const declaring = [...g.declares].filter(([, names]) => names.includes(name)).map(([f]) => f);
+        const importers = [...new Set(declaring.flatMap((f) => [...(g.inn.get(f) || [])]))].map(rel).sort();
+        const mentions = graph.references(name, { limit: Number(flags.limit) || 40 });
+        if (flags.json) { emit({ symbol: name, declared_in: declaring.map(rel), imports: importers, mentions }); return 0; }
+        if (!declaring.length) { out(`  no file declares \`${name}\` at top level. bb snapgen show symbols`); return 2; }
+        out(`  ${name} declared in: ${declaring.map(rel).join(", ")}`);
+        out(`\n  IMPORT the declaring file (exact, ${importers.length}):\n${importers.map((f) => "    " + f).join("\n") || "    none"}`);
+        out(`\n  MENTION the name (heuristic, ${mentions.length}):\n${mentions.map((f) => "    " + f).join("\n") || "    none"}`);
         return 0;
       }
       warn(`unknown sub-verb: ${sub}. ${commands.snapgen.usage}`);

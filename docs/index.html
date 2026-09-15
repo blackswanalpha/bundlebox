@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>bundlebox — the zero-token software factory for AI coding agents</title>
 <meta name="description" content="bundlebox answers every question a parse, a count or a set difference can answer before an agent opens, packs the rest into one window, and measures what the session used and what it was spared.">
-<link rel="icon" href="../assets/logo.svg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2048%22%3E%20%3Crect%20width%3D%2248%22%20height%3D%2248%22%20rx%3D%2211%22%20fill%3D%22%2307271D%22%2F%3E%20%3Cpath%20d%3D%22M24%207%20L40%2016.2%20L40%2032.8%20L24%2042%20L8%2032.8%20L8%2016.2%20Z%22%20fill%3D%22none%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%223%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Cpath%20d%3D%22M8%2016.2%20L24%2025.4%20L40%2016.2%22%20fill%3D%22none%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%222.2%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.5%22%2F%3E%20%3Cpath%20d%3D%22M24%2025.4%20L24%2042%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%222.2%22%20opacity%3D%22.5%22%2F%3E%20%3Ccircle%20cx%3D%2224%22%20cy%3D%2223.4%22%20r%3D%226%22%20fill%3D%22%2307271D%22%2F%3E%20%3Ccircle%20cx%3D%2224%22%20cy%3D%2223.4%22%20r%3D%226%22%20fill%3D%22none%22%20stroke%3D%22%23CFFFEC%22%20stroke-width%3D%223.4%22%2F%3E%20%3C%2Fsvg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2048%22%3E%20%3Crect%20width%3D%2248%22%20height%3D%2248%22%20rx%3D%2211%22%20fill%3D%22%2307271D%22%2F%3E%20%3Cpath%20d%3D%22M24%207%20L40%2016.2%20L40%2032.8%20L24%2042%20L8%2032.8%20L8%2016.2%20Z%22%20fill%3D%22none%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%223%22%20stroke-linejoin%3D%22round%22%2F%3E%20%3Cpath%20d%3D%22M8%2016.2%20L24%2025.4%20L40%2016.2%22%20fill%3D%22none%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%222.2%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.5%22%2F%3E%20%3Cpath%20d%3D%22M24%2025.4%20L24%2042%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%222.2%22%20opacity%3D%22.5%22%2F%3E%20%3Ccircle%20cx%3D%2224%22%20cy%3D%2223.4%22%20r%3D%226%22%20fill%3D%22%2307271D%22%2F%3E%20%3Ccircle%20cx%3D%2224%22%20cy%3D%2223.4%22%20r%3D%226%22%20fill%3D%22none%22%20stroke%3D%22%23CFFFEC%22%20stroke-width%3D%223.4%22%2F%3E%20%3C%2Fsvg%3E">
+<meta name="color-scheme" content="light dark">
 <style>
 :root{
   --ink:#141414; --muted:#63615b; --faint:#908d86; --rule:#e4e1da; --bg:#faf9f6; --panel:#fff;
@@ -72,19 +74,23 @@ td code,th code{white-space:nowrap}
 footer{padding:44px 0 72px;color:var(--faint);font-size:13.5px}
 footer a{color:var(--muted)}
 @media(max-width:900px){.stages{grid-template-columns:repeat(2,minmax(0,1fr))}}
+nav .n{display:inline-flex;align-items:center;gap:8px}
+nav .n .mark{display:block;flex:0 0 auto;margin-top:-1px}
 @media(max-width:700px){.wrap{padding:0 20px}header.hero{padding:56px 0 40px}section{padding:40px 0}.stages{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 
 <nav><div class="wrap">
-  <a class="n" href="#top">bundlebox</a>
+  <a class="n" href="#top"><svg class="mark" width="19" height="19" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 3.5 L42.5 14.2 L42.5 33.8 L24 44.5 L5.5 33.8 L5.5 14.2 Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" opacity=".9"/><path d="M5.5 14.2 L24 24.9 L42.5 14.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" opacity=".28"/><path d="M24 24.9 L24 44.5" stroke="currentColor" stroke-width="1.8" opacity=".28"/><circle cx="24" cy="23.4" r="7.4" fill="var(--bg)"/><circle cx="24" cy="23.4" r="7.4" stroke="var(--accent)" stroke-width="4"/></svg>bundlebox</a>
   <span class="links">
     <a href="#problem">Why</a>
     <a href="#pipeline">Pipeline</a>
     <a href="#genesis">Genesis</a>
     <a href="#scenarios">Scenarios</a>
+    <a href="#auditor">Auditor</a>
     <a href="#budget">Budget</a>
+    <a href="#swebench">SWE-bench</a>
     <a href="#window">Window</a>
     <a href="#verbs">Verbs</a>
     <a href="https://github.com/blackswanalpha/bundlebox">GitHub</a>
@@ -225,6 +231,40 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
   <p>Latency budgets here are never absolute milliseconds. A profile names a multiple of the floor measured in that same run, clamped, with a slack floor under it. A constant written on one box is wrong on every other one, and a performance board that cries wolf on a slower laptop is a board nobody reads twice.</p>
 </div></section>
 
+<section id="auditor"><div class="wrap">
+  <h2>The bar is declared before the work, not argued about after it</h2>
+  <p class="kicker">Governance</p>
+  <p class="lead">Every other verb here answers "what is wrong with what was written". <code>bb auditor</code> answers the question that comes first — what is in scope, what bar does it have to meet, who decides when it does not, and what counts as proof — and it answers it while changing the code is still cheap.</p>
+  <p>Four artefacts, in this order, because each one is the input to the next. Change the scope and the standards selection is <em>invalid</em>, not stale. Change the standards and findings in flight are against a bar that no longer exists.</p>
+  <table>
+    <tr><th>Step</th><th>What it settles</th></tr>
+    <tr><td><strong>scope</strong></td><td>What is in, what is out, and where the boundary runs. Work that leaves it stops and says so.</td></tr>
+    <tr><td><strong>standards</strong></td><td>What good looks like inside that boundary — chosen by what the tree <em>is</em>, never by ticking a list.</td></tr>
+    <tr><td><strong>governance</strong></td><td>Which findings hold a release, who can accept a risk, and who signs.</td></tr>
+    <tr><td><strong>assurance</strong></td><td>What counts as proof. A finding with no evidence a reader can open is refused at ingest.</td></tr>
+  </table>
+  <p>Selection is derived, not declared. The auditor reads signals the tree already emits — does it move money, does it hold records about people, does it bind a socket, does it cross a process boundary — and returns the standards those signals imply, each carrying the signal that pulled it in. A selection you disagree with is arguable rather than mysterious.</p>
+<pre><code>$ bb auditor standards commandcenter
+  17 of 29 standard(s) in force for commandcenter — level B (hazardous)
+  id      domain  adal  the bar                                            because
+  SEC-1   SEC     B     No secret reaches version control                  every tree gets these
+  REL-1   REL     B     Every external call has a timeout and a bound       it calls out over the network
+  OBS-2   OBS     C     A health check answers without reading the store    it binds or routes HTTP
+  …
+  Signals read from the tree: always · service (it binds or routes HTTP) · network</code></pre>
+  <p>The level is <strong>ADAL</strong> — A catastrophic, B hazardous, C major — and it is set by the consequence of a defect in that area, not by the highest bar among standards that apply everywhere. It changes verification depth and who signs. It never turns a standard off.</p>
+  <h3>Then it is checked, and unproven is not green</h3>
+  <p><code>bb auditor gate &lt;area&gt;</code> re-reads an area against its own charter and returns one of three states per standard. <code>met</code> means something on disk supports it. <code>failed</code> means something on disk contradicts it. <code>unproven</code> means nobody looked — and it never collapses into <code>met</code>, because a standard nobody checked reported as passing is the exact failure this whole tree exists to remove.</p>
+<pre><code>$ bb auditor gate commandcenter
+  SEC-1   met       secret-scan ran within 24h and found nothing here
+  REL-4   unproven  no detector computes this and no current review cites it
+  MNT-1   failed    1 open finding(s) from god-file
+  6 met · 3 failed · 11 unproven          exit 10</code></pre>
+  <p>Where a detector already computes part of a standard, the brief hands that output over rather than asking for it. The auditor never spends a turn on a number a local verb produces for nothing; it asks only for the half that is judgement. That is the whole economic argument for the verb.</p>
+  <h3>Living and dated are different artefacts</h3>
+  <p>A <strong>charter</strong> is living: when the area moves, re-derive it. A <strong>review</strong> is dated and is never edited — a new one is written beside it. The only thing a review is worth is being a fixed point to measure drift against, and updating one destroys it. <code>bb auditor drift</code> reports both, separately, with the different instruction each needs.</p>
+</div></section>
+
 <section id="budget"><div class="wrap">
   <h2>Where the tokens go, and where they come back</h2>
   <p class="kicker">The budget model</p>
@@ -263,6 +303,35 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
   <p>This is not only a display. <code>bb monitor guard</code> is asked immediately before the one thing in this factory that costs anything, and it refuses to open an agent when the block is nearly spent. A call opened with twenty minutes left is cut off half-written: it spends the tokens and produces nothing to accept. Exit codes make it usable from a hook or a cron line without parsing — <code>0</code> ok, <code>10</code> near, <code>11</code> reached, <code>20</code> indeterminate.</p>
   <h3>The command centre</h3>
   <p><code>bb commandcenter</code> serves one read-only page on loopback: where the pipeline is, what the window has left, and every session with its own title, what it used, and how many agent turns the local path had already displaced for it. <code>bb commandcenter build</code> writes the same page as a single self-contained file that opens without a server.</p>
+  <p>It <strong>pushes</strong> rather than polls. The store is files, so the filesystem already knows when something changed: <code>/api/stream</code> watches it, recomputes the state once per change however many tabs are open, and sends it. A timer was wrong in both directions — a run that finished was invisible for nine seconds, and an idle workspace recomputed everything six times a minute per tab.</p>
+  <p>The header always says which state the connection is in: <code>live</code>, <code>polling</code>, <code>reconnecting</code>, or <code>static</code>. A dashboard that cannot tell you it has lost the server is worse than one that is plainly offline, because the stale numbers still look like numbers.</p>
+  <p>There is no write route, and that is checked rather than asserted: the page's one derived cache is read without being written back, and the query parameter that used to trigger a fold of every transcript over HTTP is gone.</p>
+</div></section>
+
+<section id="swebench"><div class="wrap wide">
+  <h2>On a public benchmark, measuring the thing it actually does</h2>
+  <p class="kicker">SWE-bench Verified</p>
+  <p class="lead">SWE-bench Verified is 500 real GitHub issues with the maintainer's own patch as ground truth. The number people quote from it is <em>resolve rate</em>, and producing one needs a model, a container per repository, and the official harness. <code>bb bench swebench</code> does not produce that number and does not estimate it — an estimated resolve rate is a made-up figure with a real benchmark's name on it.</p>
+  <p>What it measures is the half bundlebox is responsible for, on the same public instances: given only the issue text, does the context it packs contain the files the maintainer actually changed, and what does that context cost?</p>
+<pre><code>$ bb bench swebench run --n 20 --repos requests,flask,seaborn,pylint,pytest,xarray
+
+  LOCALISATION  in scope (budgeted to be read):  11 of 24 gold file(s) — 45.8%
+                named  (in scope, or pointed at):  17 of 24 — 70.8%
+                bare   (top 10 files read whole):  20 of 24 — 83.3%
+                10 instance(s) had every gold file in scope; 14 had every one named
+  CONTEXT       65.9k packed against 3.5M bare — 98.1% less, 53.4x</code></pre>
+  <p><strong>The bare arm still localises better.</strong> It reads ten whole files and finds four more gold files than the packed brief names, at fifty-three times the context. That is the trade this benchmark exists to put a number on, and printing only the half that flatters the tool would make the number worthless.</p>
+  <p>Every input is public — the dataset over the Hugging Face datasets-server, the repository over a blobless <code>git clone</code> at the instance's own base commit. The run records the instance ids it used and the exact command that reproduces it, so the number can be contradicted rather than only repeated.</p>
+  <h3>What the benchmark changed</h3>
+  <p>It was run first, and then acted on. Four defects it exposed, each fixed and re-measured on the same twenty instances:</p>
+  <table>
+    <tr><th>What the run showed</th><th>What was wrong</th><th>Named recall after</th></tr>
+    <tr><td>Test files ranked first on almost every issue</td><td>A test names the thing under test more often than the implementation does. Test files now score a third unless the issue is itself about a test.</td><td>—</td></tr>
+    <tr><td>Briefs came out at 2–5k tokens against a 120k floor</td><td>The scope could only shrink. It now grows into the budget that was already paid for, stopping at the first file that would not fit.</td><td>—</td></tr>
+    <tr><td>The file the fix belonged in sat just outside the scope</td><td>Ranked candidates the budget could not afford were discarded. Naming one costs about fifteen tokens; budgeting one to be read costs its whole size times churn. They are now named.</td><td>54.2%</td></tr>
+    <tr><td>An exact symbol match lost to three loose ones</td><td>Every symbol hit scored the same. A symbol that <em>is</em> one of the issue's words now scores far higher, and hits within one file decay.</td><td><strong>70.8%</strong></td></tr>
+  </table>
+  <p class="muted">37.5% → 70.8% named recall over four changes, on the same instances, at the same context cost. The baseline run is on disk beside the current one.</p>
 </div></section>
 
 <section id="honesty"><div class="wrap">
@@ -289,13 +358,15 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
     <tr><td><code>simulate</code></td><td>The same request at rising concurrency, against a floor-relative budget</td><td>0</td></tr>
     <tr><td><code>mainboard</code></td><td>Six views over one ledger, and which pipeline stage does not hold</td><td>0</td></tr>
     <tr><td><code>runbook</code></td><td>Is it up, what broke since the last call, what is it costing</td><td>0</td></tr>
-    <tr><td><code>blackice</code></td><td>The per-area audit: dated, ingested as findings, and checked for drift</td><td>0</td></tr>
+    <tr><td><code>auditor</code></td><td>The bar before the work — scope, standards, governance, assurance — and the gate that checks it after</td><td>0</td></tr>
     <tr><td><code>frames</code></td><td>A dataframe over the factory's own data, and the evals that read it</td><td>0</td></tr>
     <tr><td><code>failsafe</code></td><td>What is failing, why, and the operation that closes it</td><td>0</td></tr>
     <tr><td><code>monitor</code>, <code>commandcenter</code></td><td>What the block has left; one page for the whole workspace</td><td>0</td></tr>
     <tr><td><code>scan</code>, <code>findings</code>, <code>explain</code>, <code>fix</code></td><td>Sixteen detectors with evidence and expected-value triage; local actuators that write a patch before a file</td><td>0</td></tr>
     <tr><td><code>compile</code>, <code>route</code>, <code>context</code>, <code>gates</code></td><td>Units packed to a window with quoted regions; lanes with conflicts as affinity; does this scope fit</td><td>0</td></tr>
     <tr><td><code>snapgen</code>, <code>pinpoint</code>, <code>oversight</code></td><td>Fingerprinted reference tables; one problem to one budgeted brief; god files, bloat, duplication</td><td>0</td></tr>
+    <tr><td><code>snapgen skeleton</code>, <code>blast</code>, <code>callers</code></td><td>A file's declarations without its bodies; what a diff can reach and what reading it costs; who imports a symbol and who merely names it</td><td>0</td></tr>
+    <tr><td><code>bench</code>, <code>bench swebench</code></td><td>The same task packed and bare, both counted; and the same two arms on public SWE-bench Verified instances</td><td>0</td></tr>
     <tr><td><code>pipeline</code>, <code>buckmaster</code>, <code>scripts</code></td><td>Gears with gates and fingerprinted skips; episodes, signals, rules, model, memory</td><td>0</td></tr>
     <tr><td><code>git</code></td><td>Commit, push, draft PR, review to findings, gated merge, with guards</td><td>0</td></tr>
     <tr><td><code>wire</code>, <code>mcp</code>, <code>hook</code></td><td>Install into every agent on the box; serve the same verbs over MCP</td><td>0</td></tr>
