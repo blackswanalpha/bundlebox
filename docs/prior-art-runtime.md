@@ -136,6 +136,37 @@ this class of tool has, and four of them are worth designing against directly:
 | #88 `stop reading a false-like all as a request to cancel every task` | **a falsy flag read as a wildcard.** The most expensive possible misread |
 | #93, #91, #86 `stop tests leaking real spawn watchdogs`, `isolate from provider credentials` | **a test that touches the real world.** `test/digest.test.js` runs entirely against a temp dir and skips the kernel comparison by name when there is no binary |
 
+### What was built against it
+
+bundlebox does not install ARTEMIS and does not drive a phone. Its MCP entry
+carries an absolute interpreter path, a `PYTHONPATH` and a `cwd` that only
+`uv run artemis mcp --install` knows, and a second implementation of that guess
+writes a server that never starts — which an agent sees as *no tools*, not as an
+error. That is the silent-failure class this codebase exists to refuse.
+
+So the integration is a gate, not a wrapper:
+
+```
+bb recom mobile                              is a driver registered, is a device attached
+bb recom gate mobile/<id> -- <the drive>     run it only if the answer stopped holding
+```
+
+`gate` is `check` wired straight to the decision, and its safety property is an
+asymmetry: **only `fresh` skips.** `stale`, `unknown` and a record that does not
+exist all run the command, because a gate wrong in the `fresh` direction hands
+back an answer about a world that moved and nothing downstream can tell, while a
+gate wrong the other way costs one extra run. `test/gate.test.js` pins each of
+the four paths.
+
+The three adb probes the vocabulary already carried — `adb_state`,
+`adb_package`, `adb_foreground` — are what a mobile record depends on, and
+`bb recom template <id> --mobile --pkg <app>` fills them from the attached
+device rather than from a guess.
+
+One sentence is added to the agent instruction block, and only where a driver is
+actually registered: the block sits in every session's window, so a sentence
+about phones in a repository with no phone is tax on every prompt.
+
 **Not taken:** the multi-agent graph. A planner, an operator and a checker are
 three model calls per step. bundlebox's equivalent of the checker is the
 acceptance command, whose exit code is the verdict and which costs nothing.

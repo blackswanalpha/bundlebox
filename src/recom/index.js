@@ -36,6 +36,7 @@ import { BB_DIR, ROOT, rel } from "../core/paths.js";
 import { readJson, writeJson } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { now, pad, table, slug } from "../core/util.js";
+import * as artemis from "./artemis.js";
 
 export const DIR = () => path.join(BB_DIR, "recom", "records");
 export const OUTCOMES = new Set(["works", "blocked", "broken", "unproven"]);
@@ -175,7 +176,7 @@ export function savings(rows) {
 
 const MARK = { fresh: "fresh", stale: "STALE", unknown: "UNKNOWN", missing: "MISSING" };
 
-async function cmd({ _, flags }) {
+async function cmd({ _, flags, rest }) {
   const sub = _[0] || "list";
 
   if (sub === "probes") {
@@ -269,8 +270,58 @@ async function cmd({ _, flags }) {
     return 0;
   }
 
+  if (sub === "gate") {
+    const { cmd: gateCmd } = await import("./gate.js");
+    return gateCmd({ _, flags, rest });
+  }
+
+  if (sub === "mobile") {
+    const st = artemis.status();
+    if (flags.json) { emit(st); return st.ready ? 0 : 1; }
+    if (!st.wired.length) {
+      out("  no `artemis` MCP server is registered in any agent config this box keeps.");
+      out("  bundlebox does not write that entry: it carries an absolute interpreter path, a");
+      out("  PYTHONPATH and a cwd that only ARTEMIS knows, and a wrong guess is a server that");
+      out("  never starts — which an agent sees as no tools rather than as an error.");
+      out("\n    cd <artemis checkout> && uv run artemis mcp --install claude");
+    } else {
+      out(table(st.wired.map((w) => [w.agent, w.key, w.cwd || "—",
+        w.project_exists === false ? "MISSING" : w.project_exists === true ? "ok" : "?"]),
+        { header: ["agent", "key", "project", ""] }).split("\n").map((l) => "  " + l).join("\n"));
+      for (const w of st.wired.filter((x) => x.project_exists === false)) {
+        warn(`${w.agent}: ${w.cwd} does not exist, so that server will not start and the agent will simply see no mobile tools`);
+      }
+      out(`\n  tools: ${artemis.TOOLS.join(", ")}`);
+    }
+    out("");
+    if (!st.adb) out(`  ${st.why}`);
+    else if (!st.devices.length) out("  adb is here; no device is attached");
+    else out(table(st.devices.map((d) => [d.serial, d.state, d.model || d.device || ""]),
+      { header: ["serial", "state", "model"] }).split("\n").map((l) => "  " + l).join("\n"));
+
+    out(st.ready
+      ? "\n  ready. Put the gate in front of every drive:\n    bb recom gate mobile/<id> -- <the command that drives>"
+      : "\n  not ready to drive. The gate still works: with no record it runs the command, which is the safe direction.");
+    return st.ready ? 0 : 1;
+  }
+
   if (sub === "template") {
     const id = slug(_[1] || "example");
+    if (flags.mobile) {
+      const st = artemis.status();
+      const dev = st.devices.find((d) => d.state === "device");
+      if (!dev) { warn("no attached device to measure probes from; drop --mobile for the generic template"); return 2; }
+      console.log(JSON.stringify({
+        id: `mobile/${id}`, title: "What was driven on the phone, in one line",
+        outcome: "blocked", summary: "one sentence a later session can act on",
+        depends: artemis.dependsFor(dev.serial, String(flags.pkg || "") || undefined).filter(Boolean),
+        steps: ["mobile_run_task: <the sentence ARTEMIS was given>", "what it turned out to be"],
+        evidence: ["the ARTEMIS trace id, from mobile_inspect_trace"],
+        saved_wall_s: 600, saved_tokens: 24000,
+      }, null, 2));
+      if (!flags.pkg) warn("no --pkg: this record depends on the device being attached and on nothing about the build, so it stays fresh through a reinstall");
+      return 0;
+    }
     // Printed on stdout whatever the mode: this is meant to be redirected into
     // a file and edited, so `--json` would be the only way to get it otherwise.
     console.log(JSON.stringify({
@@ -284,18 +335,20 @@ async function cmd({ _, flags }) {
     return 0;
   }
 
-  warn(`unknown recom sub-verb: ${sub}. list | check <id> | replay <id> | record --from <file> | refresh <id> | forget <id> | probes | template`);
+  warn(`unknown recom sub-verb: ${sub}. list | check <id> | gate <id> -- <cmd> | replay <id> | record --from <file> | refresh <id> | forget <id> | mobile | probes | template`);
   return 2;
 }
 
 export const commands = {
   recom: {
     help: "what has already been driven, and whether that answer still holds (0 model tokens)",
-    usage: "bb recom [list|check <id>|replay <id>|record --from <file>|refresh <id>|forget <id>|probes|template] [--apply] [--json]",
+    usage: "bb recom [list|check <id>|gate <id> -- <cmd>|replay <id>|record --from <file>|refresh <id>|forget <id>|mobile|probes|template] [--apply] [--json]",
     long: [
       "  bb recom list                 every record, with its verdict right now",
       "  bb recom replay <id>          the answer, if the answer still holds — exits 1 when it does not",
       "  bb recom record --from run.json --apply",
+      "  bb recom gate mobile/signin -- artemis run \"sign in\"   run the drive ONLY if the answer stopped holding",
+      "  bb recom mobile               is there a driver wired, and a device to drive",
       "",
       "A record declares the facts its result rests on and they are re-probed on every read:",
       "fresh (use it, drive nothing), stale (a fact moved — it names which, and both values),",

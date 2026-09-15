@@ -19,7 +19,7 @@ export const END = "<!-- bundlebox:end -->";
 
 // One shared block, ~250 tokens. Short on purpose: it sits in EVERY session's
 // window, so every sentence here is paid for on every prompt.
-export const INSTRUCTIONS = `${START}
+export const BASE = `${START}
 ## bundlebox — zero-token facts about this repository
 
 - Before searching for where a task lives, call the \`bb_pinpoint\` MCP tool (or run \`bb pinpoint "<task>"\`). It returns the files, the symbols and a packed brief that already fits the window.
@@ -28,6 +28,23 @@ export const INSTRUCTIONS = `${START}
 - Never edit anything under \`.bundlebox/out/\`: it is generated and fingerprinted.
 - Open findings: \`bb findings\` (or \`bb_findings\`); the derivation behind one: \`bb explain <id>\`.
 ${END}`;
+
+// Added ONLY when a mobile driver is actually registered on this box. Driving a
+// phone is the most expensive thing a session can ask for, so the line is worth
+// its tokens where there is a phone — and is pure tax where there is not, which
+// is why it is not in BASE.
+export const MOBILE = `- Driving a device costs ~10 minutes and ~24k tokens. Before calling \`mobile_run_task\`, run \`bb recom gate mobile/<id> -- <the drive>\`: it prints the recorded answer and runs nothing when every fact it rests on still reads the same, and runs the drive when one has moved. \`bb recom mobile\` says whether a device is attached.`;
+
+/** The block as written into a file. Composed rather than constant because a
+ *  sentence about phones in a repository with no phone is a sentence every
+ *  prompt pays for and no session uses. */
+export function instructions({ mobile = false } = {}) {
+  if (!mobile) return BASE;
+  return BASE.replace(`\n${END}`, `\n${MOBILE}\n${END}`);
+}
+
+// Kept so a caller that only wants the base block still reads naturally.
+export const INSTRUCTIONS = BASE;
 
 // The MCP server every agent points at. `bb` on PATH, not an absolute path:
 // the file is committed and other people's boxes do not share this one's HOME.
