@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { shellCmd } from "../core/exec.js";
 import * as store from "../core/store.js";
 import * as expert from "../core/expert.js";
 import * as adapters from "../adapters/index.js";
@@ -204,7 +205,11 @@ export async function send(callId, { agent = "", run = false, spend = false, all
   fs.writeFileSync(path.join(DIR(), row.id, "result.txt"), `${r.stdout || ""}${r.stderr ? `\n--- stderr ---\n${r.stderr}` : ""}${r.error ? `\n--- error ---\n${r.error.message}` : ""}`);
   let accepted = null;
   if (rc === 0 && row.acceptance) {
-    const a = spawnSync("bash", ["-lc", row.acceptance], { cwd: ROOT, env, encoding: "utf8", timeout: 600000 });
+    // Hard-coded bash here meant a Windows box could not SPAWN the acceptance,
+    // and `a.status` of null then read as `accepted: 0` — a gate that never ran
+    // recorded as a gate that failed, which is the one reading it must not have.
+    const [shBin, ...shArgs] = shellCmd(row.acceptance);
+    const a = spawnSync(shBin, shArgs, { cwd: ROOT, env, encoding: "utf8", timeout: 600000 });
     accepted = a.status === 0 ? 1 : 0;
   }
   const done = { ...row, state: accepted === 1 ? "done" : "sent", agent: adp.name, argv: spec.argv, rc, accepted, seconds, sent_at: now(), spent_tokens: null, budget: { limit: budget.limit, spent_before: budget.spent } };

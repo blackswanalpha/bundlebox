@@ -154,3 +154,36 @@ test("both engines choose the same shell, and neither hard-codes bash on Windows
     assert.ok(shell.includes(token), `kernel/src/gate.rs::shell no longer carries ${token}; the two engines have drifted`);
   }
 });
+
+test("nothing in src/ hard-codes a shell except the one branch that may", () => {
+  // The defect came back three times before it was noticed, because each caller
+  // reached for `bash -lc` on its own and nothing was watching. This is the
+  // watch: one allowlisted hit, with the reason it is allowed.
+  //
+  // `src/runbook/lifecycle.js` passes `bash -lc` to systemd-run, which is
+  // Linux-only and gated on `useSystemd()`, so a box that reaches that line has
+  // a bash by construction. Every other caller must go through `shellCmd`.
+  const ALLOWED = new Map([
+    ["src/core/exec.js", "this IS shellCmd — the one implementation everything else must call"],
+    ["src/runbook/lifecycle.js", "systemd-run is Linux-only and gated on useSystemd()"],
+  ]);
+  const root = path.join(process.cwd(), "src");
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(f); continue; }
+      if (!f.endsWith(".js")) continue;
+      const text = fs.readFileSync(f, "utf8");
+      // The literal argv form, however it is quoted or spaced.
+      if (/["'`]bash["'`]\s*,\s*\[?\s*["'`]-lc["'`]/.test(text)) hits.push(path.relative(process.cwd(), f).split(path.sep).join("/"));
+    }
+  };
+  walk(root);
+  const unexpected = hits.filter((h) => !ALLOWED.has(h));
+  assert.deepEqual(unexpected, [],
+    `these hard-code a shell instead of calling exec.shellCmd, and will fail to spawn on a stock Windows box: ${unexpected.join(", ")}`);
+  // And the allowlist is not allowed to rot: an entry that no longer matches is
+  // an entry that is silently permitting nothing.
+  for (const [file, why] of ALLOWED) assert.ok(hits.includes(file), `${file} no longer hard-codes bash (${why}); drop it from the allowlist`);
+});
