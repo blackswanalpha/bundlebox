@@ -31,6 +31,11 @@ jobs:
       - run: npm test
       - run: npm run expert:test
       - run: node bin/bb.js selftest
+      # bash on every platform: PowerShell has no /dev/null and reads it as a
+      # relative path, so this step died with `Could not find a part of the path
+      # 'D:\dev\null'` the moment the Windows tests started passing and it was
+      # finally reached. Two steps above already pin the shell for the same reason.
       - run: node bin/bb.js scan --json > /dev/null
+        shell: bash
       - name: doc-drift on our own README
         run: node bin/bb.js scan --only doc-drift
