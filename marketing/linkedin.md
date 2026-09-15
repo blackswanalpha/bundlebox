@@ -127,16 +127,18 @@ Do not lead with 97%.
 
 Full text in `post-3-silent-failures.txt`. One thesis — every bug closed this
 week failed by looking like it was working — five examples from the codebase,
-then the release itself supplying two more.
+then the release itself supplying three more.
 
-The ending is the argument, so do not cut it for length. It sets the retired
-`macos-13` runner (silent: sat queued for 34 minutes, never errored) against
-npm's 403 (loud: named the policy and the fix, two minutes). Same afternoon,
-same carelessness, two orders of magnitude apart in cost. That contrast is what
-makes the post an argument rather than a changelog.
+The ending is the argument, so do not cut it for length. Three failures in one
+afternoon at wildly different prices: a retired `macos-13` runner that sat
+queued for thirty-four minutes without erroring, an npm 403 that named the fix
+in two minutes, and a rate-limited account earned by retrying that 403 instead
+of reading it. The third one is the author's fault and the post says so. Leave
+that in — it is what stops the piece reading as a tool advert, and a post about
+silent failure that hides its own would be the joke writing itself.
 
-Do not soften "not on npm yet". A post that claims a clean launch while the
-release is stuck is the exact failure mode it is complaining about.
+Do not soften "not on npm yet". A post claiming a clean launch while the release
+is stuck is the exact failure mode it is complaining about.
 
-When it does publish, swap that one clause for the npm line and keep both
+When it does publish, swap that one clause for the npm line and keep all three
 examples — they are the evidence, not the news.

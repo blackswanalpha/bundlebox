@@ -58,14 +58,27 @@ five, simply never started. Thirty-four minutes to notice, and the only clue was
 an empty runner field in the API.
 
 The second was loud. npm refused the publish with a 403 naming the exact policy
-and the exact fix. Two minutes to diagnose, and the remaining work is a setting
-on my account, not a mystery.
+and the exact fix: my account required a one-time password for every registry
+write, and no CI runner has an authenticator. Two minutes to diagnose.
 
-Same release, same afternoon, same person being careless. The difference in cost
-between those two is the entire argument. A system that fails loudly is cheap
-even when it fails often. A system that fails by looking fine bills you in hours
-you did not know you were spending — and the only defence is checks that assert
-the presence of work done, not the absence of errors.
+Then I did the thing a loud error invites. I retried. Four publish attempts in
+ninety minutes, across two tokens and two changes to my own 2FA settings, until
+npm rate-limited the account for behaving like a bot — which, from the outside,
+is exactly what it was doing.
+
+Three failures, one afternoon, and they cost completely different amounts. The
+silent one cost thirty-four minutes before I knew anything was wrong at all. The
+loud one cost two. The third cost the rest of the day, and it is the only one I
+caused AFTER being told precisely what was wrong.
+
+That is the whole argument, including the part that is on me. A system that
+fails loudly is cheap even when it fails often, because the clock starts when
+you read the error. A system that fails by looking fine bills you in hours you
+did not know you were spending. And an error you answer by retrying instead of
+reading is a third category that no amount of tooling fixes.
+
+The defence against the first kind is checks that assert the presence of work
+done, not the absence of errors.
 
 Which is what the twenty-five silent-failure checks in this release are. One of
 them now asserts that the cron line contains the flag that makes it run.
