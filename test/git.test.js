@@ -79,11 +79,10 @@ test("a scope written relative to the repo says so instead of `none in scope`", 
   assert.equal(wrong.ok, false);
   assert.match(wrong.why, /outside proj: scope is workspace-relative/);
   assert.match(wrong.why, /proj\/src/, "and it names the scope that would have worked");
-  // The happy path of the same function is covered above, over the fixture's
-  // own repo. It is not re-asserted here: staging inside a SECOND repo under
-  // the workspace fails on Windows for a path-matching reason that predates
-  // this test — the same one that fails "commit refuses with no scope" on
-  // main — and a test that passes here for the wrong reason would hide it.
+
+  const right = g.commit({ cwd: sub, scope: ["proj/src"] });
+  assert.equal(right.ok, true, JSON.stringify(right));
+  assert.deepEqual(right.staged, ["src/x.js"]);
 });
 
 test("bb git acts on the one subrepo when the workspace itself is not one", async () => {
@@ -97,4 +96,100 @@ test("bb git acts on the one subrepo when the workspace itself is not one", asyn
   // pinned through the module's own resolution rather than a second copy of it.
   assert.equal(typeof g.defaultRepo, "function");
   assert.equal(g.defaultRepo(), root, "a workspace that IS a repo acts on itself");
+});
+
+// ── the path arithmetic, with Windows inputs, on any platform ───────────────
+//
+// `scopeToRepo` is pure and takes its path implementation, so the exact strings
+// CI reported from a Windows runner can be replayed here. Every case below is
+// a spelling of ONE directory that Node and git disagree about.
+test("scopeToRepo: a short-name workspace and a long-name repo are the same directory", () => {
+  // os.tmpdir() hands back the 8.3 short name; `git rev-parse --show-toplevel`
+  // always reports the long one. realpathSync does not settle that — only
+  // realpathSync.native does — so this is what commit() used to see, and every
+  // scope path landed "outside" a repository it was sitting in.
+  const r = g.scopeToRepo(["src/a.js"], {
+    root: "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\bb-git-lSrFzo",
+    repo: "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\bb-git-lSrFzo",
+    p: path.win32,
+  });
+  assert.deepEqual(r.local, ["src/a.js"], "the scope still resolves against the repository");
+  assert.equal(r.base, "repo", "the two spellings do not compare as one, so the repo is the base");
+});
+
+test("scopeToRepo: once canonicalised, the same case reads against the workspace", () => {
+  const long = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\bb-git-lSrFzo";
+  const r = g.scopeToRepo(["src/a.js"], { root: long, repo: long, p: path.win32 });
+  assert.deepEqual(r.local, ["src/a.js"]);
+  assert.equal(r.base, "workspace");
+});
+
+test("scopeToRepo: git's forward slashes and drive-letter case do not matter", () => {
+  const r = g.scopeToRepo(["proj/src"], {
+    root: "C:\\work\\ws",
+    repo: "c:/work/ws/proj",
+    p: path.win32,
+  });
+  assert.deepEqual(r.local, ["src"]);
+  assert.equal(r.base, "workspace");
+});
+
+test("scopeToRepo: a repo under the workspace reads scope workspace-relative", () => {
+  const at = { root: "/ws", repo: "/ws/proj", p: path.posix };
+  assert.deepEqual(g.scopeToRepo(["proj/src", "proj/test"], at).local, ["src", "test"]);
+  assert.deepEqual(g.scopeToRepo(["src"], at).local, [], "a repo-relative scope is outside, and says so");
+});
+
+test("scopeToRepo: a repo outside the workspace reads scope against itself", () => {
+  // `bb git commit --cwd /elsewhere` leaves no workspace path to be relative
+  // to, so workspace-relative is not a reading the scope can have.
+  const r = g.scopeToRepo(["src/a.js"], { root: "/ws", repo: "/elsewhere/repo", p: path.posix });
+  assert.deepEqual(r.local, ["src/a.js"]);
+  assert.equal(r.base, "repo");
+});
+
+test("scopeToRepo: an absolute scope path inside the repo is kept, outside is dropped", () => {
+  const at = { root: "/ws", repo: "/ws/proj", p: path.posix };
+  assert.deepEqual(g.scopeToRepo(["/ws/proj/src/a.js"], at).local, ["src/a.js"]);
+  assert.deepEqual(g.scopeToRepo(["/etc/passwd"], at).local, []);
+});
+
+test("canon names one directory one way, and never throws on one that is not there", () => {
+  // Deliberately NOT asserted equal to realpathSync: on Windows that returns the
+  // 8.3 short name and canon returns the long one, which is the whole point of
+  // it. What must hold everywhere is that it is stable and still the same
+  // directory.
+  const once = g.canon(root);
+  assert.equal(g.canon(once), once, "idempotent");
+  assert.equal(g.canon(path.join(root, "src")), path.join(once, "src"),
+    "a child of a canonical directory is canonical too");
+  assert.ok(fs.existsSync(path.join(once, "src", "a.js")), "and it still points at the same tree");
+  const missing = path.join(root, "no", "such", "place");
+  assert.equal(g.canon(missing), missing, "an unresolvable path comes back unchanged");
+});
+
+// ── a shell is where argument quoting is lost ───────────────────────────────
+test("shellFor: only a script shim takes the shell, and never off Windows", async () => {
+  const { shellFor } = await import("../src/core/exec.js");
+  // The bug: `git` has no .exe suffix, so it took the shell, and cmd.exe does
+  // not quote — a commit message arrived as five pathspecs.
+  assert.equal(shellFor("C:\\Program Files\\Git\\bin\\git.exe", { win: true }), false);
+  assert.equal(shellFor("C:\\Program Files\\nodejs\\node.exe", { win: true }), false);
+  assert.equal(shellFor("C:\\x\\y.COM", { win: true }), false, "case does not matter");
+  // A .cmd shim genuinely cannot be spawned without one on Node >= 20.
+  assert.equal(shellFor("C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd", { win: true }), true);
+  assert.equal(shellFor("C:\\x\\thing.bat", { win: true }), true);
+  assert.equal(shellFor("git", { win: true }), true, "unresolved: the shim path is the safe assumption");
+  assert.equal(shellFor("git", { win: false }), false, "nothing off Windows ever needs it");
+  assert.equal(shellFor("/usr/bin/git", { win: false }), false);
+});
+
+test("an argument with spaces survives the spawn", async () => {
+  const { run } = await import("../src/core/exec.js");
+  // The shape that broke: one argv entry holding spaces and punctuation. Node
+  // quotes it correctly only when no shell is in the way.
+  const msg = "docs(src): close 1 doc-links finding in src";
+  const r = run([process.execPath, "-e", "process.stdout.write(process.argv[1])", msg]);
+  assert.equal(r.rc, 0, r.err);
+  assert.equal(r.out, msg, "one argument in, one argument out");
 });
