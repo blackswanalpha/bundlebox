@@ -53,13 +53,27 @@ function scanFile(r, t, acc) {
     if (acc.palette.length < 12) hit("palette", m.index, m[0]);
   }
 
-  for (const m of t.matchAll(/font-family\s*:\s*([^;}\n]+)/gi)) {
-    for (const fam of m[1].split(",")) {
-      const name = fam.trim().replace(/^var\(--[^)]*\)$/, "").replace(/['"]/g, "").trim();
-      if (!name) continue;
+  // Custom properties first: a design system declares its families as tokens and
+  // uses them as `font-family: var(--font-text)`. Reading only the literal
+  // declarations found nothing there and called a chosen typeface unchosen —
+  // punishing exactly the practice worth having.
+  const vars = new Map();
+  for (const m of t.matchAll(/(--[\w-]+)\s*:\s*([^;}\n]+)/g)) vars.set(m[1], m[2].trim());
+  const deref = (v, depth = 0) => {
+    const m = /^var\(\s*(--[\w-]+)\s*(?:,([^)]*))?\)$/.exec(String(v).trim());
+    if (!m || depth > 4) return v;
+    return deref(vars.get(m[1]) ?? m[2] ?? "", depth + 1);
+  };
+  const family = (raw) => {
+    for (const fam of String(raw).split(",")) {
+      const name = fam.trim().replace(/['"]/g, "").trim();
+      if (!name || name.startsWith("var(")) continue;
       (DEFAULT_FAMILY.test(name) ? acc.famDefault : acc.famOwn).add(name.toLowerCase());
     }
-  }
+  };
+  for (const m of t.matchAll(/font-family\s*:\s*([^;}\n]+)/gi)) family(deref(m[1]));
+  // A `--font-*` token IS the declaration, whether or not this file also uses it.
+  for (const [k, v] of vars) if (/font/i.test(k) && /[a-z]/i.test(v) && !/^\d/.test(v)) family(deref(v));
   for (const m of t.matchAll(/\bfontFamily\s*:\s*['"]([^'"]+)/g)) {
     const name = m[1].split(",")[0].trim();
     (DEFAULT_FAMILY.test(name) ? acc.famDefault : acc.famOwn).add(name.toLowerCase());

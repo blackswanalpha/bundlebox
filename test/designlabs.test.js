@@ -201,3 +201,27 @@ test("collect is a dry run until --apply and never reaches a source it is not al
   assert.equal(rows.find((r) => r.id === "fontsource").state, "dry");
   assert.equal(rows.find((r) => r.id === "dribbble").state, "skip", "a web-only source is never fetched by bb");
 });
+
+test("ui-generic reads a typeface declared as a design token, not only as a literal", () => {
+  // A design system declares its families once, as tokens, and uses them through
+  // var(). Reading only the literal declarations found nothing and reported a
+  // chosen typeface as unchosen — punishing the practice worth having.
+  w("tokens/styles.css", `:root {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-text: "Public Sans", Helvetica, Arial, sans-serif;
+}
+body { font-family: var(--font-text); }
+h1 { font-family: var(--font-display); }
+pre { font-family: ui-monospace, monospace; }
+`);
+  const tells = run(walk(root)).filter((r) => r.evidence.area === "tokens").map((r) => r.evidence.tell);
+  assert.ok(!tells.includes("no-typeface"), `a tokenised typeface IS a typeface; got ${tells.join(", ") || "none"}`);
+});
+
+test("ui-generic still catches a tree whose only families are the defaults, tokens or not", () => {
+  w("untokened/styles.css", `:root { --font-body: Inter, system-ui, sans-serif; }
+body { font-family: var(--font-body); }
+`);
+  const tells = run(walk(root)).filter((r) => r.evidence.area === "untokened").map((r) => r.evidence.tell);
+  assert.ok(tells.includes("no-typeface"), "wrapping Inter in a token does not make it a decision");
+});
