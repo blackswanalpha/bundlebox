@@ -6,9 +6,13 @@ on:
 jobs:
   node:
     runs-on: ${{ matrix.os }}
-    # Windows is best-effort in 0.1.x: path-separator and shell differences are
-    # tracked in issue #1; use WSL for a supported install. Linux and macOS gate.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    # Windows GATES, as of 0.3.0. It was best-effort while the two engines picked
+    # different shells there and `the kernel and the JS engine agree about a run
+    # step with body keys` was red on every Windows job — a red that could not
+    # fail a build, and therefore went unnoticed for as long as the log history
+    # goes back. One shell selection (`exec.shellCmd`, mirroring
+    # kernel/src/gate.rs) fixed it, and with the flag gone a Windows break is a
+    # failed build again rather than a green workflow over a red job.
     strategy:
       fail-fast: false
       matrix:

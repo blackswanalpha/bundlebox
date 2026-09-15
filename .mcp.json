@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "bundlebox": {
+      "command": "bb",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
