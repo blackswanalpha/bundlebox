@@ -32,6 +32,7 @@ bb git       ->  PRs         commit, push, draft PR, review, gated merge     0 t
 bb runbook   ->  the system  is it up, is it ANSWERING, what broke since    0 tokens
 bb recom     ->  an answer   what was already driven, and whether it holds   0 tokens
 bb recom gate->  a decision  and therefore whether to drive at all           0 tokens
+bb dotty     ->  a screen    what it showed, as rows a session can diff      0 tokens
 bb monitor   ->  the window  what the 5-hour block has left, and the guard   0 tokens
 bb session   ->  the bill    what a session used and saved, measured         0 tokens
 ```
@@ -135,6 +136,7 @@ MCP server entry. `bb unwire` removes only its own blocks.
 | `mainboard`, `failsafe` | six views over one ledger and which pipeline stage does not hold; what is failing, why, and the op | 0 |
 | `runbook` | declared services and groups; `up` refuses a set whose cages exceed free memory and `--wait` returns when the service ANSWERS; 40,000 log lines as twenty signatures and the failures this workspace already paid to learn, arriving named | 0 |
 | `recom` | has this automation already been run, and is its result still true; a record declares the facts it rests on and they are re-probed on every read — `fresh`, `stale` naming what moved, or `unknown`. `bb recom gate <id> -- <cmd>` wires that verdict straight to the decision, so an expensive drive happens only when its answer stopped holding | 0 |
+| `dotty` | what the screen showed, over the Chrome DevTools Protocol with no dependency: a PNG for a person and an accessibility summary for the session, a frame each side of a command, and a BLANK verdict on a frame that is a picture of nothing | 0 |
 | `slop` | the prose ruleset every brief, commit message and PR body is stripped by before a lane is billed for it | 0 |
 | `frames`, `blackice` | a dataframe over the factory's own data with evals as JSON; per-area dated audits, ingested as findings and checked for drift | 0 |
 | `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
