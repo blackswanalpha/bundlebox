@@ -52,6 +52,14 @@ test("a fenced block and an indented command are never prose", () => {
   assert.ok(r.text.startsWith("Run it."), "and the prose above it is still stripped, and re-capitalised");
 });
 
+test("inline code is not prose, so a document about the rules survives its own rules", () => {
+  const doc = "The rule catches `in order to` and `several files`, and a field named `this should work`.";
+  assert.deepEqual(lint(doc).hits, [], "a quoted literal is the thing being named, not a claim");
+  assert.equal(clean(doc), doc);
+  // And the same words outside the backticks still fire.
+  assert.ok(lint("We did it in order to check the config.").count >= 2);
+});
+
 test("a line nothing fired on comes back byte for byte", () => {
   const table = [
     "Common to every item below:",

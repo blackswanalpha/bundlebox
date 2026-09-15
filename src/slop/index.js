@@ -131,6 +131,18 @@ export const RULES = [
 const BY_ID = new Map(RULES.map((r) => [r.id, r]));
 const FENCE = /^(\s*)(```|~~~)/;
 
+/** Inline code is not prose either. A brief that quotes `in order to` as the
+ *  literal string a rule matches, or names a field called `several files`, must
+ *  come back with that span untouched — this document is the first example of
+ *  it, and a ruleset that mangles its own examples is one nobody runs twice.
+ *
+ *  The span is replaced by NULs of the SAME LENGTH, so every match offset from
+ *  the masked line is an offset into the real one, and no rule pattern can
+ *  match a NUL. */
+function mask(line) {
+  return line.replace(/`+[^`]*`+/g, (m) => "\u0000".repeat(m.length));
+}
+
 /** Fenced code blocks and indented command lines are never prose: a rule that
  *  fired inside one would delete part of a command the reader has to run. */
 function proseLines(textIn) {
@@ -147,14 +159,15 @@ function proseLines(textIn) {
 
 /** Every hit, with the line, the rule and the text. Measured, not guessed. */
 export function lint(textIn, { only = null } = {}) {
-  const { lines, mask } = proseLines(textIn);
+  const { lines, mask: isProse } = proseLines(textIn);
   const rules = RULES.filter((r) => !only || only.includes(r.id));
   const hits = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!mask[i]) continue;
+    if (!isProse[i]) continue;
+    const subject = mask(lines[i]);
     for (const r of rules) {
       r.re.lastIndex = 0;
-      for (const m of lines[i].matchAll(r.re)) {
+      for (const m of subject.matchAll(r.re)) {
         const t = String(m[0]).trim();
         if (!t) continue;
         hits.push({ line: i + 1, rule: r.id, family: r.family, text: t.slice(0, 80) });
@@ -174,20 +187,23 @@ export function lint(textIn, { only = null } = {}) {
  *  sentence it was fixing. */
 export function strip(textIn) {
   const before = String(textIn ?? "");
-  const { lines, mask } = proseLines(before);
+  const { lines, mask: isProse } = proseLines(before);
   const applied = {};
   const fixable = RULES.filter((r) => r.fix);
   const out = lines.map((line, i) => {
-    if (!mask[i]) return line;
+    if (!isProse[i]) return line;
     let s = line;
     for (const r of fixable) {
       r.re.lastIndex = 0;
-      s = s.replace(r.re, (...args) => {
-        const groups = args.slice(0, -2);
+      // Matched against the masked line so an inline code span is never
+      // rewritten, and spliced into the real one at the offsets that gives.
+      const edits = [];
+      for (const m of mask(s).matchAll(r.re)) {
         applied[r.id] = (applied[r.id] || 0) + 1;
-        const v = r.fix(groups[0], groups[1] ?? "", ...groups.slice(2));
-        return typeof v === "string" ? v : String(v ?? "");
-      });
+        const v = r.fix(m[0], m[1] ?? "", ...m.slice(2));
+        edits.push([m.index, m.index + m[0].length, typeof v === "string" ? v : String(v ?? "")]);
+      }
+      for (const [from, to, v] of edits.reverse()) s = s.slice(0, from) + v + s.slice(to);
     }
     // A line nothing fired on is returned byte for byte. Whitespace in these
     // documents is structure — an evidence block, a hoisted header, an aligned
