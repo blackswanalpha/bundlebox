@@ -1,9 +1,8 @@
 // runner.js — execute a gear, and write down what it was worth.
 //
 // The loop is small and every line is a decision about not spending:
-//   1. build the context once (git state, open findings, minutes since the
-//      last run). Every gate reads it; none re-measure it. A fact whose source
-//      failed is null, never 0: a null gate RUNS the stage (spec.js).
+//   1. build the context once (facts.js): git state, open findings, minutes
+//      since the last run. Every gate reads it; none re-measure it.
 //   2. gate. A false gate is a skip and the skip is an episode too.
 //   3. fresh. The declared inputs fingerprint the same as last run -> skip.
 //      This is what makes a gear cheap enough to run on a tick.
@@ -13,20 +12,25 @@
 //   6. write the episode: the training row, written whether it ran or not.
 //   7. re-read the store facts so the next gate sees what this stage wrote.
 //
-// Nothing here spends. A stage that cannot run is an `error` row; the gear
-// keeps going and its verdict says `partial`.
-import fs from "node:fs";
+// Steps 2 to 4 only ever DECIDE, and step 5 only ever RUNS. They are two
+// functions for that reason: a decision that can also execute is a decision
+// nobody can read in isolation, and this is the loop that must never spend by
+// accident. Nothing here spends. A stage that cannot run is an `error` row;
+// the gear keeps going and its verdict says `partial`.
 import path from "node:path";
 import * as store from "../core/store.js";
 import * as expert from "../core/expert.js";
-import { git } from "../core/exec.js";
 import { readJson } from "../core/config.js";
-import { VAR, BB_DIR } from "../core/paths.js";
+import { VAR } from "../core/paths.js";
 import { setMode, isJson, warn } from "../core/log.js";
-import { now, stamp, shortId, slug, human, pad, sum } from "../core/util.js";
+import { now, stamp, shortId, slug, sum } from "../core/util.js";
 import { fingerprint, inputsOf, readMeta, writeMeta } from "../kit/cache.js";
 import * as episodes from "../buckmaster/episodes.js";
 import { evaluate, verbKey, load as loadGears } from "./spec.js";
+import { context, storeFacts, features } from "./facts.js";
+
+export { context } from "./facts.js";
+export { report, listText, runsText, suggest, suggestText } from "./report.js";
 
 /** Below this predicted usefulness an OPTIONAL stage is skipped. 0.35, not 0.5:
  *  a free stage that runs uselessly costs seconds; a needed stage skipped
@@ -35,88 +39,117 @@ export const SKIP_BELOW = 0.35;
 
 const round2 = (x) => Math.round(x * 100) / 100;
 
-/** What is true before the gear runs. Each field is null when its source could
- *  not be read (doctrine 2): a store that does not parse is not "0 findings". */
-export function context(gearName) {
-  const ctx = { gear: gearName, at: now(), open_findings: null, open_high: null, dirty: null, since_min: null, units_ready: null,
-    corpora: null, corpus_base: null, scenarios: null, world: null, services: null };
-  Object.assign(ctx, storeFacts());
-  Object.assign(ctx, scenarioFacts());
-  const st = git(["status", "--porcelain"]);
-  if (st.rc === 0) ctx.dirty = st.out.split("\n").filter((l) => l.trim()).length;
-  const last = store.rows("gear_runs").filter((r) => r.gear === gearName).pop();
-  if (last) {
-    const t = Date.parse(last.at || last.ts || "");
-    if (Number.isFinite(t)) ctx.since_min = Math.max(0, Math.round((Date.now() - t) / 60000));
-  }
-  return ctx;
-}
-
-/** What the scenario half of the pipeline can act on, read straight off disk.
- *  Deliberately not by importing those modules: the context is built before a
- *  gear runs, and a partial install where one feature module does not import
- *  must still be able to gate on the others. Each stays null when its source
- *  could not be read, so a gate over it evaluates to NULL and the runner RUNS
- *  the stage — a gate that cannot be evaluated is not a reason to skip.
- */
-function scenarioFacts() {
-  const out = { corpora: null, corpus_base: null, scenarios: null, world: null, services: null };
-  const dirs = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return null; } };
-  const countJson = (p) => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const q = path.join(d, x.name); if (x.isDirectory()) walk(q); else if (x.name.endsWith(".json")) n++; } }; walk(p); return n; };
-
-  const cb = path.join(BB_DIR, "cookbook");
-  const corpora = dirs(cb);
-  if (corpora) {
-    const withPersona = corpora.filter((d) => fs.existsSync(path.join(cb, d, "persona.json")));
-    out.corpora = withPersona.length;
-    out.scenarios = withPersona.reduce((a, d) => a + countJson(path.join(cb, d, "scenarios")), 0);
-    out.corpus_base = withPersona.some((d) => (readJson(path.join(cb, d, "persona.json"), {}) || {}).base) ? 1 : 0;
-  }
-  const gen = dirs(path.join(BB_DIR, "genesis"));
-  if (gen) out.world = gen.filter((d) => fs.existsSync(path.join(BB_DIR, "genesis", d, "world.json"))).length;
-  const svc = readJson(path.join(BB_DIR, "runbook", "services.json"), null);
-  if (svc) out.services = (Array.isArray(svc) ? svc : svc.services || []).length;
-  return out;
-}
-
-function storeFacts() {
-  const f = store.get("findings", null);
-  const u = store.get("units", null);
-  const open = Array.isArray(f) ? f.filter((x) => x && x.status === "open") : null;
-  return {
-    open_findings: open ? open.length : null,
-    open_high: open ? open.filter((x) => x.severity === "high" || x.severity === "critical").length : null,
-    units_ready: Array.isArray(u) ? u.filter((x) => x && x.status === "ready").length : null,
-  };
-}
-
-/** Pre-run facts only. `inputs` is the declared input count, not what ran. */
-function features(st, ctx, inputCount) {
-  return { inputs: inputCount, open_findings: ctx.open_findings, dirty: ctx.dirty, since_min: ctx.since_min, optional: st.optional ? 1 : 0 };
-}
-
 // The yield table moved to buckmaster/episodes.js: a verb typed by hand displaces
 // the same work as the same verb inside a gear, and two tables would disagree.
 // The pipeline does not dedupe by digest because its freshness gate already
 // refuses to re-run a stage whose inputs have not drifted.
 const yieldOf = (st) => episodes.yieldOf(verbKey(st));
 
+/** Have this stage's declared inputs changed since it last ran?
+ *  Returns the fingerprint and its store key so a stage that RUNS can record
+ *  them; a stage that skips records nothing, because nothing consumed them. */
+function freshness(g, st) {
+  if (typeof st.inputs !== "function") {
+    warn(`${g.name}/${st.name}: skip_if_fresh without inputs(); it can never be fresh`);
+    return { fresh: null, fp: null, fpKey: null, inputCount: null };
+  }
+  let inputs = null;
+  try { inputs = st.inputs(); } catch (e) { warn(`${g.name}/${st.name}: inputs() failed (${e.message}); treated as changed`); }
+  if (!Array.isArray(inputs)) return { fresh: null, fp: null, fpKey: null, inputCount: null };
+  const fp = fingerprint(inputs);
+  const fpKey = `pipeline-${slug(g.name)}-${slug(st.name)}`;
+  const meta = readMeta(fpKey);
+  const fresh = inputsOf(fp) > 0 && meta.fingerprint === fp
+    ? `${inputsOf(fp)} inputs unchanged since ${meta.at || "last run"}` : null;
+  return { fresh, fp, fpKey, inputCount: inputs.length };
+}
+
+/** Everything that can stop a stage before it runs, in the order it is cheapest
+ *  to ask. Decides only: it never calls a verb. */
+function decide(g, st, row, { ctx, model, lift, apply, prev }) {
+  let inputCount = null, fp = null, fpKey = null;
+
+  const gate = evaluate(st.when, ctx);
+  if (gate.value === false) { row.state = "gated"; row.why = `when: ${st.when}`; }
+  else if (st.when && gate.value === null) {
+    row.gate_note = gate.error ? `gate unparseable (${gate.error}); ran anyway`
+      : `gate unknown (${gate.unknown.join(", ")} not measurable); ran anyway`;
+  }
+
+  if (!row.state && st.skip_if_fresh) {
+    const f = freshness(g, st);
+    ({ fp, fpKey, inputCount } = f);
+    if (f.fresh) { row.state = "fresh"; row.why = f.fresh; }
+  }
+  const feats = features(st, ctx, inputCount);
+
+  // Only a model that beat its base rate votes; the base-rate fallback is not a prediction.
+  if (!row.state && st.optional && model && model.useful) {
+    const pred = expert.call("model-predict", { model, lift, episode: { verb: row.verb, prev, features: feats } });
+    if (pred && pred.source === "model" && typeof pred.p === "number") {
+      row.p_useful = pred.p;
+      if (pred.p < SKIP_BELOW) { row.state = "predicted-idle"; row.why = `model: p_useful ${pred.p} < ${SKIP_BELOW}`; }
+    }
+  }
+  if (!row.state && !apply) { row.state = "would-run"; row.why = "dry run; --apply runs it"; }
+  return { feats, fp, fpKey, inputCount };
+}
+
+/** Run the stage's verb in-process and record what it produced. */
+async function execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, fp, fpKey, inputCount, gearName }) {
+  const cmd = cmdTable[st.verb];
+  // What this stage's artefact held BEFORE it ran. Without it the label is a
+  // function of the verb (C32): every `scan` claims to produce findings whether
+  // or not this run found any, and the model memorises the verb.
+  const before = yieldOf(st).produced;
+  const t1 = Date.now();
+  if (!cmd) { row.state = "error"; row.rc = 2; row.why = `no verb \`${st.verb}\` on this install`; }
+  else {
+    // Silence the verb's own output unless --verbose: a gear prints one line per stage.
+    setMode({ quiet: !verbose, json: false });
+    try {
+      const rc = await cmd.run({ _: [...st.args], flags: { ...st.flags, quiet: true }, rest: [] });
+      row.rc = typeof rc === "number" ? rc : 0;
+      row.state = "ran";
+    } catch (e) { row.state = "error"; row.rc = 2; row.why = String((e && e.message) || e).split("\n")[0]; }
+    finally { setMode({ quiet, json: wasJson }); }
+  }
+  row.seconds = round2((Date.now() - t1) / 1000);
+  if (row.state !== "ran") return;
+
+  const y = yieldOf(st);
+  row.produced = y.produced; row.turns = y.turns; row.reads = y.reads; row.produces = y.produces;
+  // null on either side means nothing counted it: unknown, not unchanged.
+  row.changed = before == null || y.produced == null ? null : (y.produced === before ? 0 : 1);
+  row.before = before;
+  // rc 2 is "could not run": its inputs were not consumed, so nothing is fresh.
+  if (fpKey && row.rc !== 2) writeMeta(fpKey, { fingerprint: fp, at: now(), gear: gearName, stage: st.name, inputs: inputCount });
+  Object.assign(ctx, storeFacts());
+}
+
+/** The command table, resolved once per invocation. Imported here rather than
+ *  at the top because cli.js imports this module's group. */
+async function commandTable(table) {
+  if (table) return table;
+  try { return (await (await import("../cli.js")).loadCommands()).table; }
+  catch (e) { warn(`cli table unavailable: ${e.message}`); return {}; }
+}
+
+const empty = (gear, extra) => ({ gear, stages: [], chained: [], ran: 0, skipped: 0, failed: 0, turns_saved: 0, seconds: 0, ...extra });
+
 /** Run one gear and whatever it chains into. Never throws; returns the run record. */
 export async function runGear(name, opts = {}) {
   const { apply = false, verbose = false, quiet = false, trigger = "hand", table = null, gears = null, runId = "", _seen = null, _depth = 0 } = opts;
   const loaded = gears || (await loadGears()).gears;
   const g = loaded[name];
-  if (!g) return { gear: name, rc: 2, error: `no such gear: ${name}. bb pipeline list`, stages: [], chained: [], ran: 0, skipped: 0, failed: 0, turns_saved: 0, seconds: 0 };
+  if (!g) return empty(name, { rc: 2, error: `no such gear: ${name}. bb pipeline list` });
   const seen = _seen || new Set();
   // A chain is a graph and somebody will write a loop into it.
-  if (seen.has(name)) return { gear: name, rc: 0, skipped_gear: "already ran in this invocation", stages: [], chained: [], ran: 0, skipped: 0, failed: 0, turns_saved: 0, seconds: 0 };
+  if (seen.has(name)) return empty(name, { rc: 0, skipped_gear: "already ran in this invocation" });
   seen.add(name);
+
   const run_id = runId || `${stamp()}-${shortId(4)}`;
-  let cmdTable = table;
-  if (!cmdTable) {
-    // Imported here, not at the top: cli.js imports this module's group.
-    try { cmdTable = (await (await import("../cli.js")).loadCommands()).table; } catch (e) { cmdTable = {}; warn(`cli table unavailable: ${e.message}`); }
-  }
+  const cmdTable = await commandTable(table);
   const ctx = context(g.name);
   const model = readJson(path.join(VAR, "model.json"), null);
   const lift = (store.get("graph", null) || {}).lift || null;
@@ -128,70 +161,10 @@ export async function runGear(name, opts = {}) {
   for (const st of g.stages) {
     const key = verbKey(st);
     const row = { stage: st.name, verb: key, state: "", why: "", rc: 0, seconds: 0, produced: null, changed: null, turns: 0, p_useful: null };
-    let inputCount = null, fp = null, fpKey = null;
+    const d = decide(g, st, row, { ctx, model, lift, apply, prev });
+    if (!row.state) await execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, gearName: g.name, ...d });
 
-    const gate = evaluate(st.when, ctx);
-    if (gate.value === false) { row.state = "gated"; row.why = `when: ${st.when}`; }
-    else if (st.when && gate.value === null) row.gate_note = gate.error ? `gate unparseable (${gate.error}); ran anyway` : `gate unknown (${gate.unknown.join(", ")} not measurable); ran anyway`;
-
-    if (!row.state && st.skip_if_fresh) {
-      if (typeof st.inputs !== "function") warn(`${g.name}/${st.name}: skip_if_fresh without inputs(); it can never be fresh`);
-      else {
-        let inputs = null;
-        try { inputs = st.inputs(); } catch (e) { warn(`${g.name}/${st.name}: inputs() failed (${e.message}); treated as changed`); }
-        if (Array.isArray(inputs)) {
-          inputCount = inputs.length;
-          fp = fingerprint(inputs);
-          fpKey = `pipeline-${slug(g.name)}-${slug(st.name)}`;
-          const meta = readMeta(fpKey);
-          if (inputsOf(fp) > 0 && meta.fingerprint === fp) { row.state = "fresh"; row.why = `${inputsOf(fp)} inputs unchanged since ${meta.at || "last run"}`; }
-        }
-      }
-    }
-    const feats = features(st, ctx, inputCount);
-
-    // Only a model that beat its base rate votes; the base-rate fallback is not a prediction.
-    if (!row.state && st.optional && model && model.useful) {
-      const pred = expert.call("model-predict", { model, lift, episode: { verb: key, prev, features: feats } });
-      if (pred && pred.source === "model" && typeof pred.p === "number") {
-        row.p_useful = pred.p;
-        if (pred.p < SKIP_BELOW) { row.state = "predicted-idle"; row.why = `model: p_useful ${pred.p} < ${SKIP_BELOW}`; }
-      }
-    }
-    if (!row.state && !apply) { row.state = "would-run"; row.why = "dry run; --apply runs it"; }
-
-    if (!row.state) {
-      const cmd = cmdTable[st.verb];
-      // What this stage's artefact held BEFORE it ran. Without it the label is
-      // a function of the verb (C32): every `scan` claims to produce findings
-      // whether or not this run found any, and the model memorises the verb.
-      const before = yieldOf(st).produced;
-      const t1 = Date.now();
-      if (!cmd) { row.state = "error"; row.rc = 2; row.why = `no verb \`${st.verb}\` on this install`; }
-      else {
-        // Silence the verb's own output unless --verbose: a gear prints one line per stage.
-        setMode({ quiet: !verbose, json: false });
-        try {
-          const rc = await cmd.run({ _: [...st.args], flags: { ...st.flags, quiet: true }, rest: [] });
-          row.rc = typeof rc === "number" ? rc : 0;
-          row.state = "ran";
-        } catch (e) { row.state = "error"; row.rc = 2; row.why = String((e && e.message) || e).split("\n")[0]; }
-        finally { setMode({ quiet, json: wasJson }); }
-      }
-      row.seconds = round2((Date.now() - t1) / 1000);
-      if (row.state === "ran") {
-        const y = yieldOf(st);
-        row.produced = y.produced; row.turns = y.turns; row.reads = y.reads; row.produces = y.produces;
-        // null on either side means nothing counted it: unknown, not unchanged.
-        row.changed = before == null || y.produced == null ? null : (y.produced === before ? 0 : 1);
-        row.before = before;
-        // rc 2 is "could not run": its inputs were not consumed, so nothing is fresh.
-        if (fpKey && row.rc !== 2) writeMeta(fpKey, { fingerprint: fp, at: now(), gear: g.name, stage: st.name, inputs: inputCount });
-        Object.assign(ctx, storeFacts());
-      }
-    }
-
-    eps.push(episodes.write({ kind: "stage", verb: key, stage: st.name, gear: g.name, prev, features: feats, rc: row.rc, seconds: row.seconds,
+    eps.push(episodes.write({ kind: "stage", verb: key, stage: st.name, gear: g.name, prev, features: d.feats, rc: row.rc, seconds: row.seconds,
       produced: row.produced, changed: row.changed, reads: row.reads || [], produces: row.produces || [], turns_saved: row.turns, run_id, useful: -1, state: row.state,
       detail: { why: row.why, p_useful: row.p_useful, gate_note: row.gate_note || "", produced_before: row.before ?? null } }));
     rows.push(row);
@@ -218,7 +191,7 @@ export async function runGear(name, opts = {}) {
   if (_depth < 3) {
     for (const c of g.chain) {
       const gate = evaluate(c.when, ctx);
-      if (gate.value === false) { result.chained.push({ gear: c.gear, skipped_gear: `when: ${c.when}`, stages: [], chained: [], ran: 0, skipped: 0, failed: 0, turns_saved: 0, seconds: 0 }); continue; }
+      if (gate.value === false) { result.chained.push(empty(c.gear, { skipped_gear: `when: ${c.when}` })); continue; }
       const child = await runGear(c.gear, { ...opts, trigger: "chain", table: cmdTable, gears: loaded, runId: run_id, _seen: seen, _depth: _depth + 1 });
       result.chained.push(child);
       result.turns_saved += child.turns_saved || 0;
@@ -228,94 +201,4 @@ export async function runGear(name, opts = {}) {
     if (result.chained.length) store.append("gear_runs", { ...gearRow(), chained_update: true });
   }
   return result;
-}
-
-// ── reports ──────────────────────────────────────────────────────────────────
-
-const MARK = { ran: " ", gated: "-", fresh: "=", "predicted-idle": "~", "would-run": "?", error: "!" };
-
-export function report(r, { verbose = false, top = true } = {}) {
-  if (r.error) return `  ${r.error}`;
-  if (r.skipped_gear) return `  ${r.gear}: ${r.skipped_gear}`;
-  const lines = [`  ${r.gear.toUpperCase()} — ${r.description || ""}   ${r.seconds}s   run ${r.run_id}`, ""];
-  for (const s of r.stages) {
-    const mark = MARK[s.state] || " ";
-    if (s.state === "ran") {
-      const produced = s.produced == null ? "" : `${s.produced} produced  `;
-      lines.push(`   ${mark} ${pad(s.stage, 22)} ${pad(s.seconds.toFixed(2) + "s", 8, true)} ${pad(s.turns ? `${s.turns}t` : "", 5, true)}  ${s.rc ? `rc ${s.rc}  ` : ""}${produced}${s.gate_note || ""}`);
-    } else lines.push(`   ${mark} ${pad(s.stage, 22)} ${pad("", 8)} ${pad("", 5)}  ${s.state}: ${s.why}${s.gate_note ? `  (${s.gate_note})` : ""}`);
-    if (verbose && s.p_useful != null) lines.push(`       model p_useful ${s.p_useful}`);
-  }
-  for (const c of r.chained) { lines.push("", `   chained -> ${c.gear}`); lines.push(report(c, { verbose, top: false })); }
-  if (top) lines.push("", bottomLine(r));
-  return lines.join("\n");
-}
-
-function bottomLine(r) {
-  const tpt = episodes.tokensPerTurn();
-  const secs = Math.max(0.001, r.seconds);
-  const tok = r.turns_saved * tpt.value;
-  return `   ${r.verdict} · ${r.ran} ran, ${r.skipped} skipped${r.would_run ? `, ${r.would_run} would run` : ""}${r.failed ? `, ${r.failed} failed` : ""} · ${r.turns_saved} agent turns displaced in ${secs.toFixed(1)}s · ${human(tok)} tokens not spent (${tpt.kind}) · ${human(tok / secs)} tok/s · 0 spent`;
-}
-
-export function listText(gears, warnings = []) {
-  const lines = ["  GEARS — declared pipelines over the verbs this factory has", ""];
-  for (const g of Object.values(gears)) {
-    const chain = g.chain.length ? ` -> ${g.chain.map((c) => c.gear).join(", ")}` : "";
-    lines.push(`    ${pad(g.name, 10)} ${g.description}${chain}`);
-    if (g.stages.length) lines.push(`    ${pad("", 10)} ${g.stages.map((s) => `${s.name}${s.when ? ` [${s.when}]` : ""}${s.optional ? "?" : ""}${s.skip_if_fresh ? "=" : ""}`).join(" → ")}`);
-    if (g.on.length) lines.push(`    ${pad("", 10)} on: ${g.on.join(", ")}`);
-    lines.push("");
-  }
-  lines.push("    [gate]  ? optional (the model may skip it)  = skip when inputs are fresh");
-  for (const w of warnings) lines.push(`  ! ${w}`);
-  return lines.join("\n");
-}
-
-export function runsText(rows) {
-  if (!rows.length) return "  no gear runs yet. bb pipeline run <gear> --apply";
-  const lines = [`  ${pad("at", 20)} ${pad("gear", 10)} ${pad("trigger", 8)} ${pad("ran", 4, true)} ${pad("skip", 4, true)} ${pad("fail", 4, true)} ${pad("turns", 6, true)} ${pad("secs", 7, true)}  verdict`];
-  for (const r of rows) lines.push(`  ${pad(String(r.at || "").slice(0, 19), 20)} ${pad(r.gear, 10)} ${pad(r.trigger, 8)} ${pad(r.ran, 4, true)} ${pad(r.skipped, 4, true)} ${pad(r.failed, 4, true)} ${pad(r.turns_saved, 6, true)} ${pad(r.seconds, 7, true)}  ${r.verdict}${r.apply ? "" : " (dry)"}`);
-  return lines.join("\n");
-}
-
-/** Where the measured edge lift disagrees with the declared order. The gears
- *  were declared by a person; the episodes measured what the orders were
- *  worth; this prints the difference. A thin edge is not a verdict, so every
- *  row carries its count. */
-export function suggest(gears) {
-  const eps = store.rows("episodes");
-  const g = expert.call("graph", { episodes: eps });
-  if (!g) return { error: `python3 required: ${expert.lastError}`, disagreements: [], labelled: 0 };
-  const lift = g.lift || {};
-  const n = {};
-  for (const e of g.edges || []) n[`${e.from}>${e.to}`] = e.n;
-  const disagreements = [];
-  for (const gear of Object.values(gears)) {
-    const keys = gear.stages.map(verbKey);
-    for (let i = 1; i < keys.length; i++) {
-      const to = keys[i], declared = keys[i - 1];
-      const dl = lift[`${declared}>${to}`];
-      if (dl == null) continue;
-      let best = null;
-      for (const c of keys) {
-        if (c === to || c === declared) continue;
-        const l = lift[`${c}>${to}`];
-        if (l != null && l > dl && (!best || l > best.lift)) best = { from: c, lift: l, n: n[`${c}>${to}`] || 0 };
-      }
-      if (best) disagreements.push({ gear: gear.name, stage: to, declared: { from: declared, lift: dl, n: n[`${declared}>${to}`] || 0 }, measured: best });
-    }
-  }
-  return { base_rate: g.base_rate, labelled: g.labelled, edges: (g.edges || []).length, disagreements };
-}
-
-export function suggestText(s) {
-  if (s.error) return `  ${s.error}`;
-  const lines = [`  SUGGEST — ${s.labelled} labelled episodes, ${s.edges} observed edges, base rate ${s.base_rate}`, ""];
-  if (!s.labelled) { lines.push("    nothing labelled yet. Run gears with --apply; the graph fills as it goes."); return lines.join("\n"); }
-  if (!s.disagreements.length) { lines.push("    the declared orders agree with the measured lifts."); return lines.join("\n"); }
-  lines.push("  where the measured lift disagrees with the declared order:");
-  for (const d of s.disagreements) lines.push(`    ${pad(d.gear, 10)} ${d.stage}: declared after ${d.declared.from} (lift ${d.declared.lift}, n=${d.declared.n}); measured better after ${d.measured.from} (lift ${d.measured.lift}, n=${d.measured.n})`);
-  lines.push("", "  A thin edge is not a verdict. Check n before reordering.");
-  return lines.join("\n");
 }

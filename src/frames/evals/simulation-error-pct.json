@@ -17,5 +17,5 @@
     "p95",
     "rps"
   ],
-  "why": "The worst error share across every level of every stored simulation. Errors under load are the failures a single-caller corpus cannot see."
+  "why": "The worst error share across every level of the LATEST simulation per profile. Errors under load are the failures a single-caller corpus cannot see; a run from a week ago is not a statement about the system now."
 }

@@ -1,0 +1,35 @@
+{
+ "id": "measured-not-added",
+ "surface": "measured-vs-estimated",
+ "severity": "high",
+ "title": "used and saved are reported as different kinds of number",
+ "question": "does the session report label what is measured and what is estimated, and keep them apart?",
+ "rule": [
+  "README R2: used and cache-saved are MEASURED off the transcript; automation-saved is an ESTIMATE printed as a range. The two are never added."
+ ],
+ "steps": [
+  {
+   "name": "the session report runs",
+   "run": "node bin/bb.js session; test $? -le 2",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "the bench states its kind on every run",
+   "run": "node bin/bb.js bench show",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "MEASURED"
+   }
+  },
+  {
+   "name": "and states the arm it measured against",
+   "run": "node bin/bb.js bench show",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "bare"
+   }
+  }
+ ]
+}

@@ -114,7 +114,12 @@ export function simulate(id, { base = "", seconds = 0, levels = "", write = true
   const v = verdicts(r, th);
   const run = { profile: id, title: p.title || "", at: now(), ...r, thresholds: th, ...v };
   const file = write ? runFile(run) : "";
-  if (write && v.findings.length) {
+  // Merged on EVERY stored run, including a clean one. Gating the merge on
+  // `v.findings.length` meant a run that crossed nothing wrote nothing, so the
+  // three findings from the last run against a service that was down stayed
+  // open forever with no verb able to close them. A clean run is the evidence
+  // that closes them, and it has to be allowed to say so.
+  if (write) {
     const det = `simulate:${id}`;
     store.mergeFindings(v.findings.map((f) => ({
       detector: det, severity: f.severity, precision: "probe", title: f.title, path: `${p.request.method} ${p.request.path}`,

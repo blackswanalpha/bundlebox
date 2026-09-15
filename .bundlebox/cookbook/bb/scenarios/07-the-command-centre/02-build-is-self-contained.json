@@ -1,0 +1,42 @@
+{
+ "id": "cc-build",
+ "surface": "the-command-centre",
+ "severity": "medium",
+ "title": "the page can be written as one file that opens with no server",
+ "question": "does `bb commandcenter build` embed the state?",
+ "rule": [
+  "README: `bb commandcenter build` writes the same page as a single file with the state embedded."
+ ],
+ "steps": [
+  {
+   "name": "it writes a file",
+   "run": "node bin/bb.js commandcenter build",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "index.html"
+   }
+  },
+  {
+   "name": "the state is in the file, not fetched",
+   "static": {
+    "file": ".bundlebox/out/commandcenter/index.html",
+    "contains": "__STATE__"
+   }
+  },
+  {
+   "name": "and the measured savings are on the page",
+   "static": {
+    "file": ".bundlebox/out/commandcenter/index.html",
+    "matches": "saved_pct"
+   }
+  },
+  {
+   "name": "state prints as data",
+   "run": "node bin/bb.js commandcenter state --json | head -c 200",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "workspace"
+   }
+  }
+ ]
+}

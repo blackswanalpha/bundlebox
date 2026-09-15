@@ -1,0 +1,72 @@
+{
+ "id": "cc-routes",
+ "surface": "the-command-centre",
+ "severity": "high",
+ "title": "the command centre serves exactly the routes it documents, and no more",
+ "question": "do the four documented routes answer, and is there really no write route?",
+ "rule": [
+  "README: the command centre binds to loopback, has no write route, and nothing on it calls a model.",
+  "Routes: GET / , GET /health , GET /api/state , GET /api/bench"
+ ],
+ "steps": [
+  {
+   "name": "the page itself",
+   "do": "GET /",
+   "expect": {
+    "status": 200,
+    "max_ms": 3000
+   }
+  },
+  {
+   "name": "health names the service",
+   "do": "GET /health",
+   "expect": {
+    "status": 200,
+    "json": {
+     "ok": true,
+     "service": "bundlebox-commandcenter"
+    },
+    "json_present": [
+     "version"
+    ]
+   }
+  },
+  {
+   "name": "state carries the whole page",
+   "do": "GET /api/state",
+   "expect": {
+    "status": 200,
+    "json_present": [
+     "pipeline",
+     "window",
+     "findings",
+     "bench",
+     "episodes"
+    ]
+   }
+  },
+  {
+   "name": "bench states its kind so a reader cannot mistake it for an estimate",
+   "do": "GET /api/bench",
+   "expect": {
+    "status": 200,
+    "json": {
+     "kind": "MEASURED"
+    },
+    "json_present": [
+     "bare",
+     "packed",
+     "saved",
+     "saved_pct"
+    ]
+   }
+  },
+  {
+   "name": "an undeclared route is a 404, not a surprise",
+   "do": "GET /api/write",
+   "expect": {
+    "status": 404
+   }
+  }
+ ]
+}

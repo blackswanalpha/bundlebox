@@ -111,3 +111,14 @@ turns finding out.
   estimate and printed as a range.
 - "Why no dependencies?" → A cron worker at 03:00 runs what is on disk or it
   does not run.
+
+## Post 2 — the ablation
+
+Full text in `post-2-ablation.txt`. The shape, if you rewrite it: lead with the
+denominator, not the percentage. The table is the post — it is the only part
+that cannot be written by someone who did not run it. The claim at the end is
+falsifiable on purpose (`regenerate the trees and the packed column should
+still not move`), and the self-audit paragraph is not modesty, it is what makes
+the first half credible.
+
+Do not lead with 97%.

@@ -9,13 +9,27 @@ expert/**/__pycache__/
 
 # A workspace's own corpora, world models and service list are INPUTS, not
 # derived artefacts, so they are meant to be committed in the repo they describe.
-# This repo is the tool, not a workspace: what is under .bundlebox/ here is a
-# fixture from developing it, and committing it would ship one machine's local
-# state as if it were part of the package.
-.bundlebox/cookbook/
-.bundlebox/genesis/
-.bundlebox/runbook/
+# This repo is the tool AND one workspace: the `bb` corpus describes bundlebox
+# itself and CI runs it, so it is committed and the exceptions below say exactly
+# which paths that covers. Everything else under .bundlebox/ here is a fixture
+# from developing on one machine and committing it would ship local state as if
+# it were part of the package.
+#
+# git cannot re-include a path inside an EXCLUDED DIRECTORY, so these exclude
+# the directory's contents (`dir/*`) rather than the directory itself. Written
+# as `dir/` the negations below are silently dead and the corpus never ships.
+.bundlebox/cookbook/*
+!.bundlebox/cookbook/bb/
+.bundlebox/genesis/*
+!.bundlebox/genesis/bb/
+!.bundlebox/genesis/current.json
+.bundlebox/runbook/*
+!.bundlebox/runbook/services.json
 .bundlebox/simulate/
 .bundlebox/frames/
 .bundlebox/failsafe/
 .bundlebox/blackice/
+# Derived from whatever `bb scan` found on THIS machine this week, so it is a
+# local artefact even though the verb that reads it is not. `bb bench init`
+# rebuilds it anywhere in under a second.
+.bundlebox/bench/

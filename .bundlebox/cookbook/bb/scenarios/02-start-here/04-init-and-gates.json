@@ -1,0 +1,27 @@
+{
+ "id": "start-init-gates",
+ "surface": "start-here",
+ "severity": "medium",
+ "title": "the box detects what proves a change here",
+ "question": "does `bb gates` report the detected commands rather than a default?",
+ "rule": [
+  "`bb gates` prints what proves a change here, detected and merged with kernel.gates from config."
+ ],
+ "steps": [
+  {
+   "name": "gates names the commands",
+   "run": "node bin/bb.js gates",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "npm"
+   }
+  },
+  {
+   "name": "init is a dry run without --apply",
+   "run": "node bin/bb.js init",
+   "expect": {
+    "rc": 0
+   }
+  }
+ ]
+}

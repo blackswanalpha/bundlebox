@@ -26,7 +26,25 @@ export const SOURCES = {
   calls: { row: "one bridge call", build: () => store.rows("calls").map((c) => ({ id: c.id, state: c.state, reason: c.reason, agent: c.agent, est_tokens: c.est_tokens, accepted: c.accepted, rc: c.rc, at: c.drafted_at || c.at })) },
   scenarios: { row: "one scenario on disk", build: () => corpus.ids().flatMap((id) => (corpus.load(id)?.scenarios || []).map((s) => ({ corpus: id, id: s.id, surface: s.surface, severity: s.severity, steps: (s.steps || []).length, has_rule: s.rule ? 1 : 0, file: s._file }))) },
   board: { row: "one scenario in the latest stored board, per corpus", build: () => corpus.ids().flatMap((id) => { const b = cookbook.latest(id); if (!b) return []; return (b.scenarios || []).map((s) => ({ corpus: id, at: b.at, base: b.base, engine: b.engine, id: s.id, surface: s.surface, severity: s.severity, state: s.state, seconds: s.seconds, steps: (s.steps || []).length, red: (s.steps || []).filter((x) => x.state === "failed" || x.state === "error").length })); }) },
-  simulations: { row: "one level of one stored simulation", build: () => { let names = []; try { names = fs.readdirSync(simulate.RUNS()).filter((f) => f.endsWith(".json")).sort(); } catch { names = []; } return names.flatMap((f) => { const r = readJson(path.join(simulate.RUNS(), f), null); return r ? (r.levels || []).map((l) => ({ profile: r.profile, at: r.at, base: r.base, budget_ms: r.budget_ms, floor_ms: r.floor_ms, ...l })) : []; }); } },
+  // The LATEST run per profile, not every run ever stored. A simulation is a
+  // measurement of the system at a moment; keeping every one of them in the
+  // frame means a run against a service that was down two days ago is still
+  // the answer to "what is the error rate", and the only way to clear it is to
+  // delete files. The history stays on disk and `bb simulate show` reads it;
+  // what the evals judge is the current state.
+  simulations: { row: "one level of the latest stored simulation per profile", build: () => {
+    let names = [];
+    try { names = fs.readdirSync(simulate.RUNS()).filter((f) => f.endsWith(".json")).sort(); } catch { names = []; }
+    const latest = new Map();
+    for (const f of names) {
+      const r = readJson(path.join(simulate.RUNS(), f), null);
+      if (!r) continue;
+      const prev = latest.get(r.profile);
+      if (!prev || String(r.at || "") >= String(prev.at || "")) latest.set(r.profile, r);
+    }
+    return [...latest.values()].flatMap((r) => (r.levels || []).map((l) => ({
+      profile: r.profile, at: r.at, base: r.base, budget_ms: r.budget_ms, floor_ms: r.floor_ms, ...l })));
+  } },
   stages: { row: "one pipeline stage and whether its exit criterion holds", build: () => stages.status().map((s) => ({ id: s.id, title: s.title, state: s.state, why: s.why, fix: s.fix })) },
   turns: { row: "one API turn straight from a transcript", build: () => ledger.transcripts().flatMap(({ adapter, file }) => { let t = []; try { t = ledger.turns(file, adapter) || []; } catch { t = []; } return t.map((x) => ({ adapter, session: path.basename(file).replace(/\.\w+$/, ""), ...x, toolResults: Array.isArray(x.toolResults) ? x.toolResults.length : 0 })); }) },
 };

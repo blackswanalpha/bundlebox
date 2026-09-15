@@ -22,6 +22,9 @@ import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
+import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
+
+export { ambiguity } from "./ambiguity.js";
 
 export const DIR = path.join(OUT, "pinpoint");
 const EDGE = () => [path.join(ROOT, ".bundlebox", "edge-cases.md"), path.join(ROOT, "docs", "edge-cases.md")].find((p) => fs.existsSync(p)) || null;
@@ -163,6 +166,9 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
     tables: await tablesFor(),
     via: { symbols: snapgen.symbolIndex().via, anchors: anchors.length ? (anchors.every((a) => a.via === "kernel") ? "kernel" : anchors.some((a) => a.via === "kernel") ? "mixed" : "js") : null },
   };
+  // Scored after the cut loop, because cutting for budget is itself one of the
+  // things the brief does not settle.
+  b.ambiguity = ambiguity(b);
   b.prompt = prompt(b);
   b.path = write(b);
   return b;
@@ -198,6 +204,8 @@ export function prompt(b) {
   if (g.full && g.full !== g.quick) L.push(`    ${g.full}   # before the PR`);
   if (!g.quick && !g.full) L.push("    (no gate detected: state in one line what you ran to prove the change; the unit is unproven until then)");
   L.push("", "State what changed and why in under 120 words.");
+  L.push("", "## What this brief does not settle");
+  for (const l of ambiguityLines(b.ambiguity)) L.push(l);
   L.push("", "## Traps");
   if (b.traps.length) for (const t of b.traps) L.push(`- ${t}`);
   else L.push("- none recorded for these files (`.bundlebox/edge-cases.md` or `docs/edge-cases.md`, rows `| E<n> |`)");

@@ -1,0 +1,26 @@
+{
+ "id": "release-update-dry",
+ "surface": "releases",
+ "severity": "medium",
+ "title": "`bb update` reports a newer version rather than installing one",
+ "question": "does update stay a report until --apply?",
+ "rule": [
+  "README: `bb update` checks; `bb update --apply` installs."
+ ],
+ "steps": [
+  {
+   "name": "it reports and does not install",
+   "run": "node bin/bb.js update; test $? -le 2",
+   "expect": {
+    "rc": 0
+   }
+  },
+  {
+   "name": "selftest states its measurements",
+   "run": "node bin/bb.js selftest; test $? -le 2",
+   "expect": {
+    "rc": 0
+   }
+  }
+ ]
+}

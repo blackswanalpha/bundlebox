@@ -7,6 +7,7 @@ import { parse } from "./core/args.js";
 import { setMode, out, warn, emit } from "./core/log.js";
 import { ROOT, PKG_ROOT } from "./core/paths.js";
 import { readJson } from "./core/config.js";
+import { table } from "./core/util.js";
 
 // Order matters only for --help grouping.
 export const MODULES = [
@@ -20,6 +21,7 @@ export const MODULES = [
   ["tokens", "./tokens/index.js"],
   ["snapgen", "./snapgen/index.js"],
   ["pinpoint", "./pinpoint/index.js"],
+  ["bench", "./bench/index.js"],
   ["genesis", "./genesis/index.js"],
   ["cookbook", "./cookbook/index.js"],
   ["simulate", "./simulate/index.js"],
@@ -47,48 +49,87 @@ export const ALIASES = { scenarios: "cookbook", corpus: "cookbook", board: "main
 const version = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
 
 export async function loadCommands() {
-  const table = {};
+  const cmds = {};
   const broken = [];
   for (const [group, file] of MODULES) {
     try {
       const m = await import(file);
-      for (const [name, cmd] of Object.entries(m.commands || {})) table[name] = { ...cmd, group, file };
+      for (const [name, cmd] of Object.entries(m.commands || {})) cmds[name] = { ...cmd, group, file };
     } catch (e) {
       broken.push({ group, file, error: String(e && e.message || e).split("\n")[0] });
     }
   }
   // Built-ins that live here so they exist even when everything else is broken.
-  table.update = { help: "is there a newer bundlebox, and install it", usage: "bb update [--apply]", group: "meta",
+  cmds.update = { help: "is there a newer bundlebox, and install it", usage: "bb update [--apply]", group: "meta",
     run: async ({ flags }) => (await import("./update/index.js")).update({ apply: !!flags.apply, log: out }) };
-  table.mcp = table.mcp || { help: "serve the zero-token verbs as an MCP server over stdio", usage: "bb mcp", group: "wire",
+  cmds.mcp = cmds.mcp || { help: "serve the zero-token verbs as an MCP server over stdio", usage: "bb mcp", group: "wire",
     run: async () => { const { serve } = await import("./mcp/server.js"); await serve({ name: "bundlebox", version: version() }); return 0; } };
-  table.version = { help: "print the version", usage: "bb version", group: "meta", run: async () => { out(version()); return 0; } };
-  table.help = { help: "this list", usage: "bb help [verb]", group: "meta", run: async ({ _ }) => { help(table, broken, _[0]); return 0; } };
-  return { table, broken };
+  cmds.version = { help: "print the version", usage: "bb version", group: "meta", run: async () => { out(version()); return 0; } };
+  cmds.help = { help: "this list", usage: "bb help [verb]", group: "meta", run: async ({ _ }) => { help(cmds, broken, _[0]); return 0; } };
+  return { table: cmds, broken };
 }
 
-function help(table, broken, verb) {
-  if (verb && table[verb]) {
-    const c = table[verb];
+// What a verb does to the world, printed in its own column. A list of forty
+// verbs in which two of them can spend money and the reader has to remember
+// which is a list that has to be memorised; a column is read.
+//
+//   spends    can call a paid model, and only with the flag named here
+//   writes    changes files in the workspace itself, and only with --apply
+//   records   writes artefacts under .bundlebox/ and touches no source file
+//   reads     reads and reports; nothing on disk changes
+const SPENDS = { run: "--apply", bridge: "--run --spend" };
+// Verbs that can change a file a human wrote. Everything here is a dry run
+// until --apply; that is the whole contract and the column states it once.
+const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs"]);
+// Verbs that only ever write under .bundlebox/. They need no flag because
+// nothing they touch was written by hand.
+const RECORDS = new Set(["scan", "compile", "route", "snapgen", "pinpoint", "bench", "genesis", "cookbook",
+  "simulate", "runbook", "mainboard", "oversight", "blackice", "buckmaster", "commandcenter", "pipeline", "scripts"]);
+// The groups, in the order a factory uses them, with the question each answers.
+const CHAPTERS = [
+  ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "blackice", "designlabs"]],
+  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "bench"]],
+  ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "mainboard", "frames", "failsafe"]],
+  ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
+  ["ship", "What closes the loop?", ["git", "fix", "pipeline", "scripts", "cron", "buckmaster", "commandcenter"]],
+  ["wire", "How do agents reach it?", ["wire", "unwire", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
+];
+
+function effect(name) {
+  if (SPENDS[name]) return `spends ${SPENDS[name]}`;
+  if (WRITES.has(name)) return "writes --apply";
+  return RECORDS.has(name) ? "records" : "reads";
+}
+
+function help(cmds, broken, verb) {
+  if (verb && cmds[verb]) {
+    const c = cmds[verb];
     out(`bb ${verb} — ${c.help}`);
+    out(table([["effect", effect(verb)], ["group", c.group]]).split("\n").map((l) => `  ${l}`).join("\n"));
     if (c.usage) out(`\n  ${c.usage}`);
     if (c.long) out(`\n${c.long}`);
     return;
   }
   out(`bb — bundlebox ${version()}: the zero-token software factory for AI coding agents`);
-  out(`   workspace: ${ROOT}\n`);
-  const groups = {};
-  for (const [name, c] of Object.entries(table)) (groups[c.group] ||= []).push([name, c.help]);
-  const order = [...new Set([...MODULES.map(([g]) => g), "wire", "meta"])];
-  for (const g of order) {
-    if (!groups[g]) continue;
-    for (const [name, h] of groups[g]) out(`  ${name.padEnd(12)} ${h || ""}`);
+  out(`   workspace: ${ROOT}`);
+
+  const placed = new Set();
+  for (const [title, question, names] of CHAPTERS) {
+    const rows = names.filter((n) => cmds[n]).map((n) => { placed.add(n); return [n, effect(n), cmds[n].help || ""]; });
+    if (!rows.length) continue;
+    out(`\n  ${title.toUpperCase()}  ${question}`);
+    out(table(rows, { header: ["verb", "effect", "what it does"] }).split("\n").map((l) => `  ${l}`).join("\n"));
+  }
+  const rest = Object.entries(cmds).filter(([n]) => !placed.has(n)).map(([n, c]) => [n, effect(n), c.help || ""]);
+  if (rest.length) {
+    out(`\n  ALSO`);
+    out(table(rest, { header: ["verb", "effect", "what it does"] }).split("\n").map((l) => `  ${l}`).join("\n"));
   }
   if (broken.length) {
-    out("\n  not loadable on this install:");
-    for (const b of broken) out(`  ${b.group.padEnd(12)} ${b.error}`);
+    out("\n  NOT LOADABLE ON THIS INSTALL");
+    out(table(broken.map((b) => [b.group, b.error]), { header: ["group", "why"] }).split("\n").map((l) => `  ${l}`).join("\n"));
   }
-  out("\n  Every verb is a dry run until --apply. Only `run` and `bridge send` can spend tokens.");
+  out("\n  Every verb is a dry run until --apply. Only the two `spends` rows above can cost money.");
   out("  bb help <verb> for usage. Docs: https://github.com/blackswanalpha/bundlebox");
 }
 

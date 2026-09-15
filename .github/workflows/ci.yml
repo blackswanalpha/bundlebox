@@ -39,3 +39,39 @@ jobs:
         shell: bash
       - name: doc-drift on our own README
         run: node bin/bb.js scan --only doc-drift
+      # The corpus over `bb` itself. `check` validates every scenario with no
+      # server and no requests, so it runs on all three platforms; the HTTP half
+      # needs the command centre up and runs on Linux only.
+      - run: node bin/bb.js cookbook check
+        shell: bash
+      - name: the bb corpus against a running command centre
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node bin/bb.js commandcenter serve --port 7788 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:7788/health >/dev/null && break; sleep 1; done
+          node bin/bb.js cookbook run --persona bb --base http://127.0.0.1:7788
+          node bin/bb.js simulate run smoke --base http://127.0.0.1:7788
+      # The ablation. It asserts nothing about the percentage — that is a
+      # property of this tree — only that both arms still measure something and
+      # that the run is deterministic. A bench that silently starts returning
+      # zero is the failure this catches.
+      - name: the ablation bench still measures both arms
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node bin/bb.js bench init
+          node bin/bb.js bench run --json > /tmp/bench-a.json
+          node bin/bb.js bench run --json > /tmp/bench-b.json
+          node -e '
+            const fs = require("fs");
+            const a = JSON.parse(fs.readFileSync("/tmp/bench-a.json", "utf8")).totals;
+            const b = JSON.parse(fs.readFileSync("/tmp/bench-b.json", "utf8")).totals;
+            if (!(a.bare > 0 && a.packed > 0)) { console.error("an arm measured nothing:", a); process.exit(1); }
+            if (a.bare !== b.bare || a.packed !== b.packed) { console.error("not deterministic:", a, b); process.exit(1); }
+            console.log(`bench ok: bare ${a.bare}, packed ${a.packed}, ${a.saved_pct}% over ${a.measured} task(s)`);
+          '
+      - name: every eval holds
+        if: runner.os == 'Linux'
+        shell: bash
+        run: node bin/bb.js frames check

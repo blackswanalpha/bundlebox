@@ -1,0 +1,28 @@
+{
+ "id": "pipeline-intake-is-dry",
+ "surface": "start-here",
+ "severity": "medium",
+ "title": "a declared gear runs its stages without spending",
+ "question": "does `bb pipeline run intake` report every stage without --apply?",
+ "rule": [
+  "A gear is a pipeline of local verbs. Without --apply every stage reports `would-run`; nothing in the free pipeline spends."
+ ],
+ "steps": [
+  {
+   "name": "the gear lists its stages",
+   "run": "node bin/bb.js pipeline list",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "intake"
+   }
+  },
+  {
+   "name": "running it without --apply spawns nothing",
+   "run": "node bin/bb.js pipeline run intake",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "would-run"
+   }
+  }
+ ]
+}

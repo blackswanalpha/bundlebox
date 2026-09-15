@@ -1,0 +1,35 @@
+{
+ "id": "budget-projection",
+ "surface": "measured-vs-estimated",
+ "severity": "high",
+ "title": "the projection is the formula the document states, not a number with no derivation",
+ "question": "does `bb context` show the parts that make up the projection?",
+ "rule": [
+  "README: projected = overhead + brief + payload x churn + reserve."
+ ],
+ "steps": [
+  {
+   "name": "the parts table names every term",
+   "run": "node bin/bb.js context src/cli.js src/scan.js",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "overhead"
+   }
+  },
+  {
+   "name": "the estimator is a number per file, not one lump",
+   "run": "node bin/bb.js tokens estimate src/core",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "tokens"
+   }
+  },
+  {
+   "name": "STATIC: the formula is in the document the world was derived from",
+   "static": {
+    "file": "README.md",
+    "contains": "projected = overhead + brief + payload"
+   }
+  }
+ ]
+}

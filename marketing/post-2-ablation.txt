@@ -1,0 +1,60 @@
+Everyone quoting a "% tokens saved" number owes you the denominator.
+
+I built the instrument that makes mine falsifiable, and the result is not the
+percentage.
+
+bundlebox now runs an ablation. Same task, twice, both arms measured over text
+on disk, neither one calling a model:
+
+  BARE    search the tree for the task's terms, open the top N files whole.
+          What a session does on a box where nothing is installed.
+  PACKED  the one prompt the tool writes for the same task.
+
+Run it twice on the same tree and you get the same number. That determinism is
+a test, because a benchmark that silently starts returning zero looks exactly
+like a benchmark that is working.
+
+Then I did the thing the percentage was hiding. I generated three trees — 12,
+80 and 400 modules — and ran the same five tasks in each, at three different
+"how much does a session read before it edits" budgets. Nine rows:
+
+  tree    files  read  bare     packed  saved
+  small   12     4      18.0k   3.9k    78.2%
+  small   12     25     52.3k   3.9k    92.5%
+  medium  80     4      21.6k   3.9k    81.9%
+  medium  80     25    114.8k   3.9k    96.6%
+  large   400    4      21.6k   3.9k    81.9%
+  large   400    25    129.9k   3.9k    97.0%
+
+78% to 97%. Same five tasks. If I quoted the bottom row as "what bundlebox
+saves", I would be quoting my best case as my behaviour — and 97% is the number
+that would have gone in the README.
+
+The finding is the middle column. The packed arm does not move. 3.9k tokens
+whether the repository is twelve files or four hundred, whether the session is
+disciplined or reads everything the search returned.
+
+A packed prompt costs what the TASK costs. The bare arm pays for the repository.
+
+That is why the ratio goes from 4.6x to 33x without the tool doing anything
+differently — and it is a claim you can try to break: regenerate the trees,
+change the read budget, and the packed column should still not move.
+
+Same release, because an instrument you only point outward is a sales tool:
+I pointed it at bundlebox. It found five files of my own past the size where a
+session reads the region instead of the whole file, a corpus that exercised 0%
+of what the README declares, a coverage matcher that reported 100% from a
+single test step, and a cron line that had been reporting "would-run" every
+thirty minutes and doing nothing while looking installed.
+
+All fixed in the same PR. The corpus is at 96.6% and runs in CI.
+
+MIT, zero npm dependencies, works with Claude Code, Codex, Gemini CLI, Cursor,
+Copilot, OpenCode and Aider.
+
+  npm i -g bundlebox
+  bb bench run
+
+github.com/blackswanalpha/bundlebox
+
+#AIcoding #DeveloperTools #LLM #OpenSource #ContextEngineering

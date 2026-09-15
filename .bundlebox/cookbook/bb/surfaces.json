@@ -1,0 +1,37 @@
+[
+  {
+    "id": "install",
+    "title": "Install",
+    "why": "heading at line 44"
+  },
+  {
+    "id": "start-here",
+    "title": "Start here",
+    "why": "heading at line 67"
+  },
+  {
+    "id": "wiring-into-agents",
+    "title": "Wiring into agents",
+    "why": "heading at line 97"
+  },
+  {
+    "id": "measured-vs-estimated",
+    "title": "Measured vs estimated",
+    "why": "heading at line 153"
+  },
+  {
+    "id": "the-command-centre",
+    "title": "The command centre",
+    "why": "heading at line 185"
+  },
+  {
+    "id": "architecture",
+    "title": "Architecture",
+    "why": "heading at line 199"
+  },
+  {
+    "id": "releases",
+    "title": "Releases",
+    "why": "heading at line 250"
+  }
+]

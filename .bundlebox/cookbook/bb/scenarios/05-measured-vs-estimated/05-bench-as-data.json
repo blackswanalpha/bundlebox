@@ -1,0 +1,28 @@
+{
+ "id": "bench-as-data",
+ "surface": "measured-vs-estimated",
+ "severity": "medium",
+ "title": "the bench is readable as data, not only as a table",
+ "question": "does `bb bench show --json` emit the totals a dashboard reads?",
+ "rule": [
+  "README: `bb bench show --json`."
+ ],
+ "steps": [
+  {
+   "name": "it emits totals with both arms",
+   "run": "node bin/bb.js bench show --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const t=JSON.parse(s).totals;process.stdout.write(t&&t.bare>0&&t.packed>0?'both-arms':'missing')})\"",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "both-arms"
+   }
+  },
+  {
+   "name": "and the saved share is derived from them, not stored separately",
+   "run": "node bin/bb.js bench show --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const t=JSON.parse(s).totals;const p=Math.round((t.saved/t.bare)*1000)/10;process.stdout.write(Math.abs(p-t.saved_pct)<0.2?'consistent':'drift '+p+' vs '+t.saved_pct)})\"",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": "consistent"
+   }
+  }
+ ]
+}
