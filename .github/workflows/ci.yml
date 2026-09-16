@@ -30,9 +30,34 @@ jobs:
       - name: install kernel for the tests
         shell: bash
         run: mkdir -p ~/.bundlebox/bin && cp kernel/target/release/bbk* ~/.bundlebox/bin/ || true
+      # arc, for the same reason the kernel is built: `test/echos.test.js` proves
+      # the Rust echos and `src/echos/fallback.js` answer identically, and it can
+      # only do that against a binary. Without this step both agreement tests
+      # skipped on every runner since they were written, and `arc` drifted two
+      # revisions from the JS with no job ever going red. Left where it is,
+      # AFTER checkout, so the binary is newer than the sources it was built
+      # from and the staleness guard in that test passes.
+      - name: build arc
+        run: cargo build --release --manifest-path arc/Cargo.toml
       - run: npm run lint
         shell: bash
       - run: npm test
+      # A skip nobody reads is how the drift above survived. `npm test` is green
+      # whether those two tests compared the implementations or declined to, so
+      # this asserts they ran: a workflow that builds arc has to prove the
+      # comparison happened.
+      - name: the arc/JS echo agreement ran, rather than skipping
+        shell: bash
+        run: |
+          # pipefail, because a pipeline reports tee's status and a failing test
+          # would leave this step green: the exact shape this box has a detector
+          # for. $RUNNER_TEMP rather than /tmp, which is not a path on Windows.
+          set -o pipefail
+          node --test test/echos.test.js | tee "$RUNNER_TEMP/echos-ci.txt"
+          if grep -q "SKIP arc" "$RUNNER_TEMP/echos-ci.txt"; then
+            echo "::error::the arc agreement tests skipped; arc did not build, or is older than arc/src"
+            exit 1
+          fi
       - run: npm run expert:test
       - run: node bin/bb.js selftest
       # bash on every platform: PowerShell has no /dev/null and reads it as a
