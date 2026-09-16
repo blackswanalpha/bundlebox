@@ -14,6 +14,13 @@
 //! `npm test ; npm test ; npm test` is a session waiting for a different answer
 //! from the same question.
 //!
+//! And a repeat has to be a repeat. A command whose answer depends on
+//! something outside this tree — `gh`, `curl`, a git subcommand that reaches a
+//! remote — returns a different answer each time by design, and running it
+//! again is waiting rather than spinning. A shape whose ARGUMENT selects what
+//! it acts on (`git show <rev>`, `npm run <script>`) is a different command
+//! each time for the same reason. Both are marked `polls` by the JS feed.
+//!
 //! And the shape has to NAME the work. A recorded shape drops the arguments, so
 //! ten `cat`s in a row are ten different files and `grep` four times is four
 //! different searches — the first run of this echo reported `cat x10`, `ls x8`
@@ -38,7 +45,19 @@ pub fn run(grouped: &[(String, Vec<&Event>)], th: &Thresholds) -> Vec<Finding> {
             if e.kind != "shape" || e.shape.is_empty() {
                 continue;
             }
+            // Counted before the `polls` check: a polled shape is still
+            // evidence the recorder is working, and skipping it from the COUNT
+            // as well as from the streak made a session of nothing but `gh pr`
+            // report "no command shape has been recorded".
             looked += 1;
+            // A command whose answer this box does not control is not spinning
+            // when it repeats: it is polling. Every `spin` hit on this
+            // workspace's first run was one — `gh pr` in four sessions, `curl`
+            // in one — because the rule asked "did a file change between these
+            // two runs" of a command that was never about a file.
+            if e.polls {
+                continue;
+            }
             match &last {
                 Some(prev) if *prev == e.shape && !edited_since => streak += 1,
                 _ => { streak = 1; last = Some(e.shape.clone()); }

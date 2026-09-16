@@ -56,6 +56,14 @@ pub struct Event {
     pub tokens: f64,
     /// The located scope, for `kind == "brief"`: which files the work is about.
     pub scope: Vec<String>,
+    /// Does this command's answer depend on something outside this tree?
+    ///
+    /// Set by the JS feed, which owns the vocabulary (`src/echos/index.js`).
+    /// A `gh pr` or a `curl` run six times is a session WAITING for a remote to
+    /// change, and `spin`'s claim — that the same question cannot return a
+    /// different answer — is false for it. The event still counts as a command
+    /// run, because it was one; only the repeat rule ignores it.
+    pub polls: bool,
 }
 
 impl Event {
@@ -69,6 +77,7 @@ impl Event {
             hash: v.string("hash", ""),
             tokens: v.num("tokens", 0.0),
             scope: v.str_list("scope"),
+            polls: v.get("polls").and_then(|x| x.as_bool()).unwrap_or(false),
         }
     }
 }

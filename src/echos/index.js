@@ -65,10 +65,70 @@ export function shapeEvents({ limit = 20000 } = {}) {
       // heredoc bodies, which are not commands at all.
       const shape = String(v);
       if (!record.names(shape)) continue;
-      out.push({ at, session: String(r.s || ""), kind: "shape", shape });
+      out.push({ at, session: String(r.s || ""), kind: "shape", shape, polls: polls(shape) });
     }
   }
   return out;
+}
+
+/** Commands whose answer this box does not control, so repeating one is
+ *  WAITING rather than spinning.
+ *
+ *  Every `spin` hit on this workspace's first run was one of these: `gh pr` in
+ *  four sessions, `curl` in another, `git show` in a sixth. The rule asked "did
+ *  a file change between these two runs" of commands that were never about a
+ *  file — a PR's checks finish, a service comes up, and the local tree has
+ *  nothing to do with either.
+ *
+ *  Two kinds, and they fail the same test for different reasons:
+ *
+ *    outside    `gh`, `curl`, a git subcommand that reaches a remote. The thing
+ *               being asked about changes without anybody editing anything.
+ *    dispatch   `git show <rev>`, `npm run <script>`, `make <target>`. A
+ *               recorded shape drops the argument, and the argument is what
+ *               selects the command — so two runs of one shape are two
+ *               different commands, the same problem `record.names` solves for
+ *               `cat` and `grep`.
+ *
+ *  It marks the event rather than dropping it. The command DID run, and `drift`
+ *  counts it; only `spin`'s repeat rule ignores it. */
+const OUTSIDE = /^(gh|curl|wget|http|https|ssh|scp|rsync|docker|docker-compose|podman|kubectl|helm|ping|nc|dig|host|nslookup|aws|gcloud|az|heroku|fly|vercel|netlify|npm view|npm ping|pip download)\b/;
+const REMOTE_GIT = /^git (fetch|pull|push|clone|ls-remote|remote|submodule)$/;
+const DISPATCH = /^(git (show|log|diff|blame|cat-file|rev-parse|rev-list)|npm run|yarn run|pnpm run|bun run|make|just|task|rake|gradle|mvn|cargo run|docker run)$/;
+export function polls(shape) {
+  const s = String(shape || "");
+  return OUTSIDE.test(s) || REMOTE_GIT.test(s) || DISPATCH.test(s);
+}
+
+/** Commands that CHANGE something, so a session that only runs these has still
+ *  done work.
+ *
+ *  `bb uptake` settled the same argument for the other direction and states it
+ *  plainly: a file opened with `sed -n` counts exactly as much as one opened
+ *  with Read, because which tool a session uses is a harness setting and not a
+ *  fact about whether it opened a file. Nothing here said the equivalent about
+ *  WRITING, and the first run of `drift` reported four sessions as having
+ *  changed nothing — one of which had 217 Bash calls carrying 59 redirects,
+ *  42 heredocs, 11 git writes and 4 `sed -i`. Counting only the Edit and Write
+ *  tools measured the harness, not the work.
+ *
+ *  A redirect to `/dev/null` or a `2>&1` is not a write, which is why the
+ *  target has to look like a path. */
+const REDIRECT = /(?:^|[^>&0-9])>>?\s*(?!\s*&)(?!\/dev\/)[\w./~$-]+/;
+const SHELL_WRITES = [
+  /\bsed\s+(?:-[a-zA-Z]*\s+)*-i\b/,                       // in-place edit
+  /(?:^|[|;&]\s*)tee\s+(?!-)[\w./~$-]/,                   // tee FILE
+  /(?:^|[|;&]\s*)(?:mv|cp|rm|mkdir|touch|chmod|ln)\s+[\w./~$-]/,
+  /\bgit\s+(?:checkout|apply|restore|revert|stash|rm|mv|add|commit|merge|rebase|reset)\b/,
+  /\b(?:fs\.(?:writeFileSync|appendFileSync|rmSync|unlinkSync|mkdirSync)|\.write_text\s*\(|\.unlink\s*\()/,
+  /<<-?\s*['"]?\w+['"]?[\s\S]*?(?:>\s*[\w./~$-]+|write_text|writeFileSync)/,
+];
+/** Does this shell command write? One answer per command: a command that writes
+ *  three files is still one act of writing, and `drift` counts acts. */
+export function writesFiles(cmd) {
+  const s = String(cmd || "");
+  if (!s) return false;
+  return REDIRECT.test(s) || SHELL_WRITES.some((re) => re.test(s));
 }
 
 /** Turns, reads and edits, from the transcripts the agents already wrote.
@@ -96,6 +156,17 @@ export function transcriptEvents({ limit = 0 } = {}) {
         const name = String(u.name || "");
         const file = String(u.input?.file_path || u.input?.path || "");
         if (/^(Read|NotebookRead)$/.test(name)) { out.push({ at, session, kind: "read", file }); continue; }
+        // A write through the shell is a write. No hash and no path: a redirect
+        // or a `sed -i` does not hand this box the text it installed, so the
+        // event carries the fact that something changed and nothing more.
+        // `oscillate` requires a hash and so ignores these, which is the honest
+        // outcome — it cannot say a `sed -i` returned a file to an earlier
+        // value. `drift` and `diminishing` only need the count, and the count
+        // is what they were missing.
+        if (name === "Bash") {
+          if (writesFiles(u.input?.command || u.input?.cmd || "")) out.push({ at, session, kind: "edit", file: "", hash: "" });
+          continue;
+        }
         if (!/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(name) || !file) continue;
         const edits = Array.isArray(u.input?.edits) ? u.input.edits : null;
         const texts = edits ? edits.map((x) => x && x.new_string).filter((x) => typeof x === "string")
