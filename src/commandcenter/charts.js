@@ -38,6 +38,60 @@ function benchCards(b, s){
     + "</div></div>";
 }
 
+/* ── What this workspace did not spend ─────────────────────────────────────
+   The bench above measures ONE task both ways. This is the other kind of
+   evidence: every local run this workspace has actually recorded, converted at
+   its own median billed turn. Neither replaces the other — a bench is
+   reproducible and small, a running total is lived and large — so they sit in
+   the same section with their labels on. */
+function savingsCards(v){
+  if(!v || !v.avoided || !v.avoided.known)
+    return '<div class="card"><div class="k">Counted over this workspace</div><p class="empty">'
+      + esc((v&&v.avoided&&v.avoided.why)||"no local run recorded yet")
+      + '. Run <span class="mono">bb scan</span> or <span class="mono">bb pinpoint</span>.</p></div>';
+  const t = v.avoided.per_turn||{}, est = t.kind!=="MEASURED";
+  const lev = v.leverage==null?null:Number(v.leverage);
+  return '<div class="card hero"><div class="k">Tokens not spent<span class="tag est">estimate</span></div>'
+    + '<div class="stat">'+human(v.avoided.tokens)+' <small>tokens</small></div>'
+    + '<div class="note">'+human(v.avoided.turns)+" agent turns displaced by "+human(v.runs)+" local runs</div></div>"
+    + '<div class="card"><div class="k">Leverage<span class="tag est">estimate</span></div><div class="stat">'
+    + (lev==null?"—":lev.toFixed(lev>=10?0:1)+"\u00d7") + ' <small>per fresh token</small></div>'
+    + '<div class="note">against '+human(v.spent.fresh)+" fresh tokens billed — cache reads are not in the denominator</div></div>"
+    + '<div class="card"><div class="k">Valued at<span class="tag'+(est?" est":"")+'">'+(est?"estimate":"measured")+'</span></div>'
+    + '<div class="stat">'+human(t.value)+' <small>tokens a turn</small></div><div class="note">'
+    + (est ? "no billed turn here to take a median from" : "the median of "+human(t.n)+" billed turns in this workspace")
+    + "</div></div>"
+    + '<div class="card"><div class="k">Prompt cache<span class="tag">measured</span></div><div class="stat">'
+    + human(v.cache.tokens_not_rebilled) + ' <small>not re-billed</small></div>'
+    + '<div class="note">of '+human(v.cache.read)+" re-read tokens. That discount is the harness, not this box.</div></div>";
+}
+
+/* Where the saving came from, one bar per verb, widest first. The share is of
+   the total displaced, so the chart answers "which verbs earn their place"
+   without the reader adding anything up. */
+function savingsVerbs(v){
+  const b = ((v&&v.by_verb)||[]).filter(x=>x.turns>0).slice(0,12);
+  if(!b.length) return "";
+  const max = Math.max(...b.map(x=>x.turns), 1);
+  const rowH = 26, padL = 170, padR = 96, w = 1000, h = b.length*rowH + 24;
+  const bars = b.map((x,i)=>{
+    const y = i*rowH + 5;
+    const bw = Math.max((w-padL-padR) * (x.turns/max), 2);
+    const name = x.verb.length>26 ? x.verb.slice(0,25)+"\u2026" : x.verb;
+    return '<text class="lbl" x="'+(padL-10)+'" y="'+(y+12)+'" text-anchor="end">'+esc(name)+"</text>"
+      + '<rect class="bar-packed" x="'+padL+'" y="'+y+'" width="'+bw.toFixed(1)+'" height="14" rx="2"><title>'
+      + esc(name)+" \u2014 "+human(x.turns)+" turns, "+human(x.tokens)+" tokens, "+x.runs+" run(s)</title></rect>"
+      + '<text x="'+(w-padR+8)+'" y="'+(y+12)+'">'+human(x.tokens)+" \u00b7 "+Math.round(x.share)+"%</text>";
+  }).join("");
+  return '<div class="legend"><span><i class="packed"></i>agent turns each verb displaced</span>'
+    + '<span>right column: tokens, and share of everything avoided</span></div>'
+    + '<div class="chart"><svg viewBox="0 0 '+w+" "+h+'" role="img" aria-label="Turns displaced per verb">'
+    + '<line class="axis" x1="'+padL+'" y1="0" x2="'+padL+'" y2="'+(h-16)+'"/>'
+    + bars
+    + '<text x="'+padL+'" y="'+(h-3)+'">0</text><text x="'+(w-padR)+'" y="'+(h-3)+'" text-anchor="end">'
+    + human(max)+' turns</text></svg></div>';
+}
+
 /* Grouped horizontal bars, one pair per task. SVG and nothing else: a chart
    that needs a CDN is a chart that is blank on the box with no network, which
    is the box this page is designed for. */

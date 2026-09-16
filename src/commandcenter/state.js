@@ -98,7 +98,10 @@ export function state({ sessions = 25, fold = false, write = true } = {}) {
 
   const worlds = genesis.ids().map((id) => { const w = genesis.world(id) || {}; return { id, from: w.from, counts: w.counts, unknown: (w.unknown || []).length }; });
 
-  const turnsSaved = eps.reduce((a, e) => a + num(e.turns_saved), 0);
+  // One source for "what did this save", shared with `bb monitor savings`, so
+  // the page and the terminal can never quote different figures. `saved` is
+  // derived from it rather than recomputed for the same reason.
+  const sv = monitor.savings({ limit: 4000 });
   const localSeconds = eps.reduce((a, e) => a + num(e.seconds), 0);
 
   return {
@@ -108,9 +111,10 @@ export function state({ sessions = 25, fold = false, write = true } = {}) {
     window: monitor.snapshot({ fold }),
     sessions: monitor.sessions({ limit: sessions, write }),
     saved: {
-      turns: turnsSaved, local_seconds: Math.round(localSeconds),
-      note: "turns the local verbs displaced, counted from work actually done. An ESTIMATE of cost avoided, never added to what was used.",
+      turns: sv.avoided.turns, tokens: sv.avoided.tokens, local_seconds: Math.round(localSeconds),
+      note: "Counted from work the local verbs actually did. An ESTIMATE of cost avoided, never added to what was used.",
     },
+    savings: sv,
     findings: { open: open.length, total: findings.length, by_severity: bySeverity, by_detector: byDetector,
       top: open.sort((a, b) => (SEV[b.severity] || 0) - (SEV[a.severity] || 0)).slice(0, 12)
         .map((f) => ({ id: f.id, severity: f.severity, detector: f.detector, title: f.title, path: f.path, kind: f.kind })) },

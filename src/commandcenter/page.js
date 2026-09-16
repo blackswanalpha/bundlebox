@@ -52,6 +52,13 @@ export function html(state, { live = false } = {}) {
   <div id="savings-chart"></div>
   <div id="savings-trend"></div>
   <p class="note" id="savings-note"></p>
+  <div class="subhead"><h3>Counted over this workspace</h3></div>
+  <p class="lede">The bench above measures one task both ways. This is every local run this workspace has
+  actually recorded, converted at its own median billed turn. A bench is reproducible and small; a running
+  total is lived and large. Neither is subtracted from what you paid, and both carry their label.</p>
+  <div class="statrow" id="savings-live"></div>
+  <div id="savings-verbs"></div>
+  <p class="note" id="savings-live-note"></p>
 </div></section>
 <section><div class="wrap"><div class="grid g4" id="window"></div></div></section>
 ${body}
