@@ -24,6 +24,7 @@ import { BB_DIR, VAR, OUT, ROOT, rel } from "../core/paths.js";
 import { readJson, load as loadCfg } from "../core/config.js";
 import { gitOk, git } from "../core/exec.js";
 import { shouldRun, REPEATABLES } from "../recom/repeatable.js";
+import { list as corpusList } from "../cookbook/corpus.js";
 
 const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
 const newest = (dir, suffix = ".json") => {
@@ -37,6 +38,19 @@ const newest = (dir, suffix = ".json") => {
 };
 const countFiles = (dir, suffix = ".json") => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith(suffix)) n++; } }; walk(dir); return n; };
 const ago = (t) => (t ? `${Math.round((Date.now() - t) / 60000)}m ago` : "never");
+
+/** The base the first corpus that declares one runs against.
+ *
+ *  Read here rather than from config because a corpus is a thing with its own
+ *  persona, and the service it asserts against is a property of that persona —
+ *  not of this workspace, which may hold several. Never throws: a stage
+ *  criterion that dies takes the other ten with it. */
+function corpusBase() {
+  try {
+    for (const c of corpusList()) if (c && c.base) return String(c.base);
+  } catch { /* no corpus, or one this box cannot read: the caller says so */ }
+  return "";
+}
 
 const ok = (why, evidence = {}) => ({ state: "ok", why, evidence });
 const gap = (why, evidence = {}) => ({ state: "gap", why, evidence });
@@ -91,21 +105,25 @@ export const STAGES = [
   },
   {
     id: "scenarios", title: "Scenarios", question: "has the corpus been run against the system since it last changed?",
-    cost: 0, fix: "set mainboard.bugbash.base in .bundlebox/config.json, then: bb cookbook run",
+    cost: 0, fix: "bb cookbook run   (the corpus declares its own base in persona.json)",
     exit() {
       const boards = newest(path.join(VAR, "boards"));
       const scen = newest(path.join(BB_DIR, "cookbook"));
       if (!scen) return unknown("no corpus to run");
-      // The gap `bb doctor` has been reporting on this box for weeks — "9 of 10
-      // stages hold, first gap scenarios" — and it is not one a person can
-      // close by typing the fix, because the fix needs a URL nobody has told
-      // this box about. A stage whose command cannot be run without an argument
-      // the workspace has not declared is UNKNOWN, not a gap: reporting it as a
-      // gap says the corpus was not run when what happened is that nothing here
-      // knows what to run it against.
-      const base = String(loadCfg().mainboard?.bugbash?.base || "");
-      if (!boards && !base) {
-        return unknown("nothing declares the service to run the corpus against: set `mainboard.bugbash.base` in .bundlebox/config.json, or pass `bb cookbook run --base <url>`", { needs: "mainboard.bugbash.base" });
+      // A stage whose command cannot run without an argument the workspace has
+      // not declared is UNKNOWN, not a gap: reporting a gap says the corpus was
+      // not run, when what happened is that nothing here knows what to run it
+      // against.
+      //
+      // The base comes from the corpus itself. `persona.json` carries one and
+      // `corpus.spec` falls back to it, which is what lets a gear run this with
+      // no URL. It briefly read `mainboard.bugbash.base` instead — that is the
+      // UI origin, and a corpus runs against the API, so the two are different
+      // services on different ports and reading one for the other points every
+      // scenario at a 404 page.
+      const base = corpusBase();
+      if (!base) {
+        return unknown("no corpus declares a base to run against: set `base` in .bundlebox/cookbook/<id>/persona.json, or pass `bb cookbook run --base <url>`", { needs: "persona.base" });
       }
       if (!boards) return gap(`the corpus has never been run against ${base}; a corpus nobody runs is documentation`, { base });
       if (boards < scen) return gap(`the newest board is older than the newest scenario (${ago(boards)} vs ${ago(scen)}) — it is reporting on a corpus that has changed`, { board_at: boards, corpus_at: scen });

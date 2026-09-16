@@ -269,11 +269,16 @@ async function cookbookCmd({ _, flags }) {
     // has moved. So the same gate every other repeatable surface now has —
     // re-probe the declared facts, run only when one of them reads differently.
     // `--force` is already this verb's word for "run it anyway".
-    // `--base` first, then the one the workspace declared. Without the second
-    // half the `scenarios` pipeline stage names a fix — `bb cookbook run --base
-    // <url>` — that nobody can run from a gear or a cron line, because a gear
-    // has nowhere to put the URL. That is why that stage has never closed here.
-    const base = String(flags.base || loadCfg().mainboard?.bugbash?.base || "");
+    // `--base` and nothing else. The corpus declares its own in `persona.json`
+    // and `corpus.spec` already falls back to it, so a gear or a cron line can
+    // run this with no URL at all.
+    //
+    // It briefly fell back to `mainboard.bugbash.base` here, which was wrong in
+    // the exact way that setting's own comment warns about: bugbash's base is
+    // the UI ORIGIN and a corpus runs against the API, two services on two
+    // ports. Setting it would have silently overridden the corpus's declared
+    // base and pointed every scenario at a 404 page.
+    const base = String(flags.base || "");
     const { shouldRun, remember } = await import("../recom/repeatable.js");
     const gate = flags.force ? { run: true, verdict: "forced", why: "--force" } : shouldRun("cookbook/board", { base });
     if (!gate.run) {
@@ -286,7 +291,11 @@ async function cookbookCmd({ _, flags }) {
       parallel: flags.parallel, engine: String(flags.engine || "auto"), budget: Number(flags.budget) || 0,
       ids: flags.ids ? String(flags.ids).split(",") : null, force: !!flags.force, runId: String(flags.run || "") });
     if (r.rc) { if (flags.json) emit(r); else { warn(r.why); for (const e of r.errors || []) out(`    !! ${e}`); } return r.rc; }
-    remember("cookbook/board", { ok: true, opts: { base }, evidence: [String(r.file || "")].filter(Boolean),
+    // The base the board RAN against, not the flag. With no `--base` the flag is
+    // empty and the corpus's own persona supplied it, so recording the flag
+    // would leave the record with no `http:` probe and no way to go stale when
+    // the service it asserted against moves.
+    remember("cookbook/board", { ok: true, opts: { base: String(r.board?.base || base) }, evidence: [String(r.file || "")].filter(Boolean),
       summary: `The corpus ran against ${base || "the configured base"}: ${r.board.totals.passed} passed, ${r.board.totals.failed} failed, ${r.board.totals.error} errored. While the corpus and that service read the same, this board stands.` });
     if (flags.json) { emit({ board: r.board, file: r.file, findings: r.findings }); return 0; }
     out(boardText(r.board));
