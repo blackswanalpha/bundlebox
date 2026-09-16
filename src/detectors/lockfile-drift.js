@@ -38,7 +38,10 @@ export default {
             else if (locked[n] !== v) mismatch.push({ name: n, manifest: v, lock: locked[n] });
           }
           if (mismatch.length || missing.length) {
-            emit({ severity: "medium", files: ["package.json", "package-lock.json"], key: "npm:drift",
+            // The only row here with a fix that needs no decision: npm rewrites
+            // the lock from the manifest. Which lockfile to commit, in every
+            // other row, is the decision this detector exists to report.
+            emit({ severity: "medium", files: ["package.json", "package-lock.json"], key: "npm:drift", auto_fix: "relock-npm",
               title: `package-lock.json disagrees with package.json: ${mismatch.length} version(s), ${missing.length} missing`,
               detail: [...mismatch.map((m) => `  ${m.name}: ${m.manifest} vs ${m.lock}`), ...missing.map((n) => `  ${n}: not in lock`)].slice(0, 20).join("\n"),
               evidence: { mismatch: mismatch.slice(0, 50), missing: missing.slice(0, 50), count: mismatch.length + missing.length },

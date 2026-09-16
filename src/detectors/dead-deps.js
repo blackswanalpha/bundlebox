@@ -105,6 +105,9 @@ export default {
       if (!dead || !dead.length) return;
       out.push(finding({
         severity: "low", files: [manifest], key: manifest,
+        // A key in package.json and a line in a requirements file are both a
+        // delete. A pyproject array is TOML, and this box owns no TOML writer.
+        auto_fix: manifest === "package.json" || /^requirements[^/]*\.txt$/.test(manifest) ? "remove-dead-dep" : null,
         title: `${manifest}: ${dead.length} dependenc${dead.length === 1 ? "y" : "ies"} nothing imports`,
         detail: dead.slice(0, 20).map((d) => `  L${d.line ?? "?"}  ${d.name}`).join("\n"),
         evidence: { deps: dead.slice(0, 50), count: dead.length },

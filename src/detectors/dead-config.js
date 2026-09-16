@@ -75,6 +75,9 @@ export default {
     return [finding({
       severity: dead.length >= 6 ? "medium" : "low",
       files: ["src/core/config.js"], key: "dead-config",
+      // Declared DESTRUCTIVE by the actuator: deleting a knob is a behaviour
+      // change for anyone who already set it, however dead the key is here.
+      auto_fix: "drop-dead-knob",
       title: `${dead.length} configuration key(s) that nothing in this tree reads`,
       detail: dead.map((k) => `  ${k.path}  (${k.kind})`).join("\n"),
       evidence: { keys: dead.map((k) => k.path), count: dead.length },
