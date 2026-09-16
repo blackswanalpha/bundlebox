@@ -81,6 +81,9 @@ export default {
         // cannot become a work unit. Three rules in one file is a habit.
         severity: hits.length >= 6 || names.length >= 3 ? "medium" : hits.length >= 2 ? "low" : "info",
         files: [r], key: r,
+        // One rule here is a rewrite; the other seven are decisions about a
+        // type or a seam, and the actuator declines each of them by name.
+        auto_fix: hits.some((h) => h.rule === "filter-then-map") ? "flatten-filter-map" : null,
         title: `${r}: ${hits.length} anti-slop hit(s) — ${names.map(([n, c]) => `${c} ${n}`).join(", ")}`,
         detail: hits.slice(0, 20).map((h) => {
           const rule = RULES.find((x) => x.id === h.rule);

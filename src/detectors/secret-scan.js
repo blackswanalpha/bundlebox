@@ -7,6 +7,7 @@
 // enough to find the line.
 import fs from "node:fs";
 import path from "node:path";
+import { secretSweep } from "../git/repo.js";
 import { finding, gitAvailable, isTest, lineIndex, rel } from "./_shared.js";
 
 // Vendor prefixes first: a hit is a hit. The generic rules are the net for the
@@ -76,6 +77,9 @@ export default {
       if (!hits.length) continue;
       out.push(finding({
         severity: "critical", files: [r], key: r,
+        // Keeps the file out of the NEXT commit. It closes nothing: a key that
+        // reached a remote is public whatever .gitignore says.
+        auto_fix: secretSweep([r]).length ? "ignore-secret-file" : null,
         title: `${r}: ${hits.length} secret-shaped string(s) in a tracked file`,
         detail: hits.slice(0, 15).map((h) => `  ${h.kind.padEnd(24)} ${h.path}:${h.line}  ${h.masked}`).join("\n"),
         evidence: { hits: hits.slice(0, 60), count: hits.length, tracked: gitAvailable(ctx) },

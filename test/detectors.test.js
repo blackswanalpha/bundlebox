@@ -207,3 +207,298 @@ test("stale-evidence: an open finding whose file changed", async () => {
   const [s] = by(runAll({ only: ["stale-evidence"] }).findings, "stale-evidence");
   assert.ok(s); assert.equal(s.evidence.count, 1); assert.equal(s.evidence.findings[0].path, "src/conflict.js");
 });
+
+// ── the actuators that close the mechanical case, and decline the rest ───────
+//
+// Every test below is really one assertion twice over: the edit a machine can
+// prove, and the neighbour it must refuse. An actuator that only closed things
+// would be a worse tool than no actuator, because its declines are what tells a
+// session which findings are still its problem.
+
+test("actuator drop-dead-export: unexports the plain declaration, declines a default and a list", async () => {
+  w("src/strays.js", "export const strayOne = 1;\nexport default function strayDefault() { return 2; }\nconst strayTwo = 3;\nexport { strayTwo };\n");
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = by(runAll({ only: ["dead-exports"] }).findings, "dead-exports").find((x) => x.path === "src/strays.js");
+  assert.ok(f, "finding");
+  assert.equal(f.auto_fix, "drop-dead-export");
+  const r = actuate(f, { apply: true });
+  assert.equal(r.changed, true);
+  const now = fs.readFileSync(path.join(root, "src/strays.js"), "utf8");
+  assert.match(now, /^const strayOne = 1;$/m, "the keyword went, the declaration stayed");
+  assert.match(now, /^export default function strayDefault/m, "a default export is the file's shape");
+  assert.match(now, /^export \{ strayTwo \};$/m, "a list is a manifest somebody wrote");
+  assert.equal(r.declined.length, 2);
+  assert.ok(r.declined.every((d) => /default export, an `export \{…\}` entry or a Python def/.test(d.reason)), JSON.stringify(r.declined));
+});
+
+test("actuator drop-dead-export: a symbol referenced since the scan is not unexported", async () => {
+  w("src/late.js", "export const lateBloomer = 1;\n");
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = by(runAll({ only: ["dead-exports"] }).findings, "dead-exports").find((x) => x.path === "src/late.js");
+  assert.ok(f, "dead at scan time");
+  w("src/caller.js", "import { lateBloomer } from './late.js';\nexport function callLate() { return lateBloomer; }\n");
+  const r = actuate(f, { apply: true });
+  assert.equal(r.changed, false);
+  assert.match(r.declined[0].reason, /referenced outside src\/late\.js now/);
+  assert.match(fs.readFileSync(path.join(root, "src/late.js"), "utf8"), /^export const lateBloomer/);
+});
+
+test("actuator remove-dead-dep: deletes the key, and the manifest still parses as itself minus it", async () => {
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = by(runAll({ only: ["dead-deps"] }).findings, "dead-deps").find((x) => x.path === "package.json");
+  assert.ok(f, "finding");
+  assert.equal(f.auto_fix, "remove-dead-dep");
+  assert.deepEqual(f.evidence.deps.map((d) => d.name).sort(), ["lodash"], "used-pkg is imported, eslint is a script");
+  const r = actuate(f, { apply: true });
+  assert.equal(r.changed, true);
+  const pj = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.equal(pj.dependencies.lodash, undefined);
+  assert.equal(pj.dependencies["used-pkg"], "1.0.0", "the imported one stays");
+  assert.equal(pj.devDependencies.eslint, "^8.0.0", "the tool named in a script stays");
+  assert.equal(by(runAll({ only: ["dead-deps"] }).findings, "dead-deps").length, 0);
+});
+
+test("actuator strip-debug-line: deletes the whole-line statements, declines the line that also works", async () => {
+  w("src/leftovers.js", "export function work(x) {\n  console.log(x);\n  debugger;\n  const y = x + 1; console.log(y);\n  return y;\n}\n");
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = by(runAll({ only: ["debug-leftovers"] }).findings, "debug-leftovers").find((x) => x.path === "src/leftovers.js");
+  assert.ok(f, "finding");
+  assert.equal(f.auto_fix, "strip-debug-line");
+  const r = actuate(f, { apply: true });
+  assert.deepEqual(r.lines, [2, 3]);
+  const now = fs.readFileSync(path.join(root, "src/leftovers.js"), "utf8");
+  assert.equal(now, "export function work(x) {\n  const y = x + 1; console.log(y);\n  return y;\n}\n");
+  assert.equal(r.declined.length, 1);
+  assert.match(r.declined[0].reason, /more than one debug statement/);
+});
+
+test("actuator resolve-identical-conflict: collapses two identical sides, leaves a real merge alone", async () => {
+  w("src/same.js", "const a = 1;\n<<<<<<< HEAD\nconst b = 2;\n=======\nconst b = 2;\n>>>>>>> feature\nexport { a, b };\n");
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const all = by(runAll({ only: ["merge-markers"] }).findings, "merge-markers");
+  const same = all.find((x) => x.path === "src/same.js");
+  const real = all.find((x) => x.path === "src/conflict.js");
+  assert.equal(same.auto_fix, "resolve-identical-conflict");
+  assert.equal(real.auto_fix, null, "a file whose sides differ names no actuator");
+  const r = actuate(same, { apply: true });
+  assert.equal(r.changed, true);
+  assert.equal(fs.readFileSync(path.join(root, "src/same.js"), "utf8"), "const a = 1;\nconst b = 2;\nexport { a, b };\n");
+  const r2 = actuate({ ...real, auto_fix: "resolve-identical-conflict" }, { apply: true });
+  assert.equal(r2.changed, false);
+  assert.match(r2.declined[0].reason, /choosing between them IS the merge/);
+  assert.match(fs.readFileSync(path.join(root, "src/conflict.js"), "utf8"), /<<<<<<< HEAD/, "left alone");
+});
+
+test("actuator relock-npm: plans the drift row, declines the row that asks which lockfile to commit", async () => {
+  w("package-lock.json", JSON.stringify({ name: "fixture", lockfileVersion: 3, packages: { "": { dependencies: { "used-pkg": "9.9.9" } } } }, null, 2));
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate, ACTUATORS } = await import("../src/actuators/index.js");
+  const drift = by(runAll({ only: ["lockfile-drift"] }).findings, "lockfile-drift").find((x) => x.key === "npm:drift");
+  assert.ok(drift, "finding");
+  assert.equal(drift.auto_fix, "relock-npm");
+  const before = fs.readFileSync(path.join(root, "package-lock.json"), "utf8");
+  const dry = actuate(drift, { apply: false });
+  assert.equal(dry.applied, false);
+  assert.match(fs.readFileSync(path.join(root, dry.patch), "utf8"), /^# npm install --package-lock-only/);
+  assert.equal(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"), before, "a dry run runs no npm");
+  const other = ACTUATORS["relock-npm"]({ key: "npm:missing", path: "package.json" }, { apply: true });
+  assert.equal(other.changed, false);
+  assert.match(other.declined[0].reason, /which package manager this project commits to/);
+});
+
+test("actuator drop-dead-knob: destructive, scalar lines only, and the result must parse", async () => {
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate, DESTRUCTIVE } = await import("../src/actuators/index.js");
+  assert.ok(DESTRUCTIVE.has("drop-dead-knob"), "bb fix makes a person pass --force");
+  const [f] = by(runAll({ only: ["dead-config"] }).findings, "dead-config");
+  assert.ok(f, "finding");
+  assert.equal(f.auto_fix, "drop-dead-knob");
+  const [scalar, multi] = f.evidence.keys;
+  const key = (p) => String(p).split(".").pop();
+  w("src/core/config.js", `export const DEFAULTS = {\n  a: {\n    ${key(scalar)}: 7,\n    ${key(multi)}: {\n      nested: 1,\n    },\n  },\n};\n`);
+  const r = actuate({ ...f, evidence: { keys: [scalar, multi] } }, { apply: true });
+  assert.equal(r.changed, true);
+  assert.deepEqual(r.removed, [scalar]);
+  assert.match(r.declined[0].reason, /a multi-line value or a name used in two sections is a person's edit/);
+  const now = fs.readFileSync(path.join(root, "src/core/config.js"), "utf8");
+  assert.ok(!new RegExp(`^\\s*${key(scalar)}: 7,$`, "m").test(now), "the scalar went");
+  assert.match(now, new RegExp(`^\\s*${key(multi)}: \\{$`, "m"), "the object stayed");
+});
+
+// ── the failure-handling family, and the plans that serve the rest ──────────
+//
+// `swallowed-errors` asks whether the error was dropped. These three ask what
+// the caller was told instead, and each is proved here on a fixture AND on its
+// neighbour: the shape that must stay quiet is the one that decides whether a
+// detector is usable, because a rule that fires on every probe in a tree is a
+// rule somebody switches off.
+
+test("silent-fallback: a string substituted for a failure, quiet on a failure that is returned", async () => {
+  w("src/fallbacks.js", [
+    "export function branchOf(r) {",
+    "  const out = run(r);",
+    "  if (out.rc !== 0) { return \"main\"; }",   // hit: caller cannot tell
+    "  return out.text;",
+    "}",
+    "export function safely(r) {",
+    "  try { return parse(r); } catch { return { ok: false, why: \"unparsable\" }; }",   // quiet: the failure IS the value
+    "}",
+    "export function nothing(r) {",
+    "  try { return parse(r); } catch { return null; }",   // quiet: null is testable
+    "}",
+    "export function explained(r) {",
+    "  try { return parse(r); } catch { return \"empty\"; }   // an unparsable file has no rows",
+    "}",
+  ].join("\n"));
+  const { runAll } = await import("../src/detectors/index.js");
+  const [f] = by(runAll({ only: ["silent-fallback"] }).findings, "silent-fallback").filter((x) => x.path === "src/fallbacks.js");
+  assert.ok(f, "finding");
+  assert.deepEqual(f.evidence.hits.map((h) => h.line), [3], JSON.stringify(f.evidence.hits));
+  assert.match(f.evidence.hits[0].value, /main/);
+  assert.equal(f.auto_fix, "plan-fallback-contracts");
+});
+
+test("fault-mask: success claimed by a failure branch, quiet on a probe whose throw is the answer", async () => {
+  w("src/masks.js", [
+    "export function gate(r) {",
+    "  const out = run(r);",
+    "  if (out.rc !== 0) { return { ok: true, passed: true }; }",   // hit: it failed and says it passed
+    "  return { ok: true };",
+    "}",
+    "export const readable = (p) => { try { statSync(p); return true; } catch { return false; } };",   // quiet: a probe
+    "export function noted(r) {",
+    "  try { return run(r); } catch { return { ok: true }; }   // the caller retries; a miss here is not a failure",
+    "}",
+  ].join("\n"));
+  const { runAll } = await import("../src/detectors/index.js");
+  const [f] = by(runAll({ only: ["fault-mask"] }).findings, "fault-mask").filter((x) => x.path === "src/masks.js");
+  assert.ok(f, "finding");
+  assert.deepEqual(f.evidence.hits.map((h) => h.line), [3], JSON.stringify(f.evidence.hits));
+  assert.equal(f.severity, "medium", "one hit is medium; three is high");
+});
+
+test("quiet-degrade: a capability switched off with nothing recording it, quiet when something does", async () => {
+  w("src/degrade.js", [
+    "let cacheEnabled = true, indexAvailable = true;",
+    "export function boot(p) {",
+    "  try { load(p); } catch { cacheEnabled = false; }",   // hit: nothing records it
+    "  try { load(p); } catch { indexAvailable = false; warn(\"index missing\"); }",   // quiet: it is recorded
+    "  return cacheEnabled && indexAvailable;",
+    "}",
+  ].join("\n"));
+  const { runAll } = await import("../src/detectors/index.js");
+  const [f] = by(runAll({ only: ["quiet-degrade"] }).findings, "quiet-degrade").filter((x) => x.path === "src/degrade.js");
+  assert.ok(f, "finding");
+  assert.deepEqual(f.evidence.hits.map((h) => h.line), [3], JSON.stringify(f.evidence.hits));
+  assert.match(f.evidence.hits[0].off, /cacheEnabled = false/);
+});
+
+test("a plan writes nothing on a dry run, writes an artefact on apply, and is never a change", async () => {
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const [f] = by(runAll({ only: ["silent-fallback"] }).findings, "silent-fallback").filter((x) => x.path === "src/fallbacks.js");
+  const dry = actuate(f, { apply: false });
+  assert.equal(dry.planned, true);
+  assert.equal(dry.changed, false, "a plan decides nothing, so it changes nothing");
+  assert.equal(dry.patch, null, "a dry run over 200 findings must not leave 200 files behind");
+  const wet = actuate(f, { apply: true });
+  assert.equal(wet.planned, true);
+  assert.equal(wet.changed, false);
+  assert.equal(wet.keeps_open, true, "the decision is still owed");
+  const plan = fs.readFileSync(path.join(root, wet.patch), "utf8");
+  assert.match(plan, /# Failure contracts in src\/fallbacks\.js/);
+  assert.match(plan, /\| 3 \| guard \|/);
+  assert.match(plan, /written by `bb fix` at 0 model tokens/);
+});
+
+test("triage prices a plan as a plan, not as a free fix", async () => {
+  const { runAll, triage } = await import("../src/detectors/index.js");
+  const [f] = by(runAll({ only: ["silent-fallback"] }).findings, "silent-fallback").filter((x) => x.path === "src/fallbacks.js");
+  const t = triage({ ...f, severity: "medium" });
+  assert.equal(t.plan, "plan-fallback-contracts");
+  assert.equal(t.actuator, undefined, "a plan is not an actuator that closes this");
+  assert.ok(!t.steps.some((s) => /zero model tokens/.test(s)), t.steps.join(" | "));
+});
+
+test("actuator plan-file-split: the seam is the caller partition, and one group means no seam", async () => {
+  w("src/wide.js", "export function alpha() { return 1; }\nexport function beta() { return 2; }\n");
+  w("src/usesAlpha.js", "import { alpha } from './wide.js';\nexport const a = () => alpha();\n");
+  w("src/usesBeta.js", "import { beta } from './wide.js';\nexport const b = () => beta();\n");
+  const { actuate } = await import("../src/actuators/index.js");
+  const r = actuate({ detector: "god-file", path: "src/wide.js", key: "src/wide.js", auto_fix: "plan-file-split", evidence: { lines: 2, functions: 2 } }, { apply: true });
+  assert.equal(r.planned, true);
+  const plan = fs.readFileSync(path.join(root, r.patch), "utf8");
+  assert.match(plan, /## Group 1 — 1 symbol\(s\), 1 caller\(s\)/);
+  assert.match(plan, /2 groups/, "two disjoint caller sets are two modules");
+});
+
+test("actuator normalize-todo-marker: raises the markers the census cannot count", async () => {
+  w("src/notes.js", "// todo: ship this\n// FIXME: already counted\nexport const n = 1;\n// the todo list is prose, not a marker\n");
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = by(runAll({ only: ["todo-census"] }).findings, "todo-census").find((x) => x.path === "src" && x.evidence.near_miss > 0);
+  assert.ok(f, "a near miss is what earns the actuator");
+  assert.equal(f.auto_fix, "normalize-todo-marker");
+  const r = actuate(f, { apply: true });
+  assert.equal(r.changed, true);
+  const now = fs.readFileSync(path.join(root, "src/notes.js"), "utf8");
+  assert.match(now, /^\/\/ TODO: ship this$/m);
+  assert.match(now, /^\/\/ the todo list is prose, not a marker$/m, "prose after a comment opener is not a marker");
+});
+
+test("actuator flatten-filter-map: collapses the same-parameter pair, declines a rename", async () => {
+  w("src/passes.js", [
+    "export const good = (xs) => xs.filter(x => x > 1).map(x => x * 2);",
+    "export const renamed = (xs) => xs.filter(a => a > 1).map(b => b * 2);",
+  ].join("\n"));
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = by(runAll({ only: ["anti-slop"] }).findings, "anti-slop").find((x) => x.path === "src/passes.js");
+  assert.ok(f, "finding");
+  assert.equal(f.auto_fix, "flatten-filter-map");
+  const r = actuate(f, { apply: true });
+  assert.deepEqual(r.edits.map((e) => e.line), [1]);
+  const now = fs.readFileSync(path.join(root, "src/passes.js"), "utf8");
+  assert.match(now, /xs\.flatMap\(x => \(x > 1\) \? \[x \* 2\] : \[\]\)/);
+  assert.match(now, /xs\.filter\(a => a > 1\)\.map\(b => b \* 2\)/, "a rename is an edit this will not make blind");
+  assert.match(r.declined[0].reason, /name their parameter differently/);
+});
+
+test("actuator ignore-secret-file: ignores an untracked key file and leaves the finding open", async () => {
+  w(".env", "AWS_SECRET_ACCESS_KEY=" + "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY123");
+  const { actuate } = await import("../src/actuators/index.js");
+  const f = { detector: "secret-scan", path: ".env", key: ".env", auto_fix: "ignore-secret-file", evidence: {} };
+  const r = actuate(f, { apply: true });
+  assert.equal(r.changed, true);
+  assert.equal(r.keeps_open, true, "a key that reached a remote is public whatever .gitignore says");
+  assert.match(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), /^\.env$/m);
+  assert.match(r.why, /rotate the key/i);
+  const tracked = actuate({ ...f, path: "package.json" }, { apply: true });
+  assert.equal(tracked.changed, false);
+  assert.match(tracked.declined[0].reason, /not a file whose NAME says it holds credentials/);
+});
+
+test("actuator rescan-stale: re-derives the detectors the stale rows name", async () => {
+  const { runAll } = await import("../src/detectors/index.js");
+  const { actuate } = await import("../src/actuators/index.js");
+  const store = await import("../src/core/store.js");
+  const { findings } = runAll({ only: ["debug-leftovers"] });
+  store.mergeFindings(findings, { detectors: new Set(["debug-leftovers"]) });
+  w("src/leftovers.js", "export function work(x) {\n  return x + 1;\n}\n");   // the debug lines are gone
+  const [stale] = by(runAll({ only: ["stale-evidence"] }).findings, "stale-evidence");
+  assert.ok(stale, "the file changed under the finding");
+  assert.equal(stale.auto_fix, "rescan-stale");
+  const dry = actuate(stale, { apply: false });
+  assert.equal(dry.changed, false);
+  assert.match(dry.why, /re-run with --apply/);
+  const r = actuate(stale, { apply: true });
+  assert.equal(r.changed, true);
+  assert.ok(r.detectors.includes("debug-leftovers"));
+  assert.equal(store.openFindings().some((x) => x.detector === "debug-leftovers" && x.path === "src/leftovers.js"), false,
+    "the finding was re-derived against the file as it is now");
+});

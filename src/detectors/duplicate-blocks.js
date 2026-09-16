@@ -46,7 +46,7 @@ export default {
           const a = rel(p.a), b = rel(p.b);
           const line = (text.get(a) || "").split("\n")[p.a_line - 1];
           return finding({
-            severity: "medium", files: [a, b], path: a, key: `${a}|${b}`,
+            severity: "medium", files: [a, b], path: a, key: `${a}|${b}`, auto_fix: "plan-block-lift",
             title: `${a} and ${b}: ${p.shared_lines} lines in shared ${W}-line windows`,
             detail: `  ${a}:${p.a_line}-${p.a_end}\n  ${b}:${p.b_line}\n  ${snippet(line)}`,
             evidence: { shared_lines: p.shared_lines, first: { a: `${a}:${p.a_line}-${p.a_end}`, b: `${b}:${p.b_line}`, snippet: snippet(line) }, thresholds: THRESHOLDS, via: "kernel" },
@@ -87,7 +87,7 @@ export default {
       if (shared < THRESHOLDS.min_shared_lines) continue;
       const fa = p.first.a, fb = p.first.b;
       out.push(finding({
-        severity: "medium", files: [p.a, p.b], path: p.a, key: `${p.a}|${p.b}`,
+        severity: "medium", files: [p.a, p.b], path: p.a, key: `${p.a}|${p.b}`, auto_fix: "plan-block-lift",
         title: `${p.a} and ${p.b}: ${shared} lines in shared ${W}-line windows`,
         detail: `  ${p.a}:${fa.start}-${fa.end}\n  ${p.b}:${fb.start}-${fb.end}\n  ${snippet(text.get(p.a).split("\n")[fa.start - 1])}`,
         evidence: { shared_lines: shared, lines_a: p.la.size, lines_b: p.lb.size, first: { a: `${p.a}:${fa.start}-${fa.end}`, b: `${p.b}:${fb.start}-${fb.end}`, snippet: snippet(text.get(p.a).split("\n")[fa.start - 1]) }, thresholds: THRESHOLDS },

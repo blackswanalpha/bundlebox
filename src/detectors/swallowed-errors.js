@@ -110,6 +110,7 @@ export default {
       out.push(finding({
         severity: hits.length >= 5 ? "medium" : "low",
         files: [r], key: r,
+        auto_fix: "plan-catch-reasons",
         title: `${r}: ${hits.length} error(s) caught and discarded with no reason given`,
         detail: hits.slice(0, 15).map((h) => `  L${h.line}  ${h.snippet}`).join("\n"),
         evidence: { hits: hits.slice(0, 50), count: hits.length },

@@ -104,20 +104,27 @@ export const commands = {
         if (DESTRUCTIVE.has(f.auto_fix) && !flags.force) { results.push({ id: f.id, name: f.auto_fix, ok: false, why: "destructive; pass --force", declined: [] }); continue; }
         const r = actuate(f, { apply, cfg });
         results.push({ id: f.id, detector: f.detector, path: f.path, ...r });
-        if (apply && r.changed) {
-          const all = store.get("findings", []);
-          const me = all.find((x) => x.id === f.id);
-          if (me) { me.status = "fixed"; me.fixed_at = new Date().toISOString(); me.fixed_by = f.auto_fix; store.put("findings", all); }
-          store.append("episodes", { kind: "actuator", verb: f.auto_fix, rc: r.ok ? 0 : 1, produced: r.patch, finding: f.id });
+        if (apply && (r.changed || r.planned)) {
+          // A finding closes when an actuator FIXED it. A plan derived what the
+          // decision needs and decided nothing, and `keeps_open` is an actuator
+          // saying it acted and left work owed — a secret is still unrotated
+          // whatever .gitignore now says. Both stay open, both are recorded.
+          if (r.changed && !r.keeps_open) {
+            const all = store.get("findings", []);
+            const me = all.find((x) => x.id === f.id);
+            if (me) { me.status = "fixed"; me.fixed_at = new Date().toISOString(); me.fixed_by = f.auto_fix; store.put("findings", all); }
+          }
+          store.append("episodes", { kind: r.planned ? "plan" : "actuator", verb: f.auto_fix, rc: r.ok ? 0 : 1, produced: r.patch, finding: f.id });
         }
       }
       if (flags.json) { emit({ apply, results }); return 0; }
       if (!results.length) { out("  nothing to fix: no open finding names an actuator"); return 0; }
       for (const r of results) {
-        out(`  ${r.id}  ${r.name.padEnd(16)} ${r.changed ? (r.applied ? "APPLIED" : "would change") : r.ok ? "no change" : "FAILED"}  ${r.why}${r.patch ? `  patch ${r.patch}` : ""}`);
+        const verdict = r.planned ? (r.applied ? "PLANNED" : "would plan") : r.changed ? (r.applied ? "APPLIED" : "would change") : r.ok ? "no change" : "FAILED";
+        out(`  ${r.id}  ${String(r.name).padEnd(26)} ${verdict.padEnd(13)} ${r.why}${r.patch ? `  ${r.planned ? "plan" : "patch"} ${r.patch}` : ""}`);
         for (const d of r.declined || []) out(`      declined ${d.path}: ${d.reason}`);
       }
-      if (!apply && results.some((r) => r.changed)) out("  dry run; re-run with --apply to write");
+      if (!apply && results.some((r) => r.changed || r.planned)) out("  dry run; re-run with --apply to write");
       return results.every((r) => r.ok) ? 0 : 1;
     },
   },

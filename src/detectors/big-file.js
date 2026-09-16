@@ -31,6 +31,7 @@ export default {
       out.push(finding({
         severity: n > cap * THRESHOLDS.high_at ? "high" : "medium", kind: "investigate",
         files: [r], key: r,
+        auto_fix: "plan-file-regions",
         title: `${r}: ${human(n)} tokens (${pct}% of one session's working window)`,
         detail: `working window is ${human(cap)} tokens (max_tokens - reserve_output)`,
         evidence: { tokens: n, capacity: cap, pct, lines: text.get(r).split("\n").length, thresholds: THRESHOLDS },

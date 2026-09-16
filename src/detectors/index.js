@@ -13,6 +13,7 @@ import { warn } from "../core/log.js";
 import { ROOT, abs } from "../core/paths.js";
 import { human, sha1 } from "../core/util.js";
 import * as estimate from "../tokens/estimate.js";
+import { PLAN_ONLY } from "../actuators/_plan.js";
 
 import docLinks from "./doc-links.js";
 import todoCensus from "./todo-census.js";
@@ -34,10 +35,14 @@ import uiGeneric from "./ui-generic.js";
 import antiSlop from "./anti-slop.js";
 import swallowedErrors from "./swallowed-errors.js";
 import deadConfig from "./dead-config.js";
+import silentFallback from "./silent-fallback.js";
+import quietDegrade from "./quiet-degrade.js";
+import faultMask from "./fault-mask.js";
 
 export const REGISTRY = Object.fromEntries([docLinks, todoCensus, secretScan, bigFile, mergeMarkers,
   worktreeHygiene, deadExports, duplicateBlocks, godFile, orphanFiles, deadDeps, docDrift, lockfileDrift,
-  staleEvidence, missingTests, debugLeftovers, uiGeneric, antiSlop, swallowedErrors, deadConfig].map((d) => [d.name, d]));
+  staleEvidence, missingTests, debugLeftovers, uiGeneric, antiSlop, swallowedErrors, deadConfig,
+  silentFallback, quietDegrade, faultMask].map((d) => [d.name, d]));
 
 export const SEVERITY = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
 // Exponential, not linear: a critical was never traded against four lows.
@@ -159,7 +164,18 @@ export function triage(f, cfg = load()) {
   return finish(out, f, steps);
 }
 function finish(out, f, steps) {
-  if (f.auto_fix) { out.priority = 0; out.actuator = f.auto_fix; steps.push(`actuator ${f.auto_fix}: priority 0, zero model tokens`); }
+  if (!f.auto_fix) return out;
+  // A plan derives what the decision needs and decides nothing, so it changes
+  // what the session READS and not whether the session happens. Pricing it at
+  // zero would file a god file as free because its split seam is computable.
+  if (PLAN_ONLY.has(f.auto_fix)) {
+    out.plan = f.auto_fix;
+    steps.push(`plan ${f.auto_fix}: derived at 0 tokens, the decision on top of it still costs a lane`);
+    return out;
+  }
+  out.priority = 0;
+  out.actuator = f.auto_fix;
+  steps.push(`actuator ${f.auto_fix}: priority 0, zero model tokens`);
   return out;
 }
 
