@@ -127,6 +127,24 @@ function procCwd(pid) {
 
 const under = (p) => !!p && (p === ROOT || p.startsWith(ROOT + path.sep));
 
+/** The command line of a listening process, when the box will say. */
+function cmdline(pid) {
+  try { return fs.readFileSync(path.join("/proc", String(pid), "cmdline"), "utf8").replace(/\0/g, " "); } catch { /* not Linux, or not ours to read */ }
+  const r = run(["ps", "-o", "command=", "-p", String(pid)], { timeout: 5000 });
+  return r.rc === 0 ? r.out : "";
+}
+
+/** `bb viewport serve` is a listener in this tree that nothing declares, so the
+ *  join lands it in strays and the viewport reports itself as the anomaly. It is
+ *  the one listener this table can say nothing new about. Matched on the process
+ *  and not on a port number, so a `--port` override is covered and a different
+ *  process on the same port is still reported. */
+function isViewport(pid) {
+  if (!pid) return false;
+  if (pid === process.pid) return true;
+  return /\bviewport\s+serve\b/.test(cmdline(pid));
+}
+
 /** The join: every declared service, every observed listener, and which of them
  *  the other explains. */
 export function ports() {
@@ -159,6 +177,7 @@ export function ports() {
   const seen = new Set();
   for (const o of obs.rows) {
     if (claimed.has(`${o.port}|${o.host}`) || !under(o.cwd) || seen.has(o.port)) continue;
+    if (isViewport(o.pid)) continue;
     seen.add(o.port);
     strays.push({ ...o, supports: rel(o.cwd) || "." });
   }
