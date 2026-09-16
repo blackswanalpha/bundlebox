@@ -31,6 +31,16 @@ const human = (n) => {
 
 /** Mirrors `MIN_EDITS_PER_HALF` in arc/src/echos/diminishing.rs. */
 const MIN_EDITS_PER_HALF = 3;
+/** Mirrors `MIN_SESSIONS` in arc/src/echos/diminishing.rs. */
+const MIN_SESSIONS = 5;
+
+/** Mirrors `median` in arc/src/echos/diminishing.rs, including the even case. */
+const median = (v) => {
+  const s = [...v].sort((a, b) => a - b);
+  if (!s.length) return 0;
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
 
 const unknown = (id, detail) => ({ id, verdict: "unknown", session: "", support: 0, severity: "info", detail, evidence: [] });
 const ok = (id, detail) => ({ id, verdict: "ok", session: "", support: 0, severity: "info", detail, evidence: [] });
@@ -57,7 +67,14 @@ function spin(grouped, th) {
     for (const e of events) {
       if (e.kind === "edit") { editedSince = true; continue; }
       if (e.kind !== "shape" || !e.shape) continue;
+      // Counted before the `polls` check: a polled shape is still evidence the
+      // recorder is working, and skipping it from the COUNT as well as from the
+      // streak made a session of nothing but `gh pr` report "no command shape
+      // has been recorded" — unknown, for a stream full of them.
       looked++;
+      // A command whose answer this box does not control is polling, not
+      // spinning. Mirrors the `polls` check in arc/src/echos/spin.rs.
+      if (e.polls) continue;
       if (last === e.shape && !editedSince) streak++;
       else { streak = 1; last = e.shape; }
       editedSince = false;
@@ -127,12 +144,10 @@ function drift(grouped, th) {
 }
 
 function diminishing(grouped, th) {
-  const out = [];
-  let looked = 0;
+  const rows = [];
   for (const [session, events] of grouped) {
     const turns = events.filter((e) => e.kind === "turn");
     if (turns.length < 6) continue;
-    looked++;
     const mid = Math.floor(turns.length / 2);
     const cost = (a) => a.reduce((s, e) => s + (Number(e.tokens) || 0), 0);
     const earlyCost = cost(turns.slice(0, mid));
@@ -146,15 +161,23 @@ function diminishing(grouped, th) {
     if (editsEarly < MIN_EDITS_PER_HALF || editsLate < MIN_EDITS_PER_HALF || earlyCost <= 0) continue;
     const perEarly = earlyCost / editsEarly;
     const perLate = lateCost / editsLate;
-    const ratio = perLate / perEarly;
-    if (ratio < th.diminishing_ratio) continue;
-    out.push({ id: "diminishing", verdict: "hit", session, support: turns.length,
-      severity: ratio >= th.diminishing_ratio * 1.5 ? "medium" : "low",
-      detail: `the late half of this session cost ${ratio.toFixed(1)}x the early half per file changed (${human(perLate)} tokens of window per edit, against ${human(perEarly)}). Past that point the window IS the work: it is re-sent on every turn, so a fresh session with \`bb pinpoint\` on what is left starts at the brief instead of at everything read so far.`,
-      evidence: [`turns=${turns.length}`, `early_window_per_edit=${Math.round(perEarly)}`, `late_window_per_edit=${Math.round(perLate)}`, `ratio=${ratio.toFixed(2)}`, `threshold=${th.diminishing_ratio}`] });
+    rows.push({ session, turns: turns.length, perEarly, perLate, ratio: perLate / perEarly });
   }
-  if (!looked) return [unknown("diminishing", "no session has six folded turns; there is no early half to compare a late half against")];
-  return out.length ? out : [ok("diminishing", `no session's late half cost ${th.diminishing_ratio}x its early half per change`)];
+  if (rows.length < MIN_SESSIONS) {
+    return [unknown("diminishing", `${rows.length} session(s) carry six turns and three edits a half; ${MIN_SESSIONS} are needed before this workspace has a typical cost per change to compare one against`)];
+  }
+  const mid = median(rows.map((r) => r.ratio));
+  const bar = mid * th.diminishing_ratio;
+  const out = [];
+  for (const r of rows.filter((x) => x.ratio >= bar)) {
+    out.push({ id: "diminishing", verdict: "hit", session: r.session, support: r.turns,
+      severity: r.ratio >= bar * 1.5 ? "medium" : "low",
+      detail: `the late half of this session cost ${r.ratio.toFixed(1)}x the early half per file changed (${human(r.perLate)} tokens of window per edit, against ${human(r.perEarly)}) — ${(r.ratio / mid).toFixed(1)}x what a session in this workspace usually does (${mid.toFixed(1)}x, median of ${rows.length}). Past that point the window IS the work: it is re-sent on every turn, so a fresh session with \`bb pinpoint\` on what is left starts at the brief instead of at everything read so far.`,
+      evidence: [`turns=${r.turns}`, `early_window_per_edit=${Math.round(r.perEarly)}`, `late_window_per_edit=${Math.round(r.perLate)}`,
+        `ratio=${r.ratio.toFixed(2)}`, `workspace_median=${mid.toFixed(2)}`, `bar=${bar.toFixed(2)}`, `multiple_of_median=${th.diminishing_ratio}`] });
+  }
+  if (!out.length) out.push(ok("diminishing", `no session reached ${bar.toFixed(1)}x this workspace's median cost per change (${mid.toFixed(1)}x over ${rows.length} sessions)`));
+  return out;
 }
 
 /** Jaccard over two file sets. Mirrors `converge::similarity`. */

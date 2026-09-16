@@ -31,7 +31,7 @@ const fallback = await import("../src/echos/fallback.js");
 const record = await import("../src/lathe/record.js");
 
 const TH = { spin_repeats: 4, oscillate_flips: 3, drift_turns: 12, diminishing_ratio: 1.6, converge_similarity: 0.95, converge_runs: 3 };
-const ev = (o) => ({ at: 0, session: "", kind: "", shape: "", file: "", hash: "", tokens: 0, scope: [], ...o });
+const ev = (o) => ({ at: 0, session: "", kind: "", shape: "", file: "", hash: "", tokens: 0, scope: [], polls: false, ...o });
 const byId = (r, id) => r.echos.filter((e) => e.id === id);
 const verdict = (r, id) => byId(r, id).map((e) => e.verdict);
 
@@ -68,6 +68,34 @@ test("spin: an edit between two runs breaks the streak, because that is how work
   ];
   const r = fallback.run({ events, thresholds: TH });
   assert.deepEqual(verdict(r, "spin"), ["ok"]);
+});
+
+test("spin: a command whose answer this box does not control is polling, not spinning", async () => {
+  const echos = await import("../src/echos/index.js");
+  // Every `spin` hit on this workspace's first run was one of these.
+  for (const s of ["gh pr", "curl", "git fetch", "git show", "npm run", "make", "kubectl"]) {
+    assert.equal(echos.polls(s), true, `${s} is waiting on something outside this tree, or its argument picks the command`);
+  }
+  for (const s of ["npm test", "cargo build", "bb scan", "git branch", "pytest"]) {
+    assert.equal(echos.polls(s), false, `${s} asks the same question every time`);
+  }
+
+  const events = [1, 2, 3, 4, 5].map((at) => ev({ at, session: "s", kind: "shape", shape: "gh pr", polls: true }));
+  const r = fallback.run({ events, thresholds: TH });
+  assert.deepEqual(verdict(r, "spin"), ["ok"], "six `gh pr` calls is a session watching CI, not one spinning");
+});
+
+test("writesFiles: a write through the shell is a write", async () => {
+  const echos = await import("../src/echos/index.js");
+  // `drift` reported four sessions as having changed nothing; one had 217 Bash
+  // calls carrying 59 redirects, 42 heredocs, 11 git writes and 4 `sed -i`.
+  for (const c of ["sed -i 's/a/b/' f.js", "node x.js > out.txt", "cat <<EOF > f.py\nx\nEOF",
+    "git checkout main", "git commit -m x", "mv a.js b.js", "npm test | tee log.txt"]) {
+    assert.equal(echos.writesFiles(c), true, `${c} changes something`);
+  }
+  for (const c of ["npm test", "grep -rn x src | head -20", "ls -la", "node -e 1 2>&1", "curl -s u > /dev/null"]) {
+    assert.equal(echos.writesFiles(c), false, `${c} changes nothing`);
+  }
 });
 
 test("record.names: a shape has to name the work, not the tool that carried it", () => {
@@ -111,27 +139,59 @@ test("drift: turns with reads and no edit is a hit; turns with NO tool call at a
   assert.match(byId(r, "drift")[0].detail, /tool call/, "the reason has to name what could not be looked at");
 });
 
-test("diminishing: a half with fewer than three edits is drift, and is not reported here", () => {
+/** One session of 12 turns, `lateCost`x dearer in its late half, with three
+ *  edits a side so it is eligible for the ratio at all. `t0` spaces sessions
+ *  apart so their events never interleave. */
+function costlySession(session, lateCost, t0 = 0) {
+  const events = [];
+  for (let i = 0; i < 12; i++) events.push(ev({ at: t0 + i + 1, session, kind: "turn", tokens: i < 6 ? 1000 : lateCost }));
+  for (const d of [1, 2, 3]) events.push(ev({ at: t0 + d, session, kind: "edit", file: "a.js", hash: `e${d}` }));
+  for (const d of [8, 9, 10]) events.push(ev({ at: t0 + d, session, kind: "edit", file: "a.js", hash: `l${d}` }));
+  return events;
+}
+
+test("diminishing: a half with fewer than three edits is drift, and is not counted here", () => {
   const events = [];
   for (let i = 0; i < 12; i++) events.push(ev({ at: i + 1, session: "s", kind: "turn", tokens: 1000 * (i + 1) }));
-  // Two edits in each half: below the floor, so no ratio is printed.
+  // Two edits in each half: below the floor, so this session carries no ratio.
   events.push(ev({ at: 2, session: "s", kind: "edit", file: "a.js", hash: "A" }));
   events.push(ev({ at: 3, session: "s", kind: "edit", file: "a.js", hash: "B" }));
   events.push(ev({ at: 9, session: "s", kind: "edit", file: "a.js", hash: "C" }));
   events.push(ev({ at: 10, session: "s", kind: "edit", file: "a.js", hash: "D" }));
   const r = fallback.run({ events, thresholds: TH });
-  assert.deepEqual(verdict(r, "diminishing"), ["ok"]);
+  // No eligible session at all, so there is no median and the answer is
+  // `unknown` — never `ok`, which would say nothing was wrong when nothing was
+  // checked.
+  assert.deepEqual(verdict(r, "diminishing"), ["unknown"]);
 });
 
-test("diminishing: three edits a half and a rising cost per change is a hit", () => {
+test("diminishing: below five eligible sessions there is no typical ratio, so the answer is unknown", () => {
   const events = [];
-  for (let i = 0; i < 12; i++) events.push(ev({ at: i + 1, session: "s", kind: "turn", tokens: i < 6 ? 1000 : 9000 }));
-  for (const at of [1, 2, 3]) events.push(ev({ at, session: "s", kind: "edit", file: "a.js", hash: `e${at}` }));
-  for (const at of [8, 9, 10]) events.push(ev({ at, session: "s", kind: "edit", file: "a.js", hash: `l${at}` }));
+  for (let i = 0; i < 4; i++) events.push(...costlySession(`s${i}`, 9000, i * 100));
   const r = fallback.run({ events, thresholds: TH });
+  assert.deepEqual(verdict(r, "diminishing"), ["unknown"]);
+  assert.match(byId(r, "diminishing")[0].detail, /typical cost per change/);
+});
+
+test("diminishing: the bar is a MULTIPLE OF THIS WORKSPACE'S MEDIAN, not an absolute ratio", () => {
+  // The defect: an absolute 1.6 fired on 15 of 15 eligible sessions here,
+  // because a long session always costs more per change — the window is re-sent
+  // every turn. A rule that fires on the middle of a distribution describes the
+  // distribution. Six sessions all equally dear: none of them is unusual.
+  const flat = [];
+  for (let i = 0; i < 6; i++) flat.push(...costlySession(`s${i}`, 9000, i * 100));
+  let r = fallback.run({ events: flat, thresholds: TH });
+  assert.deepEqual(verdict(r, "diminishing"), ["ok"], "everything at the median is nobody's outlier");
+  assert.match(byId(r, "diminishing")[0].detail, /median cost per change/);
+
+  // The same six, plus one far dearer than the rest. That one is the finding.
+  const withOutlier = [...flat, ...costlySession("outlier", 90000, 900)];
+  r = fallback.run({ events: withOutlier, thresholds: TH });
   const hits = byId(r, "diminishing").filter((e) => e.verdict === "hit");
   assert.equal(hits.length, 1);
-  assert.match(hits[0].detail, /9\.0x|[0-9]+\.[0-9]x/);
+  assert.equal(hits[0].session, "outlier");
+  assert.ok(hits[0].evidence.some((x) => x.startsWith("workspace_median=")), "the median it was judged against is on the finding");
+  assert.ok(hits[0].evidence.some((x) => x.startsWith("bar=")));
 });
 
 test("converge: the scope settling is a STOP condition, and it needs more than one pair", () => {
@@ -183,9 +243,12 @@ test("arc and the fallback agree, event for event", { skip: ARC ? false : "arc i
     ...["A", "B", "A", "B", "A"].map((hash, i) => ev({ at: i + 10, session: "osc", kind: "edit", file: "a.js", hash })),
     ...Array.from({ length: 20 }, (_, i) => ev({ at: i + 20, session: "drift", kind: "turn", tokens: 1234 })),
     ...[20, 21].map((at) => ev({ at, session: "drift", kind: "read", file: "b.js" })),
-    ...Array.from({ length: 12 }, (_, i) => ev({ at: i + 50, session: "dim", kind: "turn", tokens: i < 6 ? 1000 : 9000 })),
-    ...[50, 51, 52].map((at) => ev({ at, session: "dim", kind: "edit", file: "c.js", hash: `e${at}` })),
-    ...[57, 58, 59].map((at) => ev({ at, session: "dim", kind: "edit", file: "c.js", hash: `l${at}` })),
+    // Six eligible sessions plus a dearer one, so `diminishing` has a median to
+    // judge against and something to judge.
+    ...Array.from({ length: 6 }, (_, i) => costlySession(`dim${i}`, 9000, 200 + i * 100)).flat(),
+    ...costlySession("dimOutlier", 90000, 1000),
+    // A polling command, so `spin`'s `polls` rule is exercised on both sides.
+    ...[1, 2, 3, 4, 5].map((at) => ev({ at, session: "poll", kind: "shape", shape: "gh pr", polls: true })),
     ...[70, 71, 72, 73].map((at) => ev({ at, session: "conv", kind: "brief", scope: ["x.js", "y.js"] })),
   ];
   const payload = { events, thresholds: TH, only: [] };
