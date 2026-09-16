@@ -163,9 +163,9 @@ test("tableHits never builds a table it cannot find", () => {
 // ── bash, which is how a session actually reads ──────────────────────────────
 
 test("parseBash finds the one read or the one search, and nothing else", () => {
-  assert.deepEqual(brief.parseBash("grep -rn 'refreshSession' src/"), { kind: "search", pattern: "refreshSession", pathArg: "src/" });
-  assert.deepEqual(brief.parseBash("rg -n --include '*.js' loginToken"), { kind: "search", pattern: "loginToken", pathArg: "" });
-  assert.deepEqual(brief.parseBash("grep -rln addClaudeHooks test/"), { kind: "search", pattern: "addClaudeHooks", pathArg: "test/" }, "the search this guard wrongly denied on its first day");
+  assert.deepEqual(brief.parseBash("grep -rn 'refreshSession' src/"), { kind: "search", pattern: "refreshSession", pathArg: "src/", stdin: false });
+  assert.deepEqual(brief.parseBash("rg -n --include '*.js' loginToken"), { kind: "search", pattern: "loginToken", pathArg: "", stdin: false });
+  assert.deepEqual(brief.parseBash("grep -rln addClaudeHooks test/"), { kind: "search", pattern: "addClaudeHooks", pathArg: "test/", stdin: false }, "the search this guard wrongly denied on its first day");
   assert.deepEqual(brief.parseBash("sed -n 401,403p src/big.js"), { kind: "read", file: "src/big.js", offset: 401, limit: 3 });
   assert.deepEqual(brief.parseBash("cat src/big.js"), { kind: "read", file: "src/big.js", offset: 0, limit: 0 });
   assert.equal(brief.parseBash("npm test"), null);
@@ -303,4 +303,25 @@ test("sweep drops the records of sessions that ended", () => {
   assert.equal(brief.sweep({ maxAgeMin: 60 }), 1);
   assert.ok(brief.current({ sessionId: "SH" }));
   assert.equal(brief.current({ sessionId: "SG" }), null);
+});
+
+test("a search that filters a pipe is never guarded", () => {
+  // `npm test | grep fail` filters output that did not exist a moment ago.
+  // Refusing it as a duplicate refuses to look at the new result — which this
+  // guard did, to its own author, while running the suite that tests it.
+  const seg = brief.parseBash("npm test 2>&1 | grep -E 'pass|fail'");
+  assert.equal(seg.kind, "search");
+  assert.equal(seg.stdin, true, "nothing precedes it in the pipeline but another command");
+  assert.equal(brief.searchVerdict(null, seg.pattern, { stdin: seg.stdin }), null);
+
+  const tree = brief.parseBash("grep -rn loginToken src/");
+  assert.equal(tree.stdin, false, "a path argument makes it a tree search");
+  assert.equal(brief.parseBash("grep -rn loginToken").stdin, false, "first in the pipeline is the tree, even with no path");
+
+  // And the duplicate rule still holds for a real tree search.
+  brief.activate(REC());
+  brief.searchVerdict(brief.current({}), "someTreeSearchTerm", { pathArg: "src/" });
+  const dup = brief.searchVerdict(brief.current({}), "someTreeSearchTerm", { pathArg: "src/" });
+  assert.equal(dup.permissionDecision, "deny");
+  assert.match(dup.permissionDecisionReason, /already ran in this session/);
 });

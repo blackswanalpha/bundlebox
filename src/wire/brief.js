@@ -320,9 +320,12 @@ export function tableHits(terms, { cap = SEARCH_ROWS, under = "" } = {}) {
  *
  *  The duplicate check is different and applies to any pattern: running the
  *  same search twice in one window is waste whatever its shape. */
-export function searchVerdict(rec, pattern, { glob = "", pathArg = "", cwd = "" } = {}) {
+export function searchVerdict(rec, pattern, { glob = "", pathArg = "", cwd = "", stdin = false } = {}) {
   const terms = patternTerms(pattern);
   if (!terms.length) return null;                            // a punctuation search; let it run
+  // Filtering a pipe is not searching the tree, and neither the brief nor the
+  // index has anything to say about output that did not exist a moment ago.
+  if (stdin) return null;
   const lookup = terms.length === 1;                         // one name: a declaration lookup
 
   if (rec) {
@@ -378,6 +381,15 @@ export { shellSegments as segments } from "../core/util.js";
 
 export function parseBash(command) {
   const segs = shellSegments(command);
+  // Whether a search reads the TREE or a PIPE. `grep X file` and `grep -r X dir`
+  // search the tree, and asking the same question twice over an unchanged tree
+  // is waste. `npm test | grep fail` filters output that did not exist a moment
+  // ago, and refusing it as a duplicate refuses to look at the new result.
+  //
+  // This is the fourth false denial this guard produced against its own author,
+  // and they share one cause: the rule was right about the question and wrong
+  // about what the question was pointed at. Position in the pipeline is the
+  // cheapest fact that distinguishes the two.
   for (const seg of segs) {
     const parts = seg.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
     if (!parts.length) continue;
@@ -397,7 +409,10 @@ export function parseBash(command) {
       // restricted to a directory asks a question the declaration index may not
       // answer. `i` is the pattern's index, so the paths start after it.
       const paths = rest.slice(i + 1).filter((a) => !a.startsWith("-"));
-      if (pattern) return { kind: "search", pattern, pathArg: paths[0] || "" };
+      // A search with no path, arriving after something else in the pipeline, is
+      // reading stdin.
+      const stdin = !paths.length && seg !== segs[0];
+      if (pattern) return { kind: "search", pattern, pathArg: paths[0] || "", stdin };
       continue;
     }
     if (cmd === "sed") {
