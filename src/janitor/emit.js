@@ -175,15 +175,30 @@ export function knownTombstones() {
   return seen;
 }
 
+/** The rule band on its own. The hooks read this and never the whole heap: a
+ *  handler that runs on every prompt cannot afford to parse a heap, and after a
+ *  compaction the ONLY thing worth spending the re-injection budget on is the
+ *  set of constraints that round just summarised away. */
+export function rulesText(objects) {
+  const live = objects.filter((o) => o.kind === "rule" && !o.retracted_at && !(o.meta && o.meta.quarantined));
+  if (!live.length) return "";
+  const L = ["# rules in force", "", `${live.length} constraints, compiled ${now()}. Stated in full because a summarised rule is advice.`, ""];
+  for (const o of live) L.push(`- ${o.text}${o.source ? ` \`${o.source}${o.line ? `:${o.line}` : ""}\`` : ""}`);
+  L.push("");
+  return L.join("\n");
+}
+
 export function emit({ objects, placed, diags, passes, stats, apply = false, dir = DIR() }) {
   const files = {};
   const win = windowText(placed, stats);
   const heap = heapText({ objects, placed, diags, passes, stats });
+  const rules = rulesText(objects);
   const jsonl = objects.map((o) => JSON.stringify(o)).join("\n") + "\n";
   const fp = sha1(win + heap).slice(0, 12);
 
   files["WINDOW.md"] = write(path.join(dir, "WINDOW.md"), win);
   files["HEAP.md"] = write(path.join(dir, "HEAP.md"), heap);
+  files["RULES.md"] = write(path.join(dir, "RULES.md"), rules);
   files["heap.jsonl"] = write(path.join(dir, "heap.jsonl"), jsonl);
   writeJson(path.join(dir, "diagnostics.json"), { at: now(), fingerprint: fp, counts: bySeverity(diags), diagnostics: diags });
 

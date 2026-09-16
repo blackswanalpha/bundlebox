@@ -13,7 +13,30 @@ import * as store from "../core/store.js";
 import { text as estimateText, file as estimateFile } from "../tokens/estimate.js";
 import { now } from "../core/util.js";
 
-const CAPS = { "session-start": 600, prompt: 300, "pre-read": 200 };
+const CAPS = { "session-start": 600, prompt: 300, "pre-read": 200, "restate-rules": 700 };
+
+// ── the janitor's three touch points ────────────────────────────────────────
+//
+// All three read an artefact `bb janitor compile` already wrote. None of them
+// runs the compiler: `session-start` has 30 seconds and `prompt` runs on every
+// turn, and a handler that recompiles a heap on either is a handler somebody
+// turns off within a week.
+//
+// The stale guard matters more here than anywhere else in this file. The whole
+// claim of the resolve pass is that a fact whose anchor no longer resolves must
+// not be quoted with confidence; a hook that quotes a week-old diagnostics file
+// as though it described the tree right now would be making exactly that
+// mistake about the janitor's own output.
+const jdir = () => path.join(OUT, "janitor");
+function janitorArtefact(name, maxAgeHours) {
+  const f = path.join(jdir(), name);
+  try {
+    const st = fs.statSync(f);
+    if ((Date.now() - st.mtimeMs) / 3600000 > maxAgeHours) return null;
+    return fs.readFileSync(f, "utf8");
+  } catch { return null; }
+}
+const COMPACTED = () => path.join(VAR, "janitor-compacted.json");
 
 function readStdin() {
   try { const s = fs.readFileSync(0, "utf8"); return s.trim() ? JSON.parse(s) : {}; } catch { return {}; }
@@ -33,6 +56,12 @@ async function sessionStart() {
   const cfg = load();
   if (!cfg.wire.inject_context) return;
   const parts = [];
+  // First, because `capTokens` truncates from the END and this is the only part
+  // that corrects something already in the window. The reference tables are a
+  // pointer the agent can re-read at any time; a line saying which of the
+  // memory it was just handed no longer resolves cannot be recovered later.
+  const rot = memoryRotNotice(cfg);
+  if (rot) parts.push(rot);
   const index = path.join(OUT, "snapgen", "INDEX.md");
   if (fs.existsSync(index)) parts.push("bundlebox reference tables (read instead of searching):\n" + fs.readFileSync(index, "utf8").trim());
   else parts.push("bundlebox: no snapgen tables yet — `bb snapgen build` writes layout, symbols, routes, docs, commands, hot.");
@@ -46,8 +75,72 @@ async function sessionStart() {
   emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: capTokens(parts.join("\n\n"), CAPS["session-start"]) } });
 }
 
+/** The harness loads CLAUDE.md and the memory files itself, before any hook
+ *  runs, and nothing here can stop it. What this CAN do is say which lines in
+ *  what it just loaded no longer resolve — a correction, delivered in the same
+ *  window as the thing it corrects. That is the cheapest hallucination lever
+ *  this box has: the claim is already in the context, stated with the
+ *  confidence it earned the day it was true. */
+export function rotNotice(diagnostics = [], { max = 4 } = {}) {
+  const bad = diagnostics.filter((x) => x.code === "dead-anchor" || x.code === "drifted-anchor");
+  const errors = diagnostics.filter((x) => x.severity === "error");
+  if (!bad.length && !errors.length) return "";
+  const lines = [];
+  if (bad.length) {
+    lines.push(`memory to distrust: ${bad.length} claim${bad.length === 1 ? "" : "s"} in the loaded memory point at things that no longer exist. Do not quote them without checking:`);
+    for (const x of bad.slice(0, max)) lines.push(`  ${x.source}${x.line ? `:${x.line}` : ""} — ${String(x.message).split(" — ")[0]}`);
+    if (bad.length > max) lines.push(`  ...${bad.length - max} more — \`bb janitor\``);
+  }
+  if (errors.length) lines.push(`${errors.length} janitor error${errors.length === 1 ? "" : "s"} (conflicting rules, or a rule about a file that is gone) — \`bb janitor --verbose\``);
+  return lines.join("\n");
+}
+
+function memoryRotNotice(cfg) {
+  if (!cfg.janitor?.notify) return "";
+  const raw = janitorArtefact("diagnostics.json", Number(cfg.janitor.max_age_hours) || 168);
+  if (!raw) return "";
+  let d; try { d = JSON.parse(raw); } catch { return ""; }
+  return rotNotice(d.diagnostics || []);
+}
+
+/** RULES.md -> the text that goes back into the window, or "" when there is
+ *  nothing to restate. Only the bullets: the heading and the count are for a
+ *  human reading the file, and the window pays by the token. */
+export function restateBand(rulesMarkdown) {
+  const body = String(rulesMarkdown || "").split("\n").filter((l) => l.startsWith("- ")).join("\n");
+  if (!body.trim()) return "";
+  return `bundlebox: the conversation was just compacted. These constraints were in force before it and are restated in full, because a summarised rule is advice:\n${body}`;
+}
+
+/** The Compaction Cliff, answered on the one event that is observably able to
+ *  put text in the window.
+ *
+ *  Measured over 396,934 artefacts (arXiv 2608.22752): a safety rule survives
+ *  53% of one compaction round and 10% of five, because a summariser cannot
+ *  tell a constraint from an anecdote and only the constraint needs its exact
+ *  wording. So the round after a compaction, the rules go back in FULL — not
+ *  summarised, not paraphrased, straight out of RULES.md.
+ *
+ *  It fires once per compaction, not once per prompt: the marker records which
+ *  compaction has already been answered. Returns true when it emitted, so the
+ *  caller does not also spend the prompt budget on a pinpoint nudge. */
+function restateRules(payload, cfg) {
+  if (!cfg.janitor?.restate_rules) return false;
+  let mark; try { mark = JSON.parse(fs.readFileSync(COMPACTED(), "utf8")); } catch { return false; }
+  if (!mark || !mark.at) return false;
+  const session = String(payload.session_id || "");
+  if (session && mark.session_id && mark.session_id !== session) return false;
+  if (mark.restated_at && Date.parse(mark.restated_at) >= Date.parse(mark.at)) return false;
+  const band = restateBand(janitorArtefact("RULES.md", Number(cfg.janitor.max_age_hours) || 168));
+  if (!band) return false;
+  try { fs.writeFileSync(COMPACTED(), JSON.stringify({ ...mark, restated_at: now() })); } catch { /* at worst it restates twice */ }
+  emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(band, CAPS["restate-rules"]) } });
+  return true;
+}
+
 async function prompt(payload) {
   const cfg = load();
+  if (restateRules(payload, cfg)) return;
   if (!cfg.wire.inject_context) return;
   const p = String(payload.prompt || payload.user_prompt || "");
   // Only a task-shaped prompt earns the suggestion; a question or a one-word reply does not.
@@ -78,16 +171,43 @@ async function postTool(payload) {
   run(payload);
 }
 
+/** Nothing is emitted from here. Whether a PreCompact hook's stdout reaches the
+ *  window after the summary is written is not something this box can observe,
+ *  and a mitigation built on a guess is a mitigation that silently does
+ *  nothing. So this only leaves a marker, and the next prompt — an event whose
+ *  additionalContext IS observable in a transcript — does the work. */
 async function preCompact(payload) {
   store.append("episodes", { kind: "hook", verb: "compaction", features: { trigger: payload.trigger || "auto" }, rc: 0, seconds: 0, produced: 0, turns_saved: 0, session_id: payload.session_id || "" });
+  if (!load().janitor?.restate_rules) return;
+  try {
+    ensureDirs();
+    fs.writeFileSync(COMPACTED(), JSON.stringify({ session_id: payload.session_id || "", at: now(), trigger: payload.trigger || "auto", restated_at: "" }));
+  } catch (e) { log("pre-compact", `marker ${String(e && e.message || e).slice(0, 120)}`); }
 }
 
 async function sessionEnd(payload) {
   const cfg = load();
-  if (!cfg.wire.measure_sessions) return;
-  const { end } = await import("../tokens/session.js");
-  const line = await end({ sessionId: payload.session_id || "", transcriptPath: payload.transcript_path || "" });
-  if (line) process.stderr.write(String(line).trim() + "\n");   // stderr: shown to the person, never parsed by the harness
+  if (cfg.wire.measure_sessions) {
+    const { end } = await import("../tokens/session.js");
+    const line = await end({ sessionId: payload.session_id || "", transcriptPath: payload.transcript_path || "" });
+    if (line) process.stderr.write(String(line).trim() + "\n");   // stderr: shown to the person, never parsed by the harness
+  }
+  // Sleep-time compute, in the sense Letta uses it: the memory work happens
+  // outside the session that pays for it. This is also the only moment the mark
+  // pass has a complete transcript to trace reachability from — during the
+  // session the file it needs is still being written.
+  if (!cfg.janitor?.refresh) return;
+  try {
+    const { build } = await import("../janitor/index.js");
+    const { emit: writeOut } = await import("../janitor/emit.js");
+    const b = await build({ budget: Number(cfg.janitor.budget) || undefined });
+    writeOut({ ...b, apply: true });
+    log("session-end", `janitor ${b.stats.parsed} objects, ${b.stats.errors}E ${b.stats.warnings}W`);
+  } catch (e) {
+    // A failed refresh costs the next session a fresher heap, never the session
+    // that is ending. The stale guard on the read side handles the rest.
+    log("session-end", `janitor ${String(e && e.message || e).slice(0, 160)}`);
+  }
 }
 
 export async function handle(event) {
