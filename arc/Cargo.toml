@@ -1,6 +1,6 @@
 [package]
 name = "bb-arc"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "arc: the bundlebox index compiler. Compiles the workspace's derived symbol tables into one binary index answering exact, prefix and suffix lookups in two seeks, so the per-tool-call guards cost microseconds instead of a markdown scan."
 license = "MIT"
