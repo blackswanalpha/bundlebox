@@ -243,3 +243,66 @@ to sound credible would cost the reader who is the point of the post.
 
 The link is to `bundlebox-projects` rather than `bundlebox`, for the same reason
 post 4 does it: the claim is checkable there, against the files the run wrote.
+
+## Post 7 — the bill (what the saving is worth in money)
+
+`marketing/post-7-the-bill.txt`, with `marketing/post-7-the-bill.png` attached.
+516 words. The image is generated from `post-7-the-bill-image.html` at 1200×627,
+the same card as post 5 so the two read as one series.
+
+Post 5 measured a service built to be measured. This one measures **this
+repository**, which is the harder and more interesting claim: a real project, a
+real invoice, nineteen sessions.
+
+**Lead with the bill, not with the saving.** The first line is $696.34 — what
+was spent — and the post earns the right to the second number by
+opening with the one nobody can accuse it of choosing. A post about cost that
+opens with a discount reads as a brochure; one that opens with an invoice does
+not.
+
+The order after that:
+
+1. $696.34, measured to the cent off the transcripts
+2. assistants charge for reading — the one mechanical fact the rest needs
+3. twelve tasks, two ways: 866,600 tokens against 32,700
+4. the same two numbers in money: $4.33 against $0.16
+5. the sentence that makes 3 and 4 checkable — both arms are counts of text on
+   disk, neither run called a model
+6. the project total, and the refusal
+7. two things the post does not say
+8. the stale table, last
+
+**The refusal is again the most important line.** 38.2M tokens avoided, roughly
+$191 of reading. `bb monitor savings` labels that row `modelled`, not measured,
+and the post says so and declines to headline it. Post 2 is a whole post about
+not summing a measurement with a counterfactual; quoting $191 as if it were the
+$4.33 would be that exact mistake with the author's own name on it.
+
+**The self-audit has two halves and the first one costs something.** The twelve
+tasks come from this repository, and a ranker scoring work inside the codebase
+the ranker was written against has a home advantage. So the SWE-bench line goes in
+beside it: every gold file in scope for 6 of 12 instances against 2 before, and
+the packed context up 41% to buy that. Spending less and finding the right file
+pull against each other, and the release notes already say so in one table —
+leaving it out of the post while it sits in the changelog would be choosing the
+audience that does not check.
+
+The second half is the flat one: **$696.34 is still $696.34.** The box did not
+make the project cheap, it made the looking cheap. Any version of this post that
+implies otherwise is selling something.
+
+**The closer is the stale table, and it is the argument.** A reference table
+reported itself up to date while its contents were wrong — in the tool whose
+entire saving is that a session reads the table instead of searching the tree. A
+cheap answer is only worth anything if it is a correct one. Ending a cost post on
+the thing that would have invalidated the cost claim is the only ending that
+earns the first line.
+
+**On the card:** the figures beside the bars are set in ink, not in the accent.
+#008C99 on this paper is 3.79:1 — fine for a 42px mark and for the 66px hero,
+short of 4.5:1 for a 22px figure. The bar carries the identity; the number wears
+text ink. Post 5's card sets that figure in the accent and should be re-shot the
+same way next time it is touched.
+
+**Do not lead with 26.5×.** It is on the card, at the bottom, where a reader who
+has already seen both raw numbers can check it.

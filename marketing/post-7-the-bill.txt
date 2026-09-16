@@ -1,0 +1,65 @@
+My AI coding bill for this project is $696.34.
+
+I know that to the cent, across nineteen sessions, because the tool I was
+building reads it back off the transcripts rather than asking me to estimate it.
+
+Here is the part I did not expect to be able to say precisely: what it would
+otherwise have been.
+
+Coding assistants charge by the token, and reading is where most of the money
+goes. Before one can tell you anything useful about your software it reads —
+the files, the tests, the history, the thing it read four turns ago and has
+since forgotten.
+
+So I ran the same twelve tasks two ways. The tasks are not invented; they come
+out of this repository's own open findings.
+
+Read the tree the way an assistant does, opening the ten most likely files
+whole: 866,600 tokens.
+
+Read one located brief per task instead — the files, the exact line ranges, the
+command that proves the change: 32,700.
+
+At list input pricing for the model I use, that is $4.33 against $0.16. Same
+twelve tasks, same answers.
+
+Both of those are counts of text on disk. Neither run called a model, so
+neither number is a projection of anything.
+
+Across the whole project, 1,587 local runs displaced 23,263 assistant turns.
+Priced at the median billed turn in this workspace that comes to 38.2 million
+tokens, or roughly $191 of reading that never went on the wire.
+
+I am not putting that figure in the headline, and I would rather you did not
+either. That $191 is the only number here that is modelled instead of
+measured, and the tool labels it that way in its own output. A savings claim that quietly
+adds a measurement to a counterfactual is a number nobody can check, and nobody
+checks a number that looks reasonable.
+
+Two things this does not say.
+
+The twelve tasks came from this repository, and a tool that ranks work inside
+the codebase it was written against has a home advantage. On SWE-bench
+Verified, which it did not get to choose, the same ranker put every gold file
+in scope for 6 of 12 instances against 2 before — and the packed context went
+up 41% to buy that. Spending less and finding the right file pull against each
+other. The release notes say so in the same table.
+
+And $696.34 is still $696.34. The box did not make this project cheap. It made
+the looking cheap, and left the bill to the thinking.
+
+One more thing, because the whole saving rests on it.
+
+This week the tool caught one of its own tables reporting itself up to date
+while its contents were wrong. That table exists so a session can read it
+instead of searching the tree — it is the saving. A cheap answer is only worth
+anything if it is a correct answer, and the moment it is quietly stale you have
+bought a discount on being misled.
+
+Every number above came out of a file the run produced.
+
+  npm i -g bundlebox
+
+github.com/blackswanalpha/bundlebox
+
+#AI #DeveloperTools #ClaudeCode #Productivity #OpenSource

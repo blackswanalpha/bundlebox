@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bundlebox — what twelve tasks cost to read</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* Same card as post-5, so the series reads as one thing. One accent, one
+     de-emphasis grey: this is an EMPHASIS chart, not two identities — the small
+     bar is the point and the large one is context. The palette validator's
+     categorical checks do not apply to that shape, and identity here is never
+     colour alone: each bar carries its own direct label and its own row label.
+
+     One deviation from post-5, and it is a fix. The figure beside the accent bar
+     used to be set in the accent itself: #008C99 on this paper is 3.79:1, which
+     clears the 3:1 bar for a mark and misses the 4.5:1 one for 22px text. The
+     numbers wear ink now and the bar carries the identity. The 66px hero keeps
+     the accent — at that size 3.79:1 is comfortably inside the large-text rule. */
+  :root {
+    --paper: #FAF8F2;
+    --ink: #191A14;
+    --ink-2: #454738;
+    --muted: #6B6D5F;
+    --rule: #E0DACB;
+    --accent: #008C99;
+    --context: #7F7B6B;
+    --font-display: "Newsreader", Georgia, serif;
+    --font-text: "IBM Plex Sans", Helvetica, sans-serif;
+    --font-figure: "IBM Plex Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1200px; height: 627px; background: var(--paper); color: var(--ink);
+         font-family: var(--font-text); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .card { height: 100%; padding: 44px 64px 38px; display: flex; flex-direction: column; }
+
+  .top { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
+  .mark { font-family: var(--font-display); font-size: 21px; font-weight: 500; letter-spacing: -0.01em; }
+  .mark i { font-style: normal; color: var(--accent); }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+  h1 { font-family: var(--font-display); font-size: 40px; line-height: 1.08; font-weight: 400;
+       letter-spacing: -0.02em; margin: 20px 0 4px; max-width: 24ch; }
+  .sub { font-size: 15px; color: var(--muted); margin: 0 0 22px; }
+
+  .rows { display: grid; gap: 28px; }
+  .row { display: grid; grid-template-columns: 284px minmax(0, 1fr); align-items: center; gap: 22px; }
+  .label { font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-2); line-height: 1.35; }
+  .label small { display: block; letter-spacing: 0; text-transform: none; font-size: 12.5px; color: var(--muted); }
+  .track { display: flex; align-items: center; gap: 12px; }
+  .bar { height: 46px; border-radius: 0 4px 4px 0; }
+  .bar.context { background: var(--context); }
+  .bar.accent { background: var(--accent); }
+  .value { font-family: var(--font-figure); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+  .value em { font-style: normal; font-size: 13px; color: var(--muted); margin-left: 8px; white-space: nowrap; }
+
+  .facts { margin-top: 38px; padding-top: 22px; border-top: 1px solid var(--rule);
+           display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+  .fact dt { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .fact dd { margin: 5px 0 0; font-size: 14.5px; color: var(--ink-2); line-height: 1.4; }
+  .fact dd b { font-family: var(--font-figure); font-size: 20px; font-weight: 500; color: var(--ink); display: block; margin-bottom: 2px; }
+
+  .foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;
+          border-top: 1px solid var(--rule); padding-top: 24px; }
+  .hero { display: flex; align-items: baseline; gap: 14px; }
+  .hero b { font-family: var(--font-text); font-size: 66px; font-weight: 600; letter-spacing: -0.03em; line-height: 0.9; color: var(--accent); }
+  .hero span { font-size: 16px; color: var(--ink-2); max-width: 28ch; line-height: 1.4; }
+  .source { font-size: 12.5px; color: var(--muted); text-align: right; line-height: 1.6; }
+  .source b { font-weight: 500; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div class="mark">bundlebox<i>.</i></div>
+    <div class="kicker">measured, not estimated</div>
+  </div>
+
+  <h1>What twelve real fixes cost to read</h1>
+  <p class="sub">Twelve tasks from this repository's own open findings, handed to a coding assistant two ways. Priced at list input rates.</p>
+
+  <div class="rows">
+    <div class="row">
+      <div class="label">Reading the tree<small>the assistant opens the ten most likely files whole</small></div>
+      <div class="track">
+        <div class="bar context" style="width: 618px"></div>
+        <div class="value">$4.33<em>866,600 tokens</em></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">Reading the brief<small>the files, the line ranges, the proving command</small></div>
+      <div class="track">
+        <div class="bar accent" style="width: 23px"></div>
+        <div class="value">$0.16<em>32,700 tokens</em></div>
+      </div>
+    </div>
+  </div>
+
+  <dl class="facts">
+    <div class="fact">
+      <dt>What this project actually paid</dt>
+      <dd><b>$696.34</b>over 19 sessions, read off the transcripts</dd>
+    </div>
+    <div class="fact">
+      <dt>What the tool costs to run</dt>
+      <dd><b>nothing</b>it never calls a model itself</dd>
+    </div>
+    <div class="fact">
+      <dt>What it never had to read</dt>
+      <dd><b>~$191</b>modelled, not measured — so not the headline</dd>
+    </div>
+  </dl>
+
+  <div class="foot">
+    <div class="hero">
+      <b>26.5&times;</b>
+      <span>less, for the same twelve tasks, from a tool that charges nothing</span>
+    </div>
+    <div class="source">
+      <b>bundlebox</b> — both arms are token counts over text on disk;<br>
+      neither called a model. github.com/blackswanalpha/bundlebox
+    </div>
+  </div>
+</div>
+</body>
+</html>
