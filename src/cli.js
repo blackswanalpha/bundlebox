@@ -13,6 +13,7 @@ import { clamp, table } from "./core/util.js";
 export const MODULES = [
   ["init", "./init.js"],
   ["doctor", "./doctor.js"],
+  ["env", "./env.js"],
   ["scan", "./scan.js"],
   ["compile", "./compile/index.js"],
   ["route", "./route/index.js"],
@@ -97,7 +98,7 @@ const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
-  ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "designlabs"]],
+  ["look", "What is in this tree?", ["init", "doctor", "env", "scan", "findings", "explain", "oversight", "designlabs"]],
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
