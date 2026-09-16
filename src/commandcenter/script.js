@@ -57,9 +57,20 @@ function render(s){
     ? b.method + ". Bare reads " + b.bare_read_cap + " files; raise or lower it with bb bench run --cap N."
     : "Run bb bench run to put a measured number here.";
 
+  const sv = s.savings || null;
+  $("#savings-live").innerHTML = savingsCards(sv);
+  $("#savings-verbs").innerHTML = savingsVerbs(sv);
+  $("#savings-live-note").textContent = sv && sv.avoided && sv.avoided.known
+    ? "Displaced turns are counted from work done — one per file read, command run or search answered — and are "
+      + "never guessed. Turning them into tokens is the modelled step: each is valued at "
+      + human(sv.avoided.per_turn.value) + " tokens, "
+      + (sv.avoided.per_turn.kind==="MEASURED" ? "the median of this workspace's own billed turns" : "an estimate, because no billed turn was available to measure")
+      + ". What you actually paid is measured separately and the two are never netted against each other."
+    : "Savings are counted as verbs run. bb scan, bb pinpoint and bb snapgen build each record what they did instead.";
+
   $("#window").innerHTML = windowCard(s.window)
-    + '<div class="card"><div class="k">Displaced by the local path<span class="tag est">estimate</span></div><div class="stat">'+human(s.saved.turns)
-    + ' <small>agent turns</small></div><div class="note">'+esc(s.saved.note)+'</div></div>'
+    + '<div class="card"><div class="k">Displaced by the local path<span class="tag est">estimate</span></div><div class="stat">'+human(s.saved.tokens)
+    + ' <small>tokens</small></div><div class="note">'+human(s.saved.turns)+" agent turns. "+esc(s.saved.note)+'</div></div>'
     + '<div class="card"><div class="k">Open findings</div><div class="stat">'+s.findings.open
     + " <small>of "+s.findings.total+" ever</small></div><div class=\\"note\\">"
     + Object.entries(s.findings.by_severity).map(([k,v])=>v+" "+k).join(" · ")+"</div></div>"

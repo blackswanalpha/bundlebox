@@ -33,7 +33,13 @@ import { text as estimateText } from "../tokens/estimate.js";
 const HOME = os.homedir();
 export const AGENT_HOME = path.join(HOME, ".claude");
 const SKIP_DIRS = new Set(["node_modules", ".git", "target", "dist", "build", "__pycache__", ".venv", "venv", ".next", "out", "coverage"]);
-const MEMORY_NAMES = /^(CLAUDE|AGENTS|MEMORY|GEMINI|AGENT)\.md$/i;
+// Case-SENSITIVE, and that is the whole point. The instruction-file convention
+// is all-caps — CLAUDE.md, AGENTS.md, GEMINI.md — and matching case-insensitively
+// swept in `docs/agents.md`, which is documentation ABOUT agents rather than
+// instructions TO one. It contributed 72 objects and 11 of the 12 dead anchors
+// on the first run. Those findings were true and they are not this tool's:
+// "a doc references a file that does not exist" is the doc-links detector.
+const MEMORY_NAMES = /^(CLAUDE|AGENTS|MEMORY|GEMINI|AGENT)\.md$/;
 
 // How Claude Code names a workspace's directory under ~/.claude/projects. This
 // is the same rule as `slug` in ../adapters/claude.js and is repeated here on
@@ -278,8 +284,13 @@ export function collectWiring({ home = AGENT_HOME, root = ROOT } = {}) {
       for (const [evt, arr] of Object.entries(cfg.hooks || {})) {
         for (const entry of [].concat(arr || [])) {
           for (const h of [].concat(entry.hooks || [])) {
+            // A pointer, not a rule. An installed hook is inventory — a fact
+            // about what is wired up — and calling it a rule pinned six of them
+            // to the head of every window and restated them after every
+            // compaction, where they are noise. They stay in the heap so
+            // `dead_weight` can still ask which wiring nothing ever reaches.
             objs.push(make({
-              kind: "rule", text: `hook ${evt} ${entry.matcher || "*"} → ${String(h.command || h.type || "").slice(0, 200)}`,
+              kind: "pointer", text: `hook ${evt} ${entry.matcher || "*"} → ${String(h.command || h.type || "").slice(0, 200)}`,
               source: f.replace(HOME, "~"), line: 1, learned_at: mtime(f), gen: "old",
               tokens: estimateText(String(h.command || "")), meta: { store: "wiring", surface: "hook", event: evt },
             }));

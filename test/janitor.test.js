@@ -13,7 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { make, isLive, value, similarity, HALF_LIFE, POLICY, tombstone } from "../src/janitor/heap.js";
-import { classify, anchorOf, blocks, linksOf, frontmatter, isUncheckableClaim } from "../src/janitor/parse.js";
+import { classify, anchorOf, blocks, linksOf, frontmatter, isUncheckableClaim, collectMemory, collectWiring } from "../src/janitor/parse.js";
 import { resolveAnchor, resolve, resetCache, resetSymbols } from "../src/janitor/resolve.js";
 import { mark, graph, rootsFrom } from "../src/janitor/mark.js";
 import { sweep, contradicts } from "../src/janitor/sweep.js";
@@ -344,6 +344,76 @@ test("prune never touches a retraction it only read back from a tombstone", asyn
   o.meta = { ...o.meta, from_tombstone: true };
   assert.deepEqual(prune([o], { apply: true }), []);
   assert.equal(fs.readFileSync(f, "utf8"), "- already retracted last week\n");
+});
+
+// ── the hooks ───────────────────────────────────────────────────────────────
+
+test("the rules band holds live rules only, and never a hook declaration", async () => {
+  const { rulesText } = await import("../src/janitor/emit.js");
+  const live = make({ kind: "rule", text: "Never force-push main", source: "r.md" });
+  const quarantined = make({ kind: "rule", text: "Never touch gone.js", source: "r.md" });
+  quarantined.meta = { quarantined: "anchor no longer exists" };
+  const text = rulesText([
+    live,
+    quarantined,
+    tombstone(make({ kind: "rule", text: "Never do the old thing", source: "r.md" }), "superseded"),
+    make({ kind: "pointer", text: "hook SessionStart * → bb hook session-start", source: "settings.json" }),
+    make({ kind: "note", text: "a note", source: "n.md" }),
+  ]);
+  assert.match(text, /Never force-push main/);
+  assert.ok(!text.includes("Never touch gone.js"), "a quarantined rule is uncheckable, so it is not restated as in force");
+  assert.ok(!text.includes("Never do the old thing"), "a retracted rule is not in force");
+  assert.ok(!text.includes("hook SessionStart"), "installed wiring is inventory, not a constraint");
+  assert.equal(rulesText([make({ kind: "note", text: "n", source: "n.md" })]), "", "no rules is an empty band, not a heading");
+});
+
+test("an installed hook is parsed as a pointer, so it is never pinned or restated", () => {
+  const d = tmp();
+  fs.mkdirSync(path.join(d, ".claude"), { recursive: true });
+  fs.writeFileSync(path.join(d, ".claude", "settings.json"), JSON.stringify({
+    hooks: { SessionStart: [{ hooks: [{ type: "command", command: "bb hook session-start" }] }] },
+  }));
+  const objs = collectWiring({ home: path.join(d, "nohome"), root: d });
+  const hook = objs.find((o) => o.text.startsWith("hook SessionStart"));
+  assert.ok(hook, "the hook entry is still collected, so dead_weight can ask about it");
+  assert.equal(hook.kind, "pointer");
+});
+
+test("an instruction file is matched all-caps; docs/agents.md is documentation", () => {
+  // Matching case-insensitively swept in `docs/agents.md` — 72 objects and 11
+  // of 12 dead anchors on the first run. Those findings were true and they
+  // belong to the doc-links detector, not to the agent's memory heap.
+  const d = tmp();
+  fs.mkdirSync(path.join(d, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(d, "AGENTS.md"), "- Never edit the generated tree\n");
+  fs.writeFileSync(path.join(d, "docs", "agents.md"), "- Never edit the documented tree\n");
+  const sources = new Set(collectMemory({ home: path.join(d, "nohome"), root: d }).map((o) => path.basename(o.source)));
+  assert.ok(sources.has("AGENTS.md"));
+  assert.ok(!sources.has("agents.md"), "lowercase agents.md under docs/ is not an instruction file");
+});
+
+test("the rot notice names sources and is empty when nothing rotted", async () => {
+  const { rotNotice } = await import("../src/wire/hooks.js");
+  assert.equal(rotNotice([]), "");
+  assert.equal(rotNotice([{ code: "duplicate", severity: "note", source: "a.md" }]), "");
+  const text = rotNotice([
+    { code: "dead-anchor", severity: "warning", source: "m.md", line: 3, message: "fact points at gone.js, which does not exist — anything quoting this" },
+    { code: "rule-conflict", severity: "error", source: "r.md", line: 1, message: "two live rules conflict" },
+  ]);
+  assert.match(text, /memory to distrust: 1 claim/);
+  assert.match(text, /m\.md:3/);
+  assert.ok(!text.includes("anything quoting this"), "the notice carries the finding, not the essay");
+  assert.match(text, /1 janitor error/);
+});
+
+test("the restate band is bullets only, and empty when there is nothing to restate", async () => {
+  const { restateBand } = await import("../src/wire/hooks.js");
+  assert.equal(restateBand(""), "");
+  assert.equal(restateBand("# rules in force\n\n2 constraints, compiled now.\n"), "", "a heading is not a rule");
+  const band = restateBand("# rules in force\n\n1 constraint\n\n- Never force-push main `CLAUDE.md:7`\n");
+  assert.match(band, /just compacted/);
+  assert.match(band, /- Never force-push main/);
+  assert.ok(!band.includes("# rules in force"), "the window does not pay for the file's heading");
 });
 
 // ── the IR ──────────────────────────────────────────────────────────────────

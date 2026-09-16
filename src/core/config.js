@@ -135,6 +135,24 @@ export const DEFAULTS = {
     measure_sessions: true, // SessionEnd: measure used/saved
     guard_reads: true,      // PreToolUse(Read): warn on files past the window
   },
+  janitor: {
+    // What the hooks do with a compiled heap. Every one of these reads an
+    // artefact `bb janitor compile` already wrote; no hook ever runs the
+    // compiler, because a handler that fires on every prompt cannot afford to.
+    //
+    // The two injection points are the two this box has EVIDENCE for:
+    // SessionStart and UserPromptSubmit both deliver additionalContext and both
+    // are observable in a transcript. PreCompact is used only to record that a
+    // compaction happened; nothing is emitted from it, because whether its
+    // stdout reaches the window is not documented and a hook built on a guess
+    // is a hook that silently does nothing.
+    notify: true,           // SessionStart: name the memory whose anchors no longer resolve
+    restate_rules: true,    // UserPromptSubmit after a compaction: state the rules again, in full
+    refresh: true,          // SessionEnd: recompile the heap while the transcript is fresh
+    // How stale an emitted artefact may be before the hooks stop quoting it. A
+    // janitor that asserts a stale fact about staleness has failed twice.
+    max_age_hours: 168,
+  },
   cron: { sweep_every_min: 30, autonomous_fix: false },
 };
 

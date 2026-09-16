@@ -102,6 +102,8 @@ footer{padding:28px 0 44px;color:var(--faint);font-size:12.5px}
 /* The savings block. One rule for the whole page: a MEASURED number is set in
    the ink colour and an ESTIMATE is set in the muted one, so the two can sit
    next to each other without the page implying they are the same kind. */
+.subhead{display:flex;align-items:center;gap:14px;margin:34px 0 10px}
+.subhead::after{content:"";flex:1;height:1px;background:var(--rule)}
 .statrow{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:900px){.statrow{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.statrow{grid-template-columns:1fr}}

@@ -77,6 +77,64 @@ test("an indeterminate window does not block: nothing is refused on an unknown",
   assert.equal(g.state, "indeterminate");
 });
 
+// ── savings ─────────────────────────────────────────────────────────────────
+
+test("savings names the workspace it read, so an empty one is not a wrong directory", () => {
+  const w = monitor.workspace();
+  assert.equal(w.root, root);
+  assert.equal(w.initialised, true, "the test root has a .bundlebox");
+  assert.equal(w.name, path.basename(root));
+});
+
+test("a workspace with no local run reports unknown, never a saving of zero", () => {
+  const v = monitor.savings();
+  assert.equal(v.avoided.known, false);
+  assert.equal(v.avoided.tokens, 0);
+  assert.match(v.avoided.why, /no local run/);
+  assert.match(monitor.savingsText(v), /Nothing recorded/);
+});
+
+test("displaced turns are valued at the workspace's own median billed turn", () => {
+  for (const r of [{ verb: "scan", turns_saved: 10, seconds: 1 }, { verb: "pinpoint", turns_saved: 30, seconds: 2 }]) {
+    store.append("episodes", { ...r, ts: new Date().toISOString(), rc: 0 });
+  }
+  const v = monitor.savings();
+  assert.equal(v.avoided.turns, 40);
+  assert.equal(v.avoided.tokens, 40 * v.avoided.per_turn.value);
+  assert.equal(v.by_verb[0].verb, "pinpoint", "ordered by what each verb displaced");
+  assert.equal(v.by_verb[0].share, 75);
+});
+
+test("leverage divides by FRESH tokens: a cache read is not a full-price token", () => {
+  const cached = { session_id: "s-cache", msg_id: "m-cache", agent: "claude", model: "claude-opus-5",
+    input: 100, output: 0, cache_write: 0, cache_read: 9900, ts: new Date().toISOString() };
+  store.append("usage", cached);
+  const v = monitor.savings();
+  assert.ok(v.spent.fresh < v.spent.tokens, "cache reads are billed but are not fresh");
+  assert.equal(v.leverage, Math.round((v.avoided.tokens / v.spent.fresh) * 100) / 100);
+  assert.equal(v.cache.tokens_not_rebilled, Math.round(v.cache.read * monitor.CACHE_DISCOUNT));
+});
+
+test("a saving is never netted against the bill: both are reported whole", () => {
+  const v = monitor.savings();
+  assert.match(v.provenance.avoided, /modelled/);
+  assert.match(v.provenance.spent, /measured|unknown/);
+  const text = monitor.savingsText(v);
+  assert.match(text, /never subtracted from what you actually paid/);
+});
+
+test("colour is a second channel: strip it and the report still says the same thing", () => {
+  const v = monitor.savings();
+  monitor.setColor(false);
+  const plain = monitor.savingsText(v);
+  assert.doesNotMatch(plain, /\u001b\[/, "NO_COLOR, --no-color and a pipe must all yield plain text");
+  monitor.setColor(true);
+  const painted = monitor.savingsText(v);
+  assert.match(painted, /\u001b\[/);
+  assert.equal(painted.replace(/\u001b\[[0-9;]*m/g, ""), plain, "colour adds nothing a reader needs");
+  monitor.setColor(null);
+});
+
 // ── frames ──────────────────────────────────────────────────────────────────
 
 test("a frame groups, aggregates and sorts, and a missing column is null not zero", () => {
