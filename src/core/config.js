@@ -173,6 +173,19 @@ export const DEFAULTS = {
     // janitor that asserts a stale fact about staleness has failed twice.
     max_age_hours: 168,
   },
+  lathe: {
+    // The automation engine's input. The PostToolUse hook appends the SHAPE of
+    // each shell command — `git commit`, never the message — because mining the
+    // same order out of the transcripts took four minutes of wall clock for
+    // 4.8 seconds of CPU on this box: 1.4GB of JSONL, parsed in full to recover
+    // one string per tool call.
+    record_shapes: true,
+    max_rows: 20000,        // the oldest half is dropped past this
+    // SessionEnd: re-learn and re-emit while the session's own shapes are
+    // fresh. 1.4s measured, because it reads the recorded shapes rather than
+    // the transcripts they came from.
+    learn_on_end: true
+  },
   finish: {
     // `bb finish`: the acceptance ledger. The Stop hook is a STRUCTURAL
     // backstop and executes no check — it reports a declared gate that is

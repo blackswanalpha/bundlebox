@@ -30,7 +30,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { VAR, OUT, abs, rel, ensureDirs } from "../core/paths.js";
 import { readText } from "../core/fs.js";
-import { now, human } from "../core/util.js";
+import { now, human, shellSegments } from "../core/util.js";
 import { file as estimateFile } from "../tokens/estimate.js";
 import { clean } from "../slop/index.js";
 import * as arc from "../arc/read.js";
@@ -372,35 +372,12 @@ const SEARCHERS = /^(grep|egrep|fgrep|rg|ag|ack)$/;
  *  segment, and anything that is not plainly one read or one search of one
  *  target is left alone. Guessing at shell semantics in a hook is how a guard
  *  starts denying `npm test`. */
-/** Split a command on the shell operators, RESPECTING QUOTES.
- *
- *  `String.split(/\|/)` was the first version and it was wrong in the most
- *  common case there is: `grep -n "effect\|GROUPS\|groupOf" src/cli.js` is one
- *  search with an alternation, and splitting it produced three segments whose
- *  first looked exactly like a single-identifier lookup. The guard then refused
- *  a three-term search on the strength of one term — the same false denial this
- *  file has now been corrected for twice, arriving through the parser instead of
- *  through the rule. */
-export function segments(command) {
-  const src = String(command || "");
-  const out = [];
-  let cur = "", q = "";
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (q) { cur += c; if (c === q && src[i - 1] !== "\\") q = ""; continue; }
-    if (c === "'" || c === '"') { q = c; cur += c; continue; }
-    if (c === ";" || c === "|" || (c === "&" && src[i + 1] === "&")) {
-      if (c === "&" || (c === "|" && src[i + 1] === "|")) i++;
-      out.push(cur); cur = ""; continue;
-    }
-    cur += c;
-  }
-  out.push(cur);
-  return out.map((x) => x.trim()).filter(Boolean);
-}
+/** Re-exported from core: the guard and the automation engine both need one
+ *  shell tokenizer, and two copies of a parser are two behaviours. */
+export { shellSegments as segments } from "../core/util.js";
 
 export function parseBash(command) {
-  const segs = segments(command);
+  const segs = shellSegments(command);
   for (const seg of segs) {
     const parts = seg.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
     if (!parts.length) continue;

@@ -121,6 +121,16 @@ export function lookup(terms, { cap = 14, under = "", shapes = ["exact", "prefix
   return hits;
 }
 
+/** Every declared name, once. The one full pass over the index anybody makes,
+ *  and `bb lathe` makes it once per learn rather than once per query. */
+export function names(file = FILE()) {
+  const ix = open(file);
+  if (!ix) return null;
+  const seen = new Set();
+  for (let id = 0; id < ix.count; id++) seen.add(rowAt(ix, id).symbol);
+  return [...seen];
+}
+
 export function stat(file = FILE()) {
   const ix = open(file);
   if (!ix) return null;

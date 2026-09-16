@@ -41,3 +41,30 @@ export const table = (rows, { header = null, gap = 2 } = {}) => {
   if (header) out.splice(1, 0, widths.map((w) => "-".repeat(w)).join(" ".repeat(gap)));
   return out.join("\n");
 };
+
+/** Split a shell command on its operators, RESPECTING QUOTES.
+ *
+ *  `String.split(/\|/)` was the first version and it was wrong in the most
+ *  common case there is: `grep -n "a\|b\|c" src/` is one search with an
+ *  alternation, and splitting it produced three commands. Two callers need this
+ *  — the read/search guard, which must not refuse a search it mis-parsed, and
+ *  the automation engine, which must not learn `cd` as a habit — so it lives
+ *  here rather than in either of them.
+ */
+export function shellSegments(command) {
+  const src = String(command || "");
+  const out = [];
+  let cur = "", q = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) { cur += c; if (c === q && src[i - 1] !== "\\") q = ""; continue; }
+    if (c === "'" || c === '"') { q = c; cur += c; continue; }
+    if (c === ";" || c === "|" || (c === "&" && src[i + 1] === "&")) {
+      if (c === "&" || (c === "|" && src[i + 1] === "|")) i++;
+      out.push(cur); cur = ""; continue;
+    }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}

@@ -289,6 +289,25 @@ async function postTool(payload) {
     run(payload);
   }
   if (cfg.slop?.guard_writes) await slopGuard(payload, cfg);
+  if (cfg.lathe?.record_shapes) await recordShape(payload, cfg);
+}
+
+/** The automation engine's input, recorded when it is free.
+ *
+ *  `bb lathe` needs the ORDER of the commands a session ran. Mining that out of
+ *  the transcripts took four minutes of wall clock for 4.8 seconds of CPU —
+ *  1.4GB of JSONL parsed in full to recover one string per tool call. This hook
+ *  is already running on every tool call, so appending forty bytes here is the
+ *  cheapest place in the system to learn the same fact.
+ *
+ *  The SHAPE only: `git commit`, never the message. The argument is the part
+ *  that differs every time, so it is never the habit, and a log of shapes
+ *  cannot carry a secret somebody passed on a command line. */
+async function recordShape(payload, cfg) {
+  if (String(payload.tool_name || "") !== "Bash") return;
+  const [rec, lathe] = await Promise.all([import("../lathe/record.js"), import("../lathe/index.js")]);
+  const n = rec.record(payload, { shapesOf: lathe.commandShapes });
+  if (n && Math.random() < 0.01) rec.rotate({ max: Number(cfg.lathe.max_rows) || rec.MAX_ROWS });
 }
 
 /** The prose the AGENT writes, measured by the same rules as the prose bb
@@ -361,7 +380,11 @@ async function sessionEnd(payload) {
   const cfg = load();
   if (cfg.wire.measure_sessions) {
     const { end } = await import("../tokens/session.js");
-    const line = await end({ sessionId: payload.session_id || "", transcriptPath: payload.transcript_path || "" });
+    const r = await end({ sessionId: payload.session_id || "", transcriptPath: payload.transcript_path || "" });
+    // `end` returns {line, wrote, measure}. Stringifying the object printed
+    // "[object Object]" at the end of every session; the line is the one field
+    // meant for a person to read.
+    const line = r && typeof r === "object" ? r.line : r;
     if (line) process.stderr.write(String(line).trim() + "\n");   // stderr: shown to the person, never parsed by the harness
   }
   // Sleep-time compute, in the sense Letta uses it: the memory work happens
@@ -372,6 +395,22 @@ async function sessionEnd(payload) {
   // the only signal a hook has for the ones whose sessions never reached this
   // handler.
   try { brief.sweep(); } catch { /* a stale record expires on its own */ }
+  // Sleep-time compute, alongside the janitor's recompile and for the same
+  // reason: the model wants what this session did, and the session that pays
+  // for a turn should not pay for learning from it. 1.4s measured on this tree,
+  // because it reads the recorded shapes and not the transcripts.
+  if (cfg.lathe?.learn_on_end) {
+    try {
+      const lathe = await import("../lathe/index.js");
+      const m = await lathe.learn();
+      if (m.error) log("session-end", `lathe ${m.error}`);
+      else {
+        const em = await import("../lathe/emit.js");
+        const r = await em.all(m, { apply: true });
+        log("session-end", `lathe ${m.sequence.verbs.length} verb + ${m.sequence.shell.length} shell habit(s), ${r.rows.filter((x) => x.state === "wrote").length} artefact(s)`);
+      }
+    } catch (e) { log("session-end", `lathe ${String(e && e.message || e).slice(0, 160)}`); }
+  }
   if (!cfg.janitor?.refresh) return;
   try {
     const { build } = await import("../janitor/index.js");
