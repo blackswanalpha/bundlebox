@@ -92,6 +92,7 @@ export const GEARS = [
     on: ["cron", "hand"],
     stages: [
       { verb: "runbook", args: ["status"], when: "services > 0", optional: true, description: "is anything listening" },
+      { verb: "viewport", args: ["build"], when: "services > 0", optional: true, description: "the port table as a page: what is listening, for which directory, and what holds a port we declared" },
       { verb: "scan", description: "every detector over what is on disk" },
       { verb: "failsafe", args: ["why"], description: "each failure matched against the playbook: cause, op, doc" },
     ],
