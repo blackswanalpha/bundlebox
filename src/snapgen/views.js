@@ -129,7 +129,35 @@ const isBundleboxRepo = () => readJson(path.join(ROOT, "package.json"), {})?.nam
 
 export const commands = {
   name: "commands", group: "map", description: "what can be run here: package scripts and bins, Makefile and justfile targets, pyproject scripts, Cargo bins" + (isBundleboxRepo() ? ", every bb verb" : ""),
-  inputs: () => ["package.json", "Makefile", "justfile", "Justfile", "pyproject.toml", "Cargo.toml", "src/cli.js"].map((n) => path.join(ROOT, n)),
+  // The manifests, plus — in this repo — every module the verb table is built
+  // from. `src/cli.js` alone was wrong in the direction the fingerprint comment
+  // warns about: the `bb verbs` section renders each module's OWN `help` and
+  // `usage`, so editing a verb's description left the table reporting `fresh`
+  // over text that no longer matched it. Measured: one changed line in
+  // `src/viewport/index.js` drifted the table and `bb snapgen stale` said fresh.
+  //
+  // The module file, not its imports. A verb's `help` and `usage` live in the
+  // file that exports `commands`; a help string assembled from a deeper import
+  // is not tracked, and that is the boundary rather than an oversight — walking
+  // the import graph to fingerprint a table would cost more than rebuilding it.
+  inputs: async () => {
+    const files = ["package.json", "Makefile", "justfile", "Justfile", "pyproject.toml", "Cargo.toml", "src/cli.js"].map((n) => path.join(ROOT, n));
+    if (!isBundleboxRepo()) return files;
+    // Read as TEXT, not imported. `import()` is cached by the ESM loader for the
+    // life of the process, so a second call returned the first call's module
+    // list — measured: a verb added between two calls in one process was never
+    // an input, which is the same silent staleness one layer down. `MODULES` is
+    // a literal array of pairs, so a match over the source is exact, and if it
+    // ever stops matching the input count drops rather than the table quietly
+    // covering less than it claims.
+    // Non-greedy to the first `]` that closes a statement: every inner pair ends
+    // `],`, so the first `];` is the array's own close whatever the formatting.
+    const block = /export\s+const\s+MODULES\s*=\s*\[([\s\S]*?)\]\s*;/.exec(readText(path.join(ROOT, "src", "cli.js")));
+    if (block) {
+      for (const m of block[1].matchAll(/\[\s*"[^"]+"\s*,\s*"(\.[^"]+)"\s*\]/g)) files.push(path.resolve(path.join(ROOT, "src"), m[1]));
+    }
+    return files;
+  },
   build: async () => {
     const L = ["# commands — what can be run here", ""];
     let any = false;
