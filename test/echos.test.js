@@ -35,16 +35,51 @@ const ev = (o) => ({ at: 0, session: "", kind: "", shape: "", file: "", hash: ""
 const byId = (r, id) => r.echos.filter((e) => e.id === id);
 const verdict = (r, id) => byId(r, id).map((e) => e.verdict);
 
-/** The Rust binary, when this box has one built. Not a skip-if-missing on the
- *  agreement test alone: every other test here runs against the fallback, so a
- *  box with no cargo still proves the rules. */
+/** The Rust binary, when this box has one built FROM THIS SOURCE.
+ *
+ *  Existence is not enough, and the day this check was written is why. The
+ *  binary on the box had been compiled before `arc/src/echos/diminishing.rs`
+ *  last changed, so it answered with a minimum-sessions rule that no longer
+ *  exists in any source file — and the agreement test below reported a
+ *  divergence between the JS and a revision nobody was running. It had been
+ *  reporting a PASS for as long as the stale rule happened to agree, which is
+ *  the worse half: a verdict about two implementations, one of which was never
+ *  the one on disk.
+ *
+ *  So a binary older than its sources is neither a pass nor a failure. It is a
+ *  skip that names the command, because "the two agree" and "I could not check
+ *  whether they agree" are different answers.
+ *
+ *  mtime, not a content hash: cargo's own freshness check is mtime-based, and
+ *  being wrong here costs one skip and a rebuild rather than a false verdict.
+ *  A `git checkout` restamps the sources it touches, so this skips after a
+ *  branch switch until `npm run arc` runs. That is the safe direction. */
 const ARC = (() => {
   const p = path.join(process.cwd(), "arc", "target", "release", process.platform === "win32" ? "arc.exe" : "arc");
-  return fs.existsSync(p) ? p : "";
+  if (!fs.existsSync(p)) return { path: "", why: "arc is not built (npm run arc)" };
+  const built = fs.statSync(p).mtimeMs;
+  const newer = [];
+  const stack = [path.join(process.cwd(), "arc", "src")];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }   // no arc/src on a packed install
+    for (const e of entries) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) { stack.push(f); continue; }
+      try { if (fs.statSync(f).mtimeMs > built) newer.push(path.relative(process.cwd(), f)); } catch { /* raced with a checkout */ }
+    }
+  }
+  const manifest = path.join(process.cwd(), "arc", "Cargo.toml");
+  try { if (fs.statSync(manifest).mtimeMs > built) newer.push("arc/Cargo.toml"); } catch { /* absent */ }
+  if (newer.length) {
+    return { path: "", why: `arc is older than ${newer.length} of its source file(s) — ${newer.sort().slice(0, 3).join(", ")}${newer.length > 3 ? ", …" : ""}; run \`npm run arc\`` };
+  }
+  return { path: p, why: "" };
 })();
 
 function viaArc(payload) {
-  const r = spawnSync(ARC, ["echos"], { input: JSON.stringify(payload), encoding: "utf8", timeout: 60000 });
+  const r = spawnSync(ARC.path, ["echos"], { input: JSON.stringify(payload), encoding: "utf8", timeout: 60000 });
   assert.equal(r.status, 0, `arc echos exited ${r.status}: ${r.stderr}`);
   return JSON.parse(r.stdout);
 }
@@ -235,7 +270,7 @@ test("every threshold is an input, and the result prints the ones that decided i
   assert.equal(r.thresholds.spin_repeats, 2);
 });
 
-test("arc and the fallback agree, event for event", { skip: ARC ? false : "arc is not built (cargo build --release --manifest-path arc/Cargo.toml)" }, () => {
+test("arc and the fallback agree, event for event", { skip: ARC.path ? false : ARC.why }, () => {
   // One stream carrying every shape all five echos look for, so agreement here
   // is agreement about all of them and not about an empty answer.
   const events = [
@@ -263,7 +298,7 @@ test("arc and the fallback agree, event for event", { skip: ARC ? false : "arc i
   assert.deepEqual(js.registry, rust.registry);
 });
 
-test("`only` narrows both implementations the same way", { skip: ARC ? false : "arc is not built" }, () => {
+test("`only` narrows both implementations the same way", { skip: ARC.path ? false : ARC.why }, () => {
   const events = [1, 2, 3, 4].map((at) => ev({ at, session: "s", kind: "shape", shape: "npm test" }));
   const payload = { events, thresholds: TH, only: ["spin"] };
   const rust = viaArc(payload);
