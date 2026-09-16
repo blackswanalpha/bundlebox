@@ -4,7 +4,7 @@ import json
 import sys
 import time
 
-from . import __version__, confidence, coverage, graph, memory, model, rules, scenarios, signals, throttle, triage, world
+from . import __version__, confidence, coverage, graph, memory, model, rules, scenarios, sequences, signals, throttle, triage, world
 
 
 def main(argv: list) -> int:
@@ -26,6 +26,12 @@ def main(argv: list) -> int:
         out = rules.decide(inp.get("signals", {}), inp.get("thresholds"))
     elif verb == "graph":
         out = graph.build(inp.get("episodes", []))
+    elif verb == "sequences":
+        out = {"patterns": sequences.mine(inp.get("sequences") or [], int(inp.get("min_support", sequences.MIN_SUPPORT)),
+                                          int(inp.get("max_len", sequences.MAX_LEN)))}
+    elif verb == "completions":
+        out = {"prefixes": sequences.completions(inp.get("names") or [], int(inp.get("min_prefix", 3)),
+                                                 int(inp.get("max_prefix", 12)), int(inp.get("min_count", 2)))}
     elif verb == "model-train":
         eps = inp.get("episodes", [])
         out = model.train(eps, graph.build(eps).get("lift"))

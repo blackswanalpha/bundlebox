@@ -1,0 +1,25 @@
+[package]
+name = "bb-arc"
+version = "0.3.0"
+edition = "2021"
+description = "arc: the bundlebox index compiler. Compiles the workspace's derived symbol tables into one binary index answering exact, prefix and suffix lookups in two seeks, so the per-tool-call guards cost microseconds instead of a markdown scan."
+license = "MIT"
+repository = "https://github.com/blackswanalpha/bundlebox"
+
+[[bin]]
+name = "arc"
+path = "src/main.rs"
+
+# No dependencies, for the same reason the kernel has none: this must build on a
+# box that has rustc and cargo and no network. `fst` would give prefix, range and
+# fuzzy queries over a memory-mapped transducer and is the right tool at a
+# hundred million keys; at this tree's twenty thousand declarations a sorted
+# offset table and two binary searches are already microseconds, and a
+# dependency-free build is worth more than the difference.
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

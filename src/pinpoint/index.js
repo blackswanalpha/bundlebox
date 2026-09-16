@@ -22,7 +22,8 @@ import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
-import { rank } from "./rank.js";
+import { clean } from "../slop/index.js";
+import { rank, informative } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 
 export { ambiguity } from "./ambiguity.js";
@@ -148,8 +149,14 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
   const ts = terms(problem);
   const explicit = [...files.map((f) => rel(abs(f))), ...pathHits(ts)];
   const sym = await snapgen.symbolHits(ts);
-  const grep = sym.length < 3 ? grepHits(ts) : [];
-  const ranked = rank(problem, { explicit, sym, grep });
+  // Not `sym.length < 3`. A statement whose words are common symbol names here
+  // ("read", "wire", "guard", "brief") returns dozens of hits and answers
+  // nothing, and the count alone cannot tell that case from a real localisation.
+  // `informative` counts only the hits whose term is rare enough to be about
+  // WHICH file, so the bounded content grep now fires on a NOISY index as well
+  // as on a silent one — which is where it was always needed most.
+  const grep = informative(sym) < 3 ? grepHits(ts) : [];
+  const ranked = rank(problem, { explicit, sym, grep, terms: ts, universe: codeFiles().map(rel) });
   let scope = ranked.slice(0, maxFiles);
   let anchors = [];
   const seen = new Set();
@@ -300,7 +307,14 @@ export function prompt(b) {
     "- `git stash`, `git checkout` on a shared checkout, `--no-verify`, or a commit outside the scope",
     "- widen into cleanup, refactor or docs. One problem, one diff.",
     "", `Reference tables, read instead of searching: ${b.tables.length ? b.tables.join(", ") : "(none built; `bb snapgen build`)"}`);
-  return L.join("\n") + "\n";
+  // Through the anti-slop pass on the way out. This is the document in this
+  // tree with the strongest claim to it: every brief here is READ BY A MODEL
+  // AND BILLED, so a hedge is not a style complaint, it is tokens the lane pays
+  // for and then has to decide to ignore. `clean` masks fenced blocks and inline
+  // spans, so the quoted regions and the gate command come back byte for byte;
+  // only the prose around them is touched, and only by deletions and
+  // one-for-one replacements.
+  return clean(L.join("\n")) + "\n";
 }
 
 export function write(b) {
@@ -322,8 +336,15 @@ const list = (v) => (typeof v === "string" ? v.split(",").map((s) => s.trim()).f
 export const commands = {
   pinpoint: {
     help: "one problem, one focused prompt: where, regions, scope, evidence, gate (no tokens)",
-    usage: "bb pinpoint \"<problem>\" [--files a,b] [--max-files N] [--kind fix|verify|investigate|build|write] [--print] [--json]",
+    usage: "bb pinpoint \"<problem>\" [--files a,b] [--max-files N] [--kind fix|verify|investigate|build|write] [--print] [--json]\n     bb pinpoint gaps [--no-findings] [--no-auditor] [--max N]   every measured gap as a located brief\n     bb pinpoint next [N] [--print]                              make a worklist row the active brief",
     run: async ({ _, flags }) => {
+      // The two sub-verbs come first: a worklist row is a problem somebody
+      // already stated, and re-stating it on the command line is the work this
+      // whole file exists to avoid.
+      if (_[0] === "gaps" || _[0] === "next") {
+        const w = await import("./worklist.js");
+        return w.commands[_[0]].run({ _: _.slice(1), flags });
+      }
       const problem = _.join(" ").trim();
       if (!problem) { warn(commands.pinpoint.usage); return 2; }
       const b = await build(problem, { files: list(flags.files), maxFiles: Number(flags.maxFiles) || 6, kind: flags.kind ? String(flags.kind) : "fix" });

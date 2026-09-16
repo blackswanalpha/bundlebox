@@ -134,6 +134,26 @@ export const DEFAULTS = {
     inject_context: true,   // SessionStart/UserPromptSubmit: hand the agent the snapgen INDEX
     measure_sessions: true, // SessionEnd: measure used/saved
     guard_reads: true,      // PreToolUse(Read): warn on files past the window
+    // ── the enforcement axis ──────────────────────────────────────────────
+    //
+    // Everything above is ADVISORY, and `bb uptake` measured what that is
+    // worth on this workspace: the MCP tools fired in 0 of 15 sessions,
+    // pinpoint in 3 of the 13 that opened five or more distinct files, the
+    // snapgen tables in 5 of the 15 that ran a search. Those 13 sessions
+    // opened between 30 and 598 files each. A surface the model may decline
+    // on a hunch is a surface that gets declined.
+    //
+    // So these three move the work to the side that does it for nothing:
+    auto_pinpoint: true,    // UserPromptSubmit: RUN pinpoint on a task-shaped prompt, inject the map
+    serve_from_brief: true, // PreToolUse: deny a read the brief already quotes, and hand back the quote
+    guard_searches: true,   // PreToolUse: deny a declaration search the symbol tables already answer
+    // How stale a brief may be before the guards stop answering from it. A
+    // guard quoting a region located for a different task is the janitor's
+    // dead-anchor mistake with a faster clock.
+    brief_max_age_min: 45,
+    // Below this share of the working window a whole-file read is too cheap to
+    // argue about, so the quote is not served and the read goes through.
+    serve_min_share: 0.02,
   },
   janitor: {
     // What the hooks do with a compiled heap. Every one of these reads an
@@ -152,6 +172,38 @@ export const DEFAULTS = {
     // How stale an emitted artefact may be before the hooks stop quoting it. A
     // janitor that asserts a stale fact about staleness has failed twice.
     max_age_hours: 168,
+  },
+  lathe: {
+    // The automation engine's input. The PostToolUse hook appends the SHAPE of
+    // each shell command — `git commit`, never the message — because mining the
+    // same order out of the transcripts took four minutes of wall clock for
+    // 4.8 seconds of CPU on this box: 1.4GB of JSONL, parsed in full to recover
+    // one string per tool call.
+    record_shapes: true,
+    max_rows: 20000,        // the oldest half is dropped past this
+    // SessionEnd: re-learn and re-emit while the session's own shapes are
+    // fresh. 1.4s measured, because it reads the recorded shapes rather than
+    // the transcripts they came from.
+    learn_on_end: true
+  },
+  finish: {
+    // `bb finish`: the acceptance ledger. The Stop hook is a STRUCTURAL
+    // backstop and executes no check — it reports a declared gate that is
+    // still unmet when a session is about to say it is done. Silent in a
+    // workspace with no GATES.md, because a tree that declared no bar has not
+    // failed to meet one.
+    stop_hook: true,
+  },
+  slop: {
+    // The prose the AGENT writes. `bb slop` has always run over every brief,
+    // commit message and PR body this factory emits; what it never saw was the
+    // markdown the model writes into the tree, which the next session re-reads
+    // and is billed for again. Advisory only: a hedge is sometimes the honest
+    // word, and a hook that rewrites somebody's sentence unasked is worse than
+    // the sentence.
+    guard_writes: true,
+    floor: 3,               // fewer hits than this is a word, not a habit
+    max_hits: 5,            // lines named in the one band it emits
   },
   cron: { sweep_every_min: 30, autonomous_fix: false },
 };

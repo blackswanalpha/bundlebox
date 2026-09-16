@@ -17,7 +17,19 @@ export * as graph from "./graph.js";
 export const tablePath = (name) => registry().path(name);
 export const indexPath = () => path.join(DIR, "INDEX.md");
 
-export async function build({ only = null, force = false } = {}) { return runner.build(registry(), { only, force }); }
+/** Build the tables, then recompile the index over them.
+ *
+ *  Here and not in a hook: the index is derived from the tables, so the moment
+ *  the tables move is the only moment it can go stale. Failure is not fatal —
+ *  every reader of the index falls back to scanning the tables, which is what
+ *  it did before arc existed. */
+export async function build({ only = null, force = false, index = true } = {}) {
+  const r = await runner.build(registry(), { only, force });
+  if (index && (r.built?.length || force)) {
+    try { const arc = await import("../arc/index.js"); arc.build(); } catch { /* the tables still answer */ }
+  }
+  return r;
+}
 export async function stale({ only = null } = {}) { return runner.stale(registry(), { only }); }
 
 const onDisk = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };

@@ -11,9 +11,14 @@ import { VAR, OUT, ROOT, ensureDirs } from "../core/paths.js";
 import { load } from "../core/config.js";
 import * as store from "../core/store.js";
 import { text as estimateText, file as estimateFile } from "../tokens/estimate.js";
-import { now } from "../core/util.js";
+import { now, human } from "../core/util.js";
+import * as brief from "./brief.js";
 
-const CAPS = { "session-start": 600, prompt: 300, "pre-read": 200, "restate-rules": 700 };
+// A cap is what a band may cost, not what it should. `pre-read` and
+// `pre-search` are the two that carry an ANSWER rather than a pointer, so they
+// are the two allowed to be expensive: what they replace is the whole file or
+// the whole search.
+const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-search": 500, "post-tool": 300, "restate-rules": 700 };
 
 // ── the janitor's three touch points ────────────────────────────────────────
 //
@@ -138,37 +143,204 @@ function restateRules(payload, cfg) {
   return true;
 }
 
+const TASK_SHAPED = /\b(fix|add|implement|refactor|change|update|write|remove|migrate|debug|investigate|make|build|wire|optimi[sz]e|ensure|analyse|analyze|audit|port|rename)\b/i;
+/** A prompt worth locating. A question, an acknowledgement or a one-word reply
+ *  is not, and running the locator on one spends a turn's budget on nothing. */
+export const isTask = (p) => String(p).length >= 40 && TASK_SHAPED.test(String(p));
+
+/** The turn this whole box was waiting for.
+ *
+ *  `bb uptake` on this workspace: pinpoint fired in 3 of the 13 sessions that
+ *  opened five or more distinct files, and those 13 opened between 30 and 598
+ *  files each. A suggestion in additionalContext is a suggestion — it was
+ *  measured, and it loses to the model's own habit about three times in four.
+ *
+ *  So the hook runs it instead of recommending it. Measured 0.47s on this tree
+ *  against a 15s budget, because every input pinpoint reads is a stored
+ *  artefact (the symbol tables, the anchors, the oversight scan, the findings)
+ *  and it computes none of them.
+ *
+ *  What enters the window is the MAP, about 300 tokens. The quoted regions stay
+ *  on disk until a read asks for one, and `pre-read` serves it then: paying for
+ *  every located region on every task prompt would spend the saving on regions
+ *  the session never opens. */
+async function autoPinpoint(payload, p) {
+  const sessionId = String(payload.session_id || "");
+  // A brief already standing for this prompt is not rebuilt. The same prompt
+  // comes back after a denial, and re-locating it would bill the turn twice.
+  const held = brief.current({ maxAgeMin: 45, sessionId });
+  if (held && held.problem === p.slice(0, 400)) {
+    emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(brief.band(held), CAPS.prompt) } });
+    return true;
+  }
+  const t0 = Date.now();
+  const pp = await import("../pinpoint/index.js");
+  const b = await pp.build(p, { kind: "fix" });
+  const rec = brief.record(b, { sessionId, briefPath: b.path });
+  brief.activate(rec);
+  brief.prune();
+  log("prompt", `pinpoint ${b.scope.length} files, ${b.anchors.length} regions, ${b.verdict} in ${Date.now() - t0}ms`);
+  emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(brief.band(rec), CAPS.prompt) } });
+  return true;
+}
+
 async function prompt(payload) {
   const cfg = load();
   if (restateRules(payload, cfg)) return;
   if (!cfg.wire.inject_context) return;
-  const p = String(payload.prompt || payload.user_prompt || "");
-  // Only a task-shaped prompt earns the suggestion; a question or a one-word reply does not.
-  if (p.length < 40 || !/\b(fix|add|implement|refactor|change|update|write|remove|migrate|debug|investigate|make|build)\b/i.test(p)) return;
+  const p = String(payload.prompt || payload.user_prompt || "").trim();
+  if (!isTask(p)) return;
+  if (cfg.wire.auto_pinpoint) {
+    try { if (await autoPinpoint(payload, p)) return; }
+    catch (e) {
+      // A failed locate must not cost the turn its context: fall through to the
+      // line this hook has always emitted.
+      log("prompt", `auto-pinpoint ${String(e && e.message || e).slice(0, 160)}`);
+    }
+  }
   const ctx = `bundlebox: before searching, run \`bb pinpoint "${p.slice(0, 120).replace(/"/g, "'")}"\` — it locates the symbols, quotes the regions and budgets the scope for 0 tokens (or call the bb_pinpoint MCP tool).`;
   emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(ctx, CAPS.prompt) } });
 }
 
+const capacityOf = (cfg) => Number(cfg.budget.max_tokens) - Number(cfg.budget.reserve_output);
+const decide = (event, d, cap) => emit({ hookSpecificOutput: { hookEventName: event, permissionDecision: d.permissionDecision,
+  permissionDecisionReason: capTokens(d.permissionDecisionReason, cap) } });
+
+/** Serve the region, then price the file.
+ *
+ *  The first branch is the new one and it is a DENIAL: pinpoint already located
+ *  and quoted this region, so a read of it buys the window nothing it is not
+ *  already about to be handed. The reason carries the quote, which is why its
+ *  cap is the largest in this file — what it replaces is the whole file.
+ *
+ *  A file in SCOPE is never fully blocked. Claude Code requires one successful
+ *  read of a file before it will edit it, so blocking the scope blocks the
+ *  change; the denial says to read the RANGE, and that read is allowed. */
 async function preRead(payload) {
   const cfg = load();
   if (!cfg.wire.guard_reads) return;
   const fp = payload?.tool_input?.file_path || payload?.tool_input?.path;
-  if (!fp || payload?.tool_input?.limit) return;           // a ranged read is already the advice
+  if (!fp) return;
+  if (cfg.wire.serve_from_brief) {
+    const rec = brief.current({ maxAgeMin: Number(cfg.wire.brief_max_age_min) || 45, sessionId: String(payload.session_id || "") });
+    const v = brief.readVerdict(rec, fp, {
+      offset: Number(payload?.tool_input?.offset) || 0, limit: Number(payload?.tool_input?.limit) || 0,
+      capacity: capacityOf(cfg), minShare: Number(cfg.wire.serve_min_share) || 0.02,
+    });
+    if (v) { decide("PreToolUse", v, CAPS["pre-read"]); return; }
+  }
+  if (payload?.tool_input?.limit) return;                  // a ranged read is already the advice
   const tokens = estimateFile(fp);
-  const capacity = Number(cfg.budget.max_tokens) - Number(cfg.budget.reserve_output);
+  const capacity = capacityOf(cfg);
   if (!tokens || tokens < capacity * 0.35) return;
   // Advisory, never a denial: the agent may need the whole file. But it should know the price.
   emit({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow",
     permissionDecisionReason: capTokens(`bundlebox: ${path.basename(fp)} is ~${Math.round(tokens / 1000)}k tokens (${Math.round(100 * tokens / capacity)}% of the working window). Read a range with offset/limit; \`bb pinpoint\` or the bb_pinpoint tool quotes the region you need.`, CAPS["pre-read"]) } });
 }
 
-/** The input axis. Imported lazily: every other hook on this list runs once per
- *  session or once per prompt, and this one runs once per TOOL CALL, so the
- *  cost of loading a module it will not use is paid hundreds of times. */
+/** The other half of the input axis: a search whose answer is already indexed.
+ *
+ *  `bb uptake` measures this one too — the snapgen tables were read in 5 of the
+ *  15 sessions that ran a search. A declaration search is the case where the
+ *  answer is not merely cheaper to look up, it is already written down:
+ *  `symbols-*.md` is a name/file/line index rebuilt by fingerprint. So the
+ *  denial hands back the matching rows and the search never runs.
+ *
+ *  What is NOT denied matters as much. A string literal, a call site, a comment,
+ *  a pattern no declaration index can answer: the tables have no rows for it,
+ *  `tableHits` returns nothing and the search goes through untouched. */
+async function preSearch(payload) {
+  const cfg = load();
+  if (!cfg.wire.guard_searches) return;
+  const tool = String(payload.tool_name || "");
+  const input = payload.tool_input || {};
+  const rec = brief.current({ maxAgeMin: Number(cfg.wire.brief_max_age_min) || 45, sessionId: String(payload.session_id || "") });
+
+  if (tool === "Grep") {
+    const v = brief.searchVerdict(rec, input.pattern, { glob: input.glob || "", pathArg: input.path || "", cwd: String(payload.cwd || "") });
+    if (v) decide("PreToolUse", v, CAPS["pre-search"]);
+    return;
+  }
+  if (tool !== "Bash") return;
+  // Half the reads and searches in the measured transcripts arrive through the
+  // shell, not through Read and Grep. A guard that only watches the dedicated
+  // tools is a guard that measures its own blind spot.
+  const seg = brief.parseBash(input.command);
+  if (!seg) return;
+  if (seg.kind === "search") {
+    const v = brief.searchVerdict(rec, seg.pattern, { pathArg: seg.pathArg || "", cwd: String(payload.cwd || "") });
+    if (v) decide("PreToolUse", v, CAPS["pre-search"]);
+    return;
+  }
+  if (!cfg.wire.serve_from_brief) return;
+  const v = brief.readVerdict(rec, seg.file, { offset: seg.offset, limit: seg.limit, capacity: capacityOf(cfg), minShare: Number(cfg.wire.serve_min_share) || 0.02 });
+  if (v) decide("PreToolUse", v, CAPS["pre-read"]);
+}
+
+/** The input axis, and the output axis.
+ *
+ *  Imported lazily: every other hook on this list runs once per session or once
+ *  per prompt, and this one runs once per TOOL CALL, so the cost of loading a
+ *  module it will not use is paid hundreds of times. */
 async function postTool(payload) {
-  if (!load().sieve?.enabled) return;
-  const { postTool: run } = await import("../sieve/index.js");
-  run(payload);
+  const cfg = load();
+  if (cfg.sieve?.enabled) {
+    const { postTool: run } = await import("../sieve/index.js");
+    run(payload);
+  }
+  if (cfg.slop?.guard_writes) await slopGuard(payload, cfg);
+  if (cfg.lathe?.record_shapes) await recordShape(payload, cfg);
+}
+
+/** The automation engine's input, recorded when it is free.
+ *
+ *  `bb lathe` needs the ORDER of the commands a session ran. Mining that out of
+ *  the transcripts took four minutes of wall clock for 4.8 seconds of CPU —
+ *  1.4GB of JSONL parsed in full to recover one string per tool call. This hook
+ *  is already running on every tool call, so appending forty bytes here is the
+ *  cheapest place in the system to learn the same fact.
+ *
+ *  The SHAPE only: `git commit`, never the message. The argument is the part
+ *  that differs every time, so it is never the habit, and a log of shapes
+ *  cannot carry a secret somebody passed on a command line. */
+async function recordShape(payload, cfg) {
+  if (String(payload.tool_name || "") !== "Bash") return;
+  const [rec, lathe] = await Promise.all([import("../lathe/record.js"), import("../lathe/index.js")]);
+  const n = rec.record(payload, { shapesOf: lathe.commandShapes });
+  if (n && Math.random() < 0.01) rec.rotate({ max: Number(cfg.lathe.max_rows) || rec.MAX_ROWS });
+}
+
+/** The prose the AGENT writes, measured by the same rules as the prose bb
+ *  writes.
+ *
+ *  `bb slop` has always existed and every brief, commit message and PR body
+ *  this factory emits goes through it. What it never saw was the other half of
+ *  the session: the markdown the model writes into the tree, which is read by
+ *  the NEXT session and billed again, every time, until somebody deletes it. A
+ *  document is the only artefact here that charges rent.
+ *
+ *  Advisory, and deliberately so. A hedge is sometimes the honest word, and a
+ *  hook that rewrites somebody's sentence without being asked is worse than the
+ *  sentence. This reports the rule, the line and the token cost, and stops. */
+async function slopGuard(payload, cfg) {
+  const tool = String(payload.tool_name || "");
+  if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(tool)) return;
+  const fp = String(payload?.tool_input?.file_path || payload?.tool_input?.path || "");
+  if (!/\.(md|mdx|markdown|txt|rst)$/i.test(fp)) return;     // prose files only: code has its own detector
+  const edits = payload?.tool_input?.edits;
+  const written = [payload?.tool_input?.content, payload?.tool_input?.new_string,
+    ...(Array.isArray(edits) ? edits.map((e) => e && e.new_string) : [])].filter((x) => typeof x === "string" && x.trim());
+  if (!written.length) return;
+  const { lint } = await import("../slop/index.js");
+  const { text: estimate } = await import("../tokens/estimate.js");
+  const r = lint(written.join("\n\n"));
+  const max = Number(cfg.slop.max_hits) || 5;
+  if (r.count < (Number(cfg.slop.floor) || 3)) return;        // one hedge is a word, not a habit
+  const top = Object.entries(r.byRule).sort((a, b) => b[1] - a[1]).slice(0, max);
+  const lines = r.hits.slice(0, max).map((h) => `  ${path.basename(fp)}:${h.line} ${h.rule} — "${h.text}"`);
+  emit({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: capTokens(
+    `bundlebox anti-slop: ${r.count} hit${r.count === 1 ? "" : "s"} in what you just wrote to ${path.basename(fp)} (~${human(estimate(written.join("\n"), "prose"))} tokens, re-read and billed by every session after this one).\n${lines.join("\n")}\n${top.map(([k, v]) => `${k} x${v}`).join(", ")} — \`bb slop ${fp}\` for all of them, \`bb slop fix ${fp} --apply\` strips what cannot lose a fact.`,
+    CAPS["post-tool"]) } });
 }
 
 /** Nothing is emitted from here. Whether a PreCompact hook's stdout reaches the
@@ -185,17 +357,60 @@ async function preCompact(payload) {
   } catch (e) { log("pre-compact", `marker ${String(e && e.message || e).slice(0, 120)}`); }
 }
 
+/** The Stop hook: the fourth verification layer, and the only one that is not
+ *  the work reviewing itself.
+ *
+ *  It executes nothing. What it can say is whether the ledger this work
+ *  declared is still sitting there with gates unmet — the one question a
+ *  session about to report "done" cannot answer about itself. Silent when there
+ *  is no ledger, because a workspace that never declared a bar has not failed
+ *  to meet one. */
+async function stop(payload) {
+  const cfg = load();
+  if (!cfg.finish?.stop_hook) return;
+  const { LEDGER, stopHook } = await import("../finish/index.js");
+  if (!fs.existsSync(LEDGER())) return;
+  const r = stopHook(JSON.stringify(payload || {}));
+  const text = String(r.out || "").trim();
+  if (text) process.stdout.write(text.endsWith("\n") ? text : text + "\n");
+  else if (r.err) log("stop", `checker ${String(r.err).slice(0, 160)}`);
+}
+
 async function sessionEnd(payload) {
   const cfg = load();
   if (cfg.wire.measure_sessions) {
     const { end } = await import("../tokens/session.js");
-    const line = await end({ sessionId: payload.session_id || "", transcriptPath: payload.transcript_path || "" });
+    const r = await end({ sessionId: payload.session_id || "", transcriptPath: payload.transcript_path || "" });
+    // `end` returns {line, wrote, measure}. Stringifying the object printed
+    // "[object Object]" at the end of every session; the line is the one field
+    // meant for a person to read.
+    const line = r && typeof r === "object" ? r.line : r;
     if (line) process.stderr.write(String(line).trim() + "\n");   // stderr: shown to the person, never parsed by the harness
   }
   // Sleep-time compute, in the sense Letta uses it: the memory work happens
   // outside the session that pays for it. This is also the only moment the mark
   // pass has a complete transcript to trace reachability from — during the
   // session the file it needs is still being written.
+  // The per-session brief record goes with the session that owned it. Age is
+  // the only signal a hook has for the ones whose sessions never reached this
+  // handler.
+  try { brief.sweep(); } catch { /* a stale record expires on its own */ }
+  // Sleep-time compute, alongside the janitor's recompile and for the same
+  // reason: the model wants what this session did, and the session that pays
+  // for a turn should not pay for learning from it. 1.4s measured on this tree,
+  // because it reads the recorded shapes and not the transcripts.
+  if (cfg.lathe?.learn_on_end) {
+    try {
+      const lathe = await import("../lathe/index.js");
+      const m = await lathe.learn();
+      if (m.error) log("session-end", `lathe ${m.error}`);
+      else {
+        const em = await import("../lathe/emit.js");
+        const r = await em.all(m, { apply: true });
+        log("session-end", `lathe ${m.sequence.verbs.length} verb + ${m.sequence.shell.length} shell habit(s), ${r.rows.filter((x) => x.state === "wrote").length} artefact(s)`);
+      }
+    } catch (e) { log("session-end", `lathe ${String(e && e.message || e).slice(0, 160)}`); }
+  }
   if (!cfg.janitor?.refresh) return;
   try {
     const { build } = await import("../janitor/index.js");
@@ -217,9 +432,11 @@ export async function handle(event) {
     if (event === "session-start") await sessionStart(payload);
     else if (event === "prompt") await prompt(payload);
     else if (event === "pre-read") await preRead(payload);
+    else if (event === "pre-search") await preSearch(payload);
     else if (event === "post-tool") await postTool(payload);
     else if (event === "pre-compact") await preCompact(payload);
-    else if (event === "session-end" || event === "stop") await sessionEnd(payload);
+    else if (event === "stop") await stop(payload);
+    else if (event === "session-end") await sessionEnd(payload);
     else log(event || "(none)", "unknown event");
     log(event, `ok ${Date.now() - t0}ms`);
   } catch (e) {
@@ -227,4 +444,4 @@ export async function handle(event) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "post-tool", "pre-compact", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "pre-search", "post-tool", "pre-compact", "stop", "session-end"];

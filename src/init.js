@@ -98,7 +98,20 @@ export const commands = {
       const shown = Object.entries(flat).map(([k, v]) => `${k}: ${v.quick || v.full || "?"}`).filter((x) => !x.endsWith("?"));
       out(`  gates: ${shown.length ? shown.join("; ") : "none detected — set kernel.gates so lanes can prove their work"}`);
       if (gi.changed) out(`  .gitignore: added ${gi.added.join(", ")}`);
-      out("\n  next:  bb doctor  ·  bb wire --apply  ·  bb scan  ·  bb kernel install (optional, faster)");
+      // A config file is not an environment. `bb init` used to stop here, so a
+      // fresh workspace had no tables, no index, no findings and no page, and
+      // nothing said so — the first session simply searched the tree, which is
+      // the cost this box exists to remove. The row below names what is still
+      // missing and the one command that builds all of it.
+      try {
+        const env = await import("./env.js");
+        const rep = env.report();
+        out(`  environment: ${rep.present} of ${rep.total} artefacts${rep.complete ? " — complete" : `; missing ${rep.missing.join(", ")}`}`);
+        out(`\n  next:  bb wire --apply  ·  bb env up --apply${rep.complete ? "" : "   (builds the missing artefacts; no tokens)"}  ·  bb cron --apply   (keeps them fresh, no agent)`);
+        out("         bb doctor  ·  bb kernel install  ·  cargo build --release --manifest-path arc/Cargo.toml   (optional, faster)");
+      } catch {
+        out("\n  next:  bb doctor  ·  bb wire --apply  ·  bb scan  ·  bb kernel install (optional, faster)");
+      }
       return 0;
     },
   },

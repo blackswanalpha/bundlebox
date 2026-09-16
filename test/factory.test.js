@@ -14,6 +14,7 @@ process.env.BB_ROOT = root;
 process.env.HOME = tmp;
 
 const store = await import("../src/core/store.js");
+const paths = await import("../src/core/paths.js");
 const monitor = await import("../src/monitor/index.js");
 const { Frame, AGGS } = await import("../src/frames/frame.js");
 const frames = await import("../src/frames/index.js");
@@ -294,4 +295,18 @@ test("a log line becomes a signature with every digit, uuid, hash and path erase
   assert.ok(!/1234|99/.test(a), "the duration varies between two instances of one event");
   assert.ok(!/srv/.test(a), "a path of three or more segments is erased");
   assert.match(a, /^ERROR user/, "the timestamp is erased and the message survives");
+});
+
+test("rel resolves a relative path against the workspace root, not cwd", () => {
+  // The failure this locks down: `rel` used path.resolve, which is cwd-relative,
+  // so it agreed with the root only while cwd happened to BE the root. A `bb`
+  // run from a subdirectory turned "src/a.js" into an absolute path in whatever
+  // tree cwd was in.
+  const cwd = process.cwd();
+  try {
+    process.chdir(os.tmpdir());
+    assert.equal(paths.rel("src/session.js"), "src/session.js");
+    assert.equal(paths.rel(paths.abs("src/session.js")), "src/session.js");
+    assert.equal(paths.rel("."), ".");
+  } finally { process.chdir(cwd); }
 });

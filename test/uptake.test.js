@@ -10,7 +10,17 @@
 //      fired" would be a measurement of nothing dressed as a finding.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { observe, segments, surfaces, READ_FLOOR } from "../src/uptake/index.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+// A fixture root, set before the module under test resolves ROOT: the brief
+// records the hook leaves are read from the workspace, and this test writes one.
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bb-uptake-")));
+process.env.BB_ROOT = root;
+fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "fixture", type: "module" }));
+
+const { observe, segments, surfaces, READ_FLOOR, briefedSessions } = await import("../src/uptake/index.js");
 
 const bash = (command) => ({ name: "Bash", input: { command } });
 const turnOf = (...toolUses) => ({ toolUses, toolResults: [] });
@@ -99,4 +109,31 @@ test("a miss carries the evidence, not just the verdict", () => {
   const many = observe([turnOf(...Array.from({ length: 12 }, (_, i) => ({ name: "Read", input: { file_path: `f${i}.js` } })))]);
   assert.match(defs.find((s) => s.id === "pinpoint").detail(many), /12 file\(s\), 12 distinct/);
   assert.match(defs.find((s) => s.id === "cli").detail(seen(bash("ls"), bash("pwd"))), /2 shell call\(s\), none of them bb/);
+});
+
+// ── a surface that runs itself must stay measurable ─────────────────────────
+//
+// `wire.auto_pinpoint` runs the locator from UserPromptSubmit. A hook leaves no
+// turn in a transcript, so automating the surface would have made it invisible
+// to the verb whose whole job is saying whether the surface was reached for.
+
+test("a brief recorded by the hook counts the session as located", () => {
+  const dir = path.join(root, ".bundlebox", "var", "brief");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "sess-hooked.json"), JSON.stringify({ v: 1, at: new Date().toISOString(), session_id: "sess-hooked" }));
+  const briefed = briefedSessions();
+  assert.ok(briefed.has("sess-hooked"));
+  assert.ok(!briefed.has("sess-never"));
+
+  const defs = surfaces();
+  const pin = defs.find((s) => s.id === "pinpoint");
+  const auto = defs.find((s) => s.id === "auto");
+  assert.ok(auto, "the auto surface is not declared");
+  const hooked = { session_id: "sess-hooked", bbVerbs: [], mcp: [], opens: 40, files: 12, searches: 3, snapgen: 0, shell: 0 };
+  const cold = { ...hooked, session_id: "sess-never" };
+  assert.equal(pin.fired(hooked), true, "the hook located it, which is the case a transcript cannot show");
+  assert.equal(pin.fired(cold), false);
+  assert.equal(auto.fired(hooked), true);
+  assert.equal(auto.fired(cold), false);
+  assert.match(auto.detail(cold), /no brief recorded/);
 });

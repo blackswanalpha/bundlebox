@@ -1,0 +1,29 @@
+Today I installed 137 marketing skills into my AI coding setup. Then I measured what they cost me before I asked a single question.
+
+12,600 tokens, every session, purely to list what is available before any work starts.
+
+The tool I have spent the last month building saves 15,100 tokens per session. I had just handed 83% of that back for a menu I read once.
+
+bundlebox exists to stop exactly that, so here is what it is.
+
+When you use an AI coding agent, you pay for every word it reads. Most of those words are not the work. They are orientation: where does this function live, do these two files agree, what is the command that proves the change, what moved since Friday. Across 170 sessions I measured, the typical session re-opened 37% of the files it had already read and spent 88% of its tool turns on a single lookup.
+
+None of that is judgement. All of it is arithmetic — a count, a parse, a path check, a set difference. A script answers those for nothing.
+
+So bundlebox answers them first. It scans the repository before the agent opens, packs the answers into a brief sized to fit the window, starts the agent on the smallest context that holds the brief, and afterwards reads the transcript to report what the session spent and what it never had to.
+
+It never calls a model itself. Not once. That constraint is the product.
+
+Measured on the reference workspace:
+- opening window per session: 44.3k to 29.2k tokens, before a word of work
+- the same plan: 5 sessions and 1.3M projected tokens, down to 2 sessions and 351k
+- one pipeline tick: 226 agent turns displaced in 133 seconds, 0 model tokens
+
+Back to the 137 skills. Fifteen are loaded. The other 122 sit on disk and get switched in when a job calls for them. 12.6k tokens down to 2.3k, one command in either direction.
+
+Same rule, turned on myself: load what the work needs, measure what it cost, and stop paying rent on a menu you read once.
+
+npm i -g bundlebox
+github.com/blackswanalpha/bundlebox
+
+#AIAgents #DeveloperTools #ContextEngineering #ClaudeCode #OpenSource

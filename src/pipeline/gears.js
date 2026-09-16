@@ -39,7 +39,14 @@ export const GEARS = [
     on: ["cron", "session-start", "hand"],
     stages: [
       { verb: "snapgen", args: ["build"], skip_if_fresh: true, inputs: source, description: "the reference tables" },
+      // The index the PreToolUse guards read on every tool call. It is derived
+      // from the tables above, so it belongs directly after them: 1.80ms from
+      // the markdown, 0.14ms from here.
+      { verb: "arc", args: ["build"], skip_if_fresh: true, inputs: source, optional: true, description: "the tables, compiled to one binary index" },
       { verb: "oversight", args: ["guidelines"], flags: { build: true }, skip_if_fresh: true, inputs: source, optional: true, description: "the guidelines block" },
+      // Every measured gap, located and budgeted before a session sees it. Only
+      // when something is open: a worklist over an empty store is an empty file.
+      { verb: "pinpoint", args: ["gaps"], when: "open_findings > 0", optional: true, description: "each finding and unproven standard, as a located brief" },
       { verb: "buckmaster", args: ["recommend"], description: "the fired rules, as lines a person can paste" },
     ],
   }),
@@ -68,12 +75,16 @@ export const GEARS = [
     ],
   }),
   gear({
-    name: "buckmaster", description: "train the process model on everything above",
+    name: "buckmaster", description: "train the process model on everything above, then turn it into automation",
     on: ["cron", "hand"],
     stages: [
       { verb: "buckmaster", args: ["signals"], description: "per-session signals off the transcripts" },
       { verb: "buckmaster", args: ["rules"], description: "which signals crossed a threshold" },
       { verb: "buckmaster", args: ["memory"], description: "what the factory came to believe" },
+      // LATHE-1, after the models it reads. `learn` is 1.4s because it reads the
+      // recorded command shapes rather than the transcripts they came from.
+      { verb: "lathe", args: ["learn"], optional: true, description: "the habits, from the recorded shapes and the episodes" },
+      { verb: "lathe", args: ["build"], flags: { apply: true }, optional: true, description: "scripts, snippets, boilerplate and completions" },
     ],
   }),
   gear({
@@ -122,10 +133,21 @@ export const GEARS = [
     ],
   }),
   gear({
-    name: "factory", description: "one tick of the whole free path: intake, orient, measure, buckmaster",
+    name: "bootstrap", description: "bring a fresh workspace up: find what is wrong, build what a session reads, rebuild the page",
+    on: ["hand"],
+    stages: [],
+    // `measure` is deliberately absent: it folds transcripts, and a workspace
+    // being bootstrapped has none. Everything here is derived from the tree.
+    chain: ["intake", "orient", "buckmaster", "watch"],
+  }),
+  gear({
+    name: "factory", description: "one tick of the whole free path: intake, orient, measure, buckmaster, watch",
     on: ["cron"],
     stages: [],
-    chain: ["intake", "orient", "measure", "buckmaster"],
+    // `watch` last, and it used to be missing entirely: the cron tick folded the
+    // ledger and rebuilt nothing, so the one page this workspace has showed the
+    // state of whenever somebody last ran `bb commandcenter build` by hand.
+    chain: ["intake", "orient", "measure", "buckmaster", "watch"],
   }),
   gear({
     name: "full", description: "the whole pipeline: what is happening, what is wrong, what a session gets, what the system does, what it cost",

@@ -12,7 +12,9 @@
 // Cursor, Copilot, Windsurf, Cline/Roo, Aider and Amp are from vendor docs and
 // are marked unverified so a wrong guess is a known gap, never a silent one.
 import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
+import { PKG_ROOT } from "../core/paths.js";
 
 export const START = "<!-- bundlebox:start -->";
 export const END = "<!-- bundlebox:end -->";
@@ -56,11 +58,20 @@ export const CLAUDE_HOOKS = [
   { event: "SessionStart", cmd: "session-start", timeout: 30 },
   { event: "UserPromptSubmit", cmd: "prompt", timeout: 15 },
   { event: "PreToolUse", matcher: "Read", cmd: "pre-read", timeout: 10 },
+  // The search side of the same guard. Grep is the declared tool; Bash is where
+  // the measured transcripts actually do it — `sed -n`, `cat`, `grep -rn`. The
+  // handler parses one simple read or one simple search out of a command and
+  // leaves everything else alone, so `npm test` is never a candidate.
+  { event: "PreToolUse", matcher: "Grep|Bash", cmd: "pre-search", timeout: 10 },
   // No matcher: which tools it may touch is an allowlist inside the handler, so
   // a tool added to Claude Code cannot quietly become eligible by matching a
   // pattern here. Off unless `sieve.enabled`, and the handler returns instantly.
   { event: "PostToolUse", cmd: "post-tool", timeout: 15 },
   { event: "PreCompact", cmd: "pre-compact", timeout: 30 },
+  // The fourth verification layer, and the only one independent of the work:
+  // does the ledger this session declared still have unmet gates? Executes no
+  // check, and is silent in a workspace with no GATES.md.
+  { event: "Stop", cmd: "stop", timeout: 30 },
   { event: "SessionEnd", cmd: "session-end", timeout: 120, statusMessage: "bundlebox: measuring what this session used and saved" },
 ];
 
@@ -68,6 +79,39 @@ export const HOOK_PREFIX = "bb hook ";
 export const isOurHook = (h) => h && typeof h === "object" && typeof h.command === "string" && /(^|[\s/])bb(\.js)? hook /.test(h.command);
 
 const home = (...p) => path.join(os.homedir(), ...p);
+
+// ── skills ──────────────────────────────────────────────────────────────────
+//
+// A skill is a directory an agent loads on its own trigger, so it is the one
+// surface here that costs nothing until the moment it is needed — unlike the
+// instructions block, which arrives in every system prompt and is billed
+// whether or not the session was about that.
+//
+// Enumerated from the package, not listed here. A skill added to `skills/` is
+// wired by the next `bb wire --apply`, and a list in this file that disagreed
+// with the directory would be a third thing to keep in sync.
+export const SKILLS_DIR = () => path.join(PKG_ROOT, "skills");
+export function skills() {
+  let names;
+  try { names = fs.readdirSync(SKILLS_DIR(), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
+  catch { return []; }
+  const out = [];
+  for (const name of names) {
+    const dir = path.join(SKILLS_DIR(), name);
+    let files;
+    try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort(); } catch { continue; }
+    if (!files.includes("SKILL.md")) continue;               // a directory with no SKILL.md is not a skill
+    out.push({ name, dir, files });
+  }
+  return out;
+}
+
+/** Skill rows for an agent that loads them from a directory. */
+function skillFiles(base) {
+  const rows = [];
+  for (const s of skills()) for (const f of s.files) rows.push({ path: path.join(base, s.name, f), kind: "copy", from: path.join(s.dir, f) });
+  return rows;
+}
 
 /** Per-agent descriptors. `files(scope)` returns the edits for project or global scope;
  *  an agent with no global location returns [] for global and the caller says so. */
@@ -80,11 +124,13 @@ export const AGENTS = {
       ? [
         { path: home(".claude", "CLAUDE.md"), kind: "block" },
         { path: home(".claude", "settings.json"), kind: "json", edit: "claude-hooks" },
+        ...skillFiles(home(".claude", "skills")),
       ]
       : [
         { path: "CLAUDE.md", kind: "block" },
         { path: ".mcp.json", kind: "json", edit: "mcp", key: "mcpServers", shape: () => ({ command: SERVER.command, args: SERVER.args }) },
         { path: path.join(".claude", "settings.json"), kind: "json", edit: "claude-hooks" },
+        ...skillFiles(path.join(".claude", "skills")),
       ],
   },
   codex: {
@@ -95,10 +141,12 @@ export const AGENTS = {
       ? [
         { path: home(".codex", "AGENTS.md"), kind: "block" },
         { path: home(".codex", "config.toml"), kind: "toml", section: "mcp_servers.bundlebox", body: `command = "bb"\nargs = ["mcp"]` },
+        ...skillFiles(home(".codex", "skills")),
       ]
       : [
         { path: "AGENTS.md", kind: "block" },
         { path: path.join(".codex", "config.toml"), kind: "toml", section: "mcp_servers.bundlebox", body: `command = "bb"\nargs = ["mcp"]` },
+        ...skillFiles(path.join(".codex", "skills")),
       ],
   },
   gemini: {
