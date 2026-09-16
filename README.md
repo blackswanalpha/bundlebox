@@ -26,8 +26,11 @@ bb fix       ->  patches     local actuators close what they can             0 t
 bb cookbook  ->  a board     what the RUNNING system does, run by the kernel 0 tokens
 bb simulate  ->  limits      what it does at a hundred callers               0 tokens
 bb compile   ->  units       what to do about the rest, packed to one window
+bb pinpoint  ->  a brief     where the work is, quoted and budgeted, before a model opens
+bb arc       ->  an index    every declaration in one file, read in microseconds  0 tokens
 bb route     ->  lanes       who does it, where, in what wave
 bb run       ->  sessions    the only verb that spends
+bb finish    ->  a ledger    what proves this done, declared first and run after   0 tokens
 bb git       ->  PRs         commit, push, draft PR, review, gated merge     0 tokens
 bb runbook   ->  the system  is it up, is it ANSWERING, what broke since    0 tokens
 bb recom     ->  an answer   what was already driven, and whether it holds   0 tokens
@@ -37,6 +40,8 @@ bb sieve     ->  a window    a tool result shrunk before it is billed twice    0
 bb uptake    ->  a verdict   of everything wired in, what sessions reached for 0 tokens
 bb monitor   ->  the window  what the 5-hour block has left, and the guard   0 tokens
 bb session   ->  the bill    what a session used and saved, measured         0 tokens
+bb lathe     ->  automation  what this box did by hand more than twice, as scripts 0 tokens
+bb env       ->  a checklist what a complete .bundlebox holds, and whether this has 0 tokens
 ```
 
 Measured on the reference workspace (regenerate with `bb session`, `bb tokens profile --probe`, `bb buckmaster episodes`):
@@ -55,7 +60,7 @@ npm i -g bundlebox
 curl -fsSL https://raw.githubusercontent.com/blackswanalpha/bundlebox/main/scripts/install.sh | sh
 ```
 
-Needs Node ≥ 20 and git. Linux, macOS and Windows are supported: CI runs the full suite on all three against Node 20, 22 and 24. Two known gaps remain on Windows — a **piped** acceptance gate reports the last command's exit code rather than the first failure, because `cmd.exe` has no `set -o pipefail` (unpiped gates are exact), and `bb session` may not find transcripts, because the name Claude Code gives its projects directory there has not been verified. Two optional runtimes make it faster and smarter, and
+Needs Node ≥ 20 and git. Linux, macOS and Windows are supported: CI runs the full suite on all three against Node 20, 22 and 24. Two known gaps remain on Windows — a **piped** acceptance gate reports the last command's exit code rather than the first failure, because `cmd.exe` has no `set -o pipefail` (unpiped gates are exact), and `bb session` may not find transcripts, because the name Claude Code gives its projects directory there has not been verified. Three optional Rust and Python components make it faster and smarter, and
 everything degrades cleanly without them:
 
 - **Rust kernel** (`bbk`): tree walks, fingerprints, token estimates, duplicate
@@ -63,6 +68,12 @@ everything degrades cleanly without them:
   `bb kernel install` fetches a release binary; `bb kernel build` compiles it
   with cargo. Without it the JS implementations run, and a selftest pins both
   to identical answers.
+- **Rust index compiler** (`arc`): compiles the derived symbol tables into one
+  binary index the read and search guards answer from, 13x faster than scanning
+  the tables in a cold hook process. `bb arc build`, recompiled by
+  `bb snapgen build` when the tables move. Every reader falls back to scanning
+  the tables when the index is absent, truncated or not an index, because "there
+  is no index" and "nothing is declared" are different answers.
 - **Python expert system** (`bundlebox_expert`, stdlib only): the rule engine
   with explainable derivations, confidence shrinkage, transcript signals, the
   process model and memory. `bb buckmaster` needs python3 ≥ 3.9; nothing in the
@@ -76,13 +87,17 @@ There are no npm dependencies. A cron worker at 03:00 runs what is on disk or it
 cd your-repo
 bb init            # detect languages, agents and gates; write .bundlebox/config.json
 bb doctor          # what this box can run, which runtime serves each op
-bb wire --apply    # hooks, instruction blocks and MCP entries for every agent found
+bb wire --apply    # hooks, skills, instruction blocks and MCP entries for every agent
+bb env up --apply  # build everything a session reads, so nothing is derived by searching
 bb scan            # the detectors. Seconds, 0 tokens
 bb findings        # what the store holds; bb explain <id> for one
+bb pinpoint gaps   # every open finding as a located, quoted, budgeted brief
+bb pinpoint next   # make one of them the ACTIVE brief the guards answer from
 bb compile         # findings -> units, each packed to one window (dry run)
 bb route           # units -> lanes (dry run)
 bb run             # writes the exact prompt and command per lane, spawns nothing
 bb run --apply     # spawns the sessions
+bb finish check    # run the acceptance ledger; unproven never reads as green
 bb session         # what the last session used and saved
 ```
 
@@ -102,22 +117,29 @@ Every verb is a dry run until `--apply`. Only `run` and `bridge send` can spend.
 
 ## Wiring into agents
 
-`bb wire --apply` installs three things per agent detected on the box: an
-instruction block between markers, hooks where the agent supports them, and an
-MCP server entry. `bb unwire` removes only its own blocks.
+`bb wire --apply` installs four things per agent detected on the box: an
+instruction block between markers, hooks where the agent supports them, skills
+where it loads them, and an MCP server entry. `bb unwire` removes only its own
+blocks, entries, hook rows and skills.
 
-| agent | instructions | hooks | MCP |
-|---|---|---|---|
-| Claude Code | `CLAUDE.md` | SessionStart (table index), PreToolUse Read (range advice past 35% of the window), PostToolUse (the sieve, off until `sieve.enabled`), PreCompact, SessionEnd (the bill) | `.mcp.json` |
-| Codex CLI | `AGENTS.md` | — | `.codex/config.toml` |
-| Gemini CLI | `GEMINI.md` | — | `.gemini/settings.json` |
-| Cursor | `.cursor/rules/bundlebox.mdc` | — | `.cursor/mcp.json` |
-| GitHub Copilot | `.github/copilot-instructions.md` | — | `.vscode/mcp.json` |
-| OpenCode | `AGENTS.md` | — | `opencode.json` |
-| Cline / Roo | `.clinerules/bundlebox.md` | — | — |
-| Windsurf | `.windsurf/rules/bundlebox.md` | — | — |
-| Aider | `.aider.conf.yml` reads `AGENTS.md` | — | — |
-| any command | `lanes.custom_command` with `{prompt_file}` `{cwd}` `{model}` | — | — |
+| agent | instructions | hooks | skills | MCP |
+|---|---|---|---|---|
+| Claude Code | `CLAUDE.md` | UserPromptSubmit (builds the brief), PreToolUse Read/Grep/Bash (serves it), SessionStart (table index), PostToolUse (the sieve, off until `sieve.enabled`), PreCompact, SessionEnd (the bill) | `.claude/skills` | `.mcp.json` |
+| Codex CLI | `AGENTS.md` | — | `.codex/skills` | `.codex/config.toml` |
+| Gemini CLI | `GEMINI.md` | — | — | `.gemini/settings.json` |
+| Cursor | `.cursor/rules/bundlebox.mdc` | — | — | `.cursor/mcp.json` |
+| GitHub Copilot | `.github/copilot-instructions.md` | — | — | `.vscode/mcp.json` |
+| OpenCode | `AGENTS.md` | — | — | `opencode.json` |
+| Cline / Roo | `.clinerules/bundlebox.md` | — | — | — |
+| Windsurf | `.windsurf/rules/bundlebox.md` | — | — | — |
+| Aider | `.aider.conf.yml` reads `AGENTS.md` | — | — | — |
+| any command | `lanes.custom_command` with `{prompt_file}` `{cwd}` `{model}` | — | — | — |
+
+Two skills ship and cost nothing until they trigger, which is the property an
+instruction block does not have: it arrives in every system prompt and is billed
+whether the session was about it or not. `bb-finish` is completion discipline
+backed by runnable gates; `antislop` is the prose ruleset with what each rule
+costs and what to write instead.
 
 `bb mcp` serves `bb_pinpoint`, `bb_context`, `bb_snapgen`, `bb_findings`,
 `bb_scan`, `bb_oversight_brief`, `bb_explain`, `bb_tokens_estimate` and
@@ -126,7 +148,38 @@ MCP server entry. `bb unwire` removes only its own blocks.
 Full guide, including the agents not in this table, how to wire one bundlebox
 does not know about, and how to drive agents as lanes:
 **[docs/agents.md](docs/agents.md)**. `bb uptake` then reports which of the
-installed surfaces the sessions actually reached for.
+installed surfaces the sessions reached for.
+
+### Advisory lost; enforcement is the fix
+
+`bb uptake` measured the gap. Over 15 sessions on this workspace the MCP tools
+fired in 0, `pinpoint` in 3 of the 13 sessions that opened five or more distinct
+files, and the reference tables in 5 of the 15 that ran a search. Those 13
+sessions opened between 30 and 598 files each. Everything wired in front of the
+agent was a recommendation, and a recommendation loses to the model's own habit
+about three times in four.
+
+So the wiring changed kind.
+
+**Run it, do not recommend it.** UserPromptSubmit builds the brief itself on a
+task-shaped prompt — 0.47s against a 15s budget, because every input `pinpoint`
+reads is a stored artefact and it computes none of them. What enters the window
+is the map, about 300 tokens.
+
+**Serve what it found.** PreToolUse denies a read whose region the brief already
+quotes and hands the quote back in the denial reason; denies an exact duplicate
+read; denies a declaration search the symbol tables already answer and hands back
+the rows; and asks before opening a file that was cut for budget. A file in scope
+is never fully blocked — Claude Code needs one successful read before it will
+edit, so the denial names the range and that read is allowed. Grep is the
+declared tool and Bash is where the measured transcripts search, so both
+are guarded.
+
+**Rank on specificity and path.** Enforcing a brief raises the cost of a bad
+locate. Inverse document frequency over the candidate set stops an exact match on
+a name the tree uses everywhere from outscoring a loose match on a rare one, and
+a directory named `wire` now counts as evidence about what a file is for. An
+explicitly named file is pinned first rather than scored.
 
 ## The verbs
 
@@ -137,16 +190,21 @@ installed surfaces the sessions actually reached for.
 | `run` | lanes on the chosen agent; env allowlist; hard timeout; acceptance as the verdict; `unproven` blocks `--pr` | spends |
 | `git` | commit, push, draft PR, review → findings, gated merge, with guards | 0 |
 | `tokens`, `session` | estimate, calibrate, probe the overhead, prices; used and saved per session, MEASURED / ESTIMATE | 0 (probe spends one turn) |
-| `snapgen`, `pinpoint`, `oversight` | fingerprinted tables; one problem → one budgeted brief; god files, bloat, duplication, vibe-coded marks and the guideline each produces | 0 |
+| `snapgen`, `oversight` | fingerprinted tables; god files, bloat, duplication, vibe-coded marks and the guideline each produces | 0 |
+| `pinpoint` | one problem → one located, quoted, budgeted brief. `gaps` turns every open finding, every oversight measurement and every declared standard that failed or has no evidence into one; `next` makes one the session's ACTIVE brief, which is the record the PreToolUse guards answer from. `unproven` never collapses into `failed`, and the scope of a failed standard is the files of the findings that failed it, not the area — handing over a directory is not localisation | 0 |
+| `arc` | the declaration index. The guards ask one question on every tool call — is this name declared, and where — and it was answered by scanning 20,000 lines of markdown with a regex per line. `arc` compiles those tables into one binary file: two sorted id arrays, one by name and one by the reversed name, so exact, prefix and suffix are each a single binary search. 2,322 declarations in 92.4KB. 1.80ms per call from the tables, 0.14ms cold from the index, 0.073ms warm | 0 |
+| `finish` | the acceptance ledger, derived from the active brief and the detected gates, written before the work and run after it. A `CHECK:` line is shell code, so `status` and `lint` never execute one and `approve` is the only verb that crosses that boundary — it binds the command, the expectation, the resolved working directory, the shell, the timeout and the inherited PATH, and asks again if any of them moves. `lint` catches an oracle that cannot fail at authoring time; `reverify` re-runs the runnable gates of work that came back | 0 |
+| `lathe` | what this workspace did by hand more than twice, emitted as scripts, snippets, boilerplate and completions. Four count-based models over artefacts already on disk — closed contiguous sequences over the verbs and commands sessions ran, the expert's logistic outcome model, the janitor's decayed memory, and prefix entropy over the compiled index. Every row names its support; nothing is proposed from one occurrence | 0 |
+| `env` | what a complete `.bundlebox` holds and whether this one does. Every row is an artefact some session would otherwise derive by searching the tree, and every row is produced by a verb that cannot spend money, so a missing row is a turn somebody will pay for. `bb env up --apply` runs the bootstrap gear | 0 |
 | `genesis` | a document or a prompt becomes a world model, a seeded corpus, and the briefs that fill it; coverage is a set difference | 0 |
 | `cookbook`, `simulate` | a persona's week against the running system, executed by the kernel; the same request at rising concurrency against a floor-relative budget | 0 |
 | `mainboard`, `failsafe` | six views over one ledger and which pipeline stage does not hold; what is failing, why, and the op | 0 |
 | `runbook` | declared services and groups; `up` refuses a set whose cages exceed free memory and `--wait` returns when the service ANSWERS; 40,000 log lines as twenty signatures and the failures this workspace already paid to learn, arriving named | 0 |
 | `recom` | has this automation already been run, and is its result still true; a record declares the facts it rests on and they are re-probed on every read — `fresh`, `stale` naming what moved, or `unknown`. `bb recom gate <id> -- <cmd>` wires that verdict straight to the decision, so an expensive drive happens only when its answer stopped holding | 0 |
 | `dotty` | what the screen showed, over the Chrome DevTools Protocol with no dependency: a PNG for a person and an accessibility summary for the session, a frame each side of a command, and a BLANK verdict on a frame that is a picture of nothing | 0 |
-| `slop` | the prose ruleset every brief, commit message and PR body is stripped by before a lane is billed for it | 0 |
+| `slop` | the prose ruleset every brief, commit message and PR body is stripped by before a lane is billed for it, and the `antislop` skill that states the same fifteen rules with what each one costs and what to write instead | 0 |
 | `sieve` | the input axis: a tool result scrubbed, deduped or elided before it enters the window, so a 4,000-line log is not re-sent on every later turn. Read/Edit/Write are never touched, error lines are carried out of the cut, and the dropped middle spills to disk so recovery is a grep. `bb sieve replay` measures it against this workspace's own transcripts before anything is wired | 0 |
-| `uptake` | installed is not used: which of the wired surfaces — the MCP tools, `bb` itself, `pinpoint`, the reference tables — sessions actually reached for, against the moments each one was for, with every miss and what the session did instead. A surface that arrives in the system prompt is reported as not observable, never as 0% | 0 |
+| `uptake` | installed is not used: which of the wired surfaces — the MCP tools, `bb` itself, `pinpoint`, the reference tables — sessions reached for, against the moments each one was for, with every miss and what the session did instead. A surface that arrives in the system prompt is reported as not observable, never as 0% | 0 |
 | `frames` | a dataframe over the factory's own data with evals as JSON files a person can argue with | 0 |
 | `auditor` | the bar declared BEFORE the work — scope, standards, governance, assurance, derived from the tree's own signals — then `gate` checks it after, where `unproven` never reads as green. Dated per-area reviews are ingested as findings and checked for drift | 0 |
 | `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
@@ -232,8 +290,11 @@ look like numbers.
 ```
 bin/bb.js            the entrypoint
 src/                 Node, ESM, zero dependencies — every verb, the adapters, the store, the command centre
+skills/              the skills bb wire installs: bb-finish, antislop
 kernel/              Rust — bbk: walk, fingerprint, estimate, dupes, symbols, anchor, gate, worktree,
                      and the scenario runner, the load simulator and the health probe
+arc/                 Rust — the declaration index compiler. src/arc/read.js is the in-process reader,
+                     which is where the speed-up lands; the binary is the reference implementation
 expert/              Python (stdlib) — rule engine, triage, confidence, signals, rules, graph, model, memory,
                      the world derivation, coverage planning, scenario selection and board verdicts
 .bundlebox/          per-repo: config.json, cookbook/ (corpora), genesis/ (world models),
@@ -287,7 +348,11 @@ provenance, and create a GitHub release with the binaries and the changelog.
 
 ## License
 
-MIT. bundlebox began as a stdlib-Python factory wired into one workspace; this
+MIT. `src/finish/vendor/` is vendored from
+[Leonxlnx/unlazy](https://github.com/Leonxlnx/unlazy) 2.1.0 (MIT, commit
+`1667149`), renamed and otherwise untouched;
+[src/finish/vendor/PROVENANCE.md](src/finish/vendor/PROVENANCE.md) records every
+rename and why nothing else moved. bundlebox began as a stdlib-Python factory wired into one workspace; this
 package is its portable core, rebuilt and corrected. The optional wire
 integration talks to [headroom](https://github.com/headroomlabs-ai/headroom)
 over the process boundary and never imports it.
