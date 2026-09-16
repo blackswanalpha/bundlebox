@@ -43,6 +43,23 @@ expert/**/__pycache__/
 .bundlebox/auditor/*/charter.json
 .bundlebox/auditor/*/charter.md
 
+# `bb recom` records have the same two kinds side by side, and the same opposite
+# rules. A record somebody WROTE — what a browser or a phone did, and what it
+# cost — arrives by pull request and is the point of the store, so it is
+# committed. A record `recom.auto_facts` writes for a repeatable surface is a
+# fingerprint of this machine's git hashes and HTTP status codes; it is
+# re-measured the first time the surface runs anywhere else, and committing one
+# would hand another checkout a fingerprint it can only read as stale.
+#
+# Namespaced by surface, so the split is a path and not a judgement. `dir/*` for
+# the same reason as the block above: git cannot re-include a path inside an
+# excluded directory.
+.bundlebox/recom/records/cron/
+.bundlebox/recom/records/pipeline/
+.bundlebox/recom/records/cookbook/
+.bundlebox/recom/records/genesis/
+.bundlebox/recom/records/lathe/
+
 # Claude Code keeps two settings files side by side and they have opposite
 # rules. `settings.json` is the PROJECT's: `bb wire` writes the hook rows there
 # and every contributor should get the same ones, so it is committed.

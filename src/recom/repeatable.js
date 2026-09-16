@@ -156,7 +156,13 @@ export function survey({ cfg = load() } = {}) {
   return ids().map((id) => {
     const r = REPEATABLES[id];
     const s = shouldRun(id, { cfg });
-    return { id, what: r.what, facts: factsFor(id).length, ...s };
+    // The RECORD's fact count once there is one. `factsFor(id)` is called here
+    // with no options, and a surface whose probe list depends on a runtime
+    // argument — `cookbook/board` adds an `http:` probe for the base it ran
+    // against — declares fewer facts than it recorded. Reporting 1 beside a
+    // verdict that says "2 probe(s)" is this box disagreeing with itself.
+    const rec = get(id);
+    return { id, what: r.what, facts: (rec?.depends || factsFor(id)).length, ...s };
   });
 }
 
