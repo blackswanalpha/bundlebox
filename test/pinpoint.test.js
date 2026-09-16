@@ -124,3 +124,72 @@ test("regions: the kernel locates the same range", { skip: !kernelBuilt && "kern
   assert.equal(k.line_end, js.line_end);
   assert.equal(k.text, js.text);
 });
+
+// ── specificity: what a term's rarity is worth ───────────────────────────────
+//
+// The miss these lock down was measured on bundlebox itself. "wire the pre-read
+// guard so it denies a read the pinpoint brief already quotes" ranked three
+// unrelated files first — each declaring a symbol exactly called `read`, `guard`
+// or `brief` — and never put `src/wire/hooks.js` in scope at all.
+
+const rankmod = await import("../src/pinpoint/rank.js");
+
+test("termWeights: a term in one file outweighs a term in many", () => {
+  const sym = [
+    { file: "a.js", symbol: "read", term: "read" },
+    { file: "b.js", symbol: "readOrNull", term: "read" },
+    { file: "c.js", symbol: "read", term: "read" },
+    { file: "d.js", symbol: "refreshSession", term: "refreshSession" },
+  ];
+  const w = rankmod.termWeights(sym);
+  assert.ok(w.get("refreshsession") > w.get("read"), "the rare term is worth more");
+  assert.ok(w.get("read") >= rankmod.MIN_TERM, "and the common one is never worth nothing");
+  assert.equal(w.get("refreshsession"), 1, "a term in exactly one file keeps its full weight");
+});
+
+test("a loose match on a rare word outranks an exact match on a common one", () => {
+  const sym = [
+    { file: "src/slop/index.js", symbol: "read", term: "read", line: 1 },
+    { file: "src/tokens/ledger.js", symbol: "read", term: "read", line: 1 },
+    { file: "src/auditor/charter.js", symbol: "read", term: "read", line: 1 },
+    { file: "src/wire/hooks.js", symbol: "preRead", term: "read", line: 1 },
+    { file: "src/wire/hooks.js", symbol: "sessionStart", term: "session", line: 1 },
+  ];
+  const order = rankmod.rank("the read guard in the session hooks", { sym });
+  assert.equal(order[0], "src/wire/hooks.js", "two terms, one of them rare, beats three exact matches on a common name");
+});
+
+test("informative: a noisy index does not count as an answer", () => {
+  const noisy = Array.from({ length: 20 }, (_, i) => ({ file: `f${i}.js`, symbol: "read", term: "read" }));
+  assert.equal(rankmod.informative(noisy), 0, "twenty files matching one common term is vocabulary, not localisation");
+  assert.ok(rankmod.informative([...noisy, { file: "x.js", symbol: "refreshSession", term: "refreshSession" }]) > 0);
+});
+
+test("components names every directory and the basename stem", () => {
+  assert.deepEqual(rankmod.components("src/wire/hooks.js"), ["src", "wire", "hooks"]);
+  assert.deepEqual(rankmod.components("a.py"), ["a"]);
+});
+
+test("pathWeights: a directory naming four files beats one naming every file", () => {
+  const universe = ["src/wire/hooks.js", "src/wire/index.js", "src/wire/brief.js", "src/janitor/sweep.js", "src/tokens/ledger.js"];
+  const { hits, w } = rankmod.pathWeights(["wire", "src", "sweep"], universe);
+  assert.equal(hits.get("wire").length, 3);
+  assert.ok(w.get("sweep") > w.get("wire"), "one file beats three");
+  assert.ok(w.get("wire") > w.get("src"), "three files beat all five");
+});
+
+test("the path puts a file in the ranking with no symbol hit at all", () => {
+  const universe = ["src/wire/hooks.js", "src/monitor/window.js"];
+  const order = rankmod.rank("the wire hooks", { sym: [{ file: "src/monitor/window.js", symbol: "guard", term: "guard" }], terms: ["wire", "hooks"], universe });
+  assert.equal(order[0], "src/wire/hooks.js", "two path components name it; nothing else does");
+});
+
+test("an explicit file stays first even when the path evidence names another", () => {
+  const universe = ["src/auth.js", "src/session.js"];
+  const order = rankmod.rank("loginToken expires early in refreshSession", {
+    explicit: ["src/auth.js"],
+    sym: [{ file: "src/session.js", symbol: "refreshSession", term: "refreshSession" }],
+    terms: ["session", "refreshSession"], universe,
+  });
+  assert.deepEqual(order, ["src/auth.js", "src/session.js"]);
+});

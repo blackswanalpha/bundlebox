@@ -22,7 +22,7 @@ import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
-import { rank } from "./rank.js";
+import { rank, informative } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 
 export { ambiguity } from "./ambiguity.js";
@@ -148,8 +148,14 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
   const ts = terms(problem);
   const explicit = [...files.map((f) => rel(abs(f))), ...pathHits(ts)];
   const sym = await snapgen.symbolHits(ts);
-  const grep = sym.length < 3 ? grepHits(ts) : [];
-  const ranked = rank(problem, { explicit, sym, grep });
+  // Not `sym.length < 3`. A statement whose words are common symbol names here
+  // ("read", "wire", "guard", "brief") returns dozens of hits and answers
+  // nothing, and the count alone cannot tell that case from a real localisation.
+  // `informative` counts only the hits whose term is rare enough to be about
+  // WHICH file, so the bounded content grep now fires on a NOISY index as well
+  // as on a silent one — which is where it was always needed most.
+  const grep = informative(sym) < 3 ? grepHits(ts) : [];
+  const ranked = rank(problem, { explicit, sym, grep, terms: ts, universe: codeFiles().map(rel) });
   let scope = ranked.slice(0, maxFiles);
   let anchors = [];
   const seen = new Set();

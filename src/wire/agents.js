@@ -56,6 +56,11 @@ export const CLAUDE_HOOKS = [
   { event: "SessionStart", cmd: "session-start", timeout: 30 },
   { event: "UserPromptSubmit", cmd: "prompt", timeout: 15 },
   { event: "PreToolUse", matcher: "Read", cmd: "pre-read", timeout: 10 },
+  // The search side of the same guard. Grep is the declared tool; Bash is where
+  // the measured transcripts actually do it — `sed -n`, `cat`, `grep -rn`. The
+  // handler parses one simple read or one simple search out of a command and
+  // leaves everything else alone, so `npm test` is never a candidate.
+  { event: "PreToolUse", matcher: "Grep|Bash", cmd: "pre-search", timeout: 10 },
   // No matcher: which tools it may touch is an allowlist inside the handler, so
   // a tool added to Claude Code cannot quietly become eligible by matching a
   // pattern here. Off unless `sieve.enabled`, and the handler returns instantly.

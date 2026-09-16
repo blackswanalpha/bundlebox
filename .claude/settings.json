@@ -32,6 +32,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Grep|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bb hook pre-search",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -12,8 +12,13 @@ import { load } from "../core/config.js";
 import * as store from "../core/store.js";
 import { text as estimateText, file as estimateFile } from "../tokens/estimate.js";
 import { now } from "../core/util.js";
+import * as brief from "./brief.js";
 
-const CAPS = { "session-start": 600, prompt: 300, "pre-read": 200, "restate-rules": 700 };
+// A cap is what a band may cost, not what it should. `pre-read` and
+// `pre-search` are the two that carry an ANSWER rather than a pointer, so they
+// are the two allowed to be expensive: what they replace is the whole file or
+// the whole search.
+const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-search": 500, "restate-rules": 700 };
 
 // ── the janitor's three touch points ────────────────────────────────────────
 //
@@ -138,28 +143,138 @@ function restateRules(payload, cfg) {
   return true;
 }
 
+const TASK_SHAPED = /\b(fix|add|implement|refactor|change|update|write|remove|migrate|debug|investigate|make|build|wire|optimi[sz]e|ensure|analyse|analyze|audit|port|rename)\b/i;
+/** A prompt worth locating. A question, an acknowledgement or a one-word reply
+ *  is not, and running the locator on one spends a turn's budget on nothing. */
+export const isTask = (p) => String(p).length >= 40 && TASK_SHAPED.test(String(p));
+
+/** The turn this whole box was waiting for.
+ *
+ *  `bb uptake` on this workspace: pinpoint fired in 3 of the 13 sessions that
+ *  opened five or more distinct files, and those 13 opened between 30 and 598
+ *  files each. A suggestion in additionalContext is a suggestion — it was
+ *  measured, and it loses to the model's own habit about three times in four.
+ *
+ *  So the hook runs it instead of recommending it. Measured 0.47s on this tree
+ *  against a 15s budget, because every input pinpoint reads is a stored
+ *  artefact (the symbol tables, the anchors, the oversight scan, the findings)
+ *  and it computes none of them.
+ *
+ *  What enters the window is the MAP, about 300 tokens. The quoted regions stay
+ *  on disk until a read asks for one, and `pre-read` serves it then: paying for
+ *  every located region on every task prompt would spend the saving on regions
+ *  the session never opens. */
+async function autoPinpoint(payload, p) {
+  const sessionId = String(payload.session_id || "");
+  // A brief already standing for this prompt is not rebuilt. The same prompt
+  // comes back after a denial, and re-locating it would bill the turn twice.
+  const held = brief.current({ maxAgeMin: 45, sessionId });
+  if (held && held.problem === p.slice(0, 400)) {
+    emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(brief.band(held), CAPS.prompt) } });
+    return true;
+  }
+  const t0 = Date.now();
+  const pp = await import("../pinpoint/index.js");
+  const b = await pp.build(p, { kind: "fix" });
+  const rec = brief.record(b, { sessionId, briefPath: b.path });
+  brief.activate(rec);
+  brief.prune();
+  log("prompt", `pinpoint ${b.scope.length} files, ${b.anchors.length} regions, ${b.verdict} in ${Date.now() - t0}ms`);
+  emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(brief.band(rec), CAPS.prompt) } });
+  return true;
+}
+
 async function prompt(payload) {
   const cfg = load();
   if (restateRules(payload, cfg)) return;
   if (!cfg.wire.inject_context) return;
-  const p = String(payload.prompt || payload.user_prompt || "");
-  // Only a task-shaped prompt earns the suggestion; a question or a one-word reply does not.
-  if (p.length < 40 || !/\b(fix|add|implement|refactor|change|update|write|remove|migrate|debug|investigate|make|build)\b/i.test(p)) return;
+  const p = String(payload.prompt || payload.user_prompt || "").trim();
+  if (!isTask(p)) return;
+  if (cfg.wire.auto_pinpoint) {
+    try { if (await autoPinpoint(payload, p)) return; }
+    catch (e) {
+      // A failed locate must not cost the turn its context: fall through to the
+      // line this hook has always emitted.
+      log("prompt", `auto-pinpoint ${String(e && e.message || e).slice(0, 160)}`);
+    }
+  }
   const ctx = `bundlebox: before searching, run \`bb pinpoint "${p.slice(0, 120).replace(/"/g, "'")}"\` — it locates the symbols, quotes the regions and budgets the scope for 0 tokens (or call the bb_pinpoint MCP tool).`;
   emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(ctx, CAPS.prompt) } });
 }
 
+const capacityOf = (cfg) => Number(cfg.budget.max_tokens) - Number(cfg.budget.reserve_output);
+const decide = (event, d, cap) => emit({ hookSpecificOutput: { hookEventName: event, permissionDecision: d.permissionDecision,
+  permissionDecisionReason: capTokens(d.permissionDecisionReason, cap) } });
+
+/** Serve the region, then price the file.
+ *
+ *  The first branch is the new one and it is a DENIAL: pinpoint already located
+ *  and quoted this region, so a read of it buys the window nothing it is not
+ *  already about to be handed. The reason carries the quote, which is why its
+ *  cap is the largest in this file — what it replaces is the whole file.
+ *
+ *  A file in SCOPE is never fully blocked. Claude Code requires one successful
+ *  read of a file before it will edit it, so blocking the scope blocks the
+ *  change; the denial says to read the RANGE, and that read is allowed. */
 async function preRead(payload) {
   const cfg = load();
   if (!cfg.wire.guard_reads) return;
   const fp = payload?.tool_input?.file_path || payload?.tool_input?.path;
-  if (!fp || payload?.tool_input?.limit) return;           // a ranged read is already the advice
+  if (!fp) return;
+  if (cfg.wire.serve_from_brief) {
+    const rec = brief.current({ maxAgeMin: Number(cfg.wire.brief_max_age_min) || 45, sessionId: String(payload.session_id || "") });
+    const v = brief.readVerdict(rec, fp, {
+      offset: Number(payload?.tool_input?.offset) || 0, limit: Number(payload?.tool_input?.limit) || 0,
+      capacity: capacityOf(cfg), minShare: Number(cfg.wire.serve_min_share) || 0.02,
+    });
+    if (v) { decide("PreToolUse", v, CAPS["pre-read"]); return; }
+  }
+  if (payload?.tool_input?.limit) return;                  // a ranged read is already the advice
   const tokens = estimateFile(fp);
-  const capacity = Number(cfg.budget.max_tokens) - Number(cfg.budget.reserve_output);
+  const capacity = capacityOf(cfg);
   if (!tokens || tokens < capacity * 0.35) return;
   // Advisory, never a denial: the agent may need the whole file. But it should know the price.
   emit({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow",
     permissionDecisionReason: capTokens(`bundlebox: ${path.basename(fp)} is ~${Math.round(tokens / 1000)}k tokens (${Math.round(100 * tokens / capacity)}% of the working window). Read a range with offset/limit; \`bb pinpoint\` or the bb_pinpoint tool quotes the region you need.`, CAPS["pre-read"]) } });
+}
+
+/** The other half of the input axis: a search whose answer is already indexed.
+ *
+ *  `bb uptake` measures this one too — the snapgen tables were read in 5 of the
+ *  15 sessions that ran a search. A declaration search is the case where the
+ *  answer is not merely cheaper to look up, it is already written down:
+ *  `symbols-*.md` is a name/file/line index rebuilt by fingerprint. So the
+ *  denial hands back the matching rows and the search never runs.
+ *
+ *  What is NOT denied matters as much. A string literal, a call site, a comment,
+ *  a pattern no declaration index can answer: the tables have no rows for it,
+ *  `tableHits` returns nothing and the search goes through untouched. */
+async function preSearch(payload) {
+  const cfg = load();
+  if (!cfg.wire.guard_searches) return;
+  const tool = String(payload.tool_name || "");
+  const input = payload.tool_input || {};
+  const rec = brief.current({ maxAgeMin: Number(cfg.wire.brief_max_age_min) || 45, sessionId: String(payload.session_id || "") });
+
+  if (tool === "Grep") {
+    const v = brief.searchVerdict(rec, input.pattern, { glob: input.glob || "", pathArg: input.path || "" });
+    if (v) decide("PreToolUse", v, CAPS["pre-search"]);
+    return;
+  }
+  if (tool !== "Bash") return;
+  // Half the reads and searches in the measured transcripts arrive through the
+  // shell, not through Read and Grep. A guard that only watches the dedicated
+  // tools is a guard that measures its own blind spot.
+  const seg = brief.parseBash(input.command);
+  if (!seg) return;
+  if (seg.kind === "search") {
+    const v = brief.searchVerdict(rec, seg.pattern, { pathArg: seg.pathArg || "" });
+    if (v) decide("PreToolUse", v, CAPS["pre-search"]);
+    return;
+  }
+  if (!cfg.wire.serve_from_brief) return;
+  const v = brief.readVerdict(rec, seg.file, { offset: seg.offset, limit: seg.limit, capacity: capacityOf(cfg), minShare: Number(cfg.wire.serve_min_share) || 0.02 });
+  if (v) decide("PreToolUse", v, CAPS["pre-read"]);
 }
 
 /** The input axis. Imported lazily: every other hook on this list runs once per
@@ -217,6 +332,7 @@ export async function handle(event) {
     if (event === "session-start") await sessionStart(payload);
     else if (event === "prompt") await prompt(payload);
     else if (event === "pre-read") await preRead(payload);
+    else if (event === "pre-search") await preSearch(payload);
     else if (event === "post-tool") await postTool(payload);
     else if (event === "pre-compact") await preCompact(payload);
     else if (event === "session-end" || event === "stop") await sessionEnd(payload);
@@ -227,4 +343,4 @@ export async function handle(event) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "post-tool", "pre-compact", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "pre-search", "post-tool", "pre-compact", "session-end"];

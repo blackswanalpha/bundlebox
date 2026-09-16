@@ -69,16 +69,27 @@ export function removeMcp(before, { key }) {
 export function addClaudeHooks(before) {
   const o = parseJson(before);
   o.hooks = o.hooks && typeof o.hooks === "object" ? o.hooks : {};
+  // Strip every previous copy ONCE PER EVENT, before anything is added, so a
+  // changed timeout does not leave two rows behind.
+  //
+  // Per event, not per row. It used to strip inside the loop, which was
+  // invisible while each event had exactly one handler and silently wrong the
+  // moment one had two: PreToolUse(Read) was installed by the first row and
+  // then stripped again by the second, so `bb wire --apply` shipped a settings
+  // file with the read guard missing and no diff to say so.
+  const seen = new Set();
   for (const h of CLAUDE_HOOKS) {
     const list = Array.isArray(o.hooks[h.event]) ? o.hooks[h.event] : [];
+    if (!seen.has(h.event)) {
+      seen.add(h.event);
+      o.hooks[h.event] = list.map((g) => ({ ...g, hooks: (g.hooks || []).filter((x) => !isOurHook(x)) })).filter((g) => g.hooks.length);
+    }
+    const kept = o.hooks[h.event];
     const entry = { type: "command", command: `bb hook ${h.cmd}`, timeout: h.timeout, ...(h.statusMessage ? { statusMessage: h.statusMessage } : {}) };
-    // Strip any previous copy first, so a changed timeout does not leave two.
-    const kept = list.map((g) => ({ ...g, hooks: (g.hooks || []).filter((x) => !isOurHook(x)) })).filter((g) => g.hooks.length);
     const group = { ...(h.matcher ? { matcher: h.matcher } : {}), hooks: [entry] };
     // Same-matcher group already present: join it rather than adding a twin.
     const twin = kept.find((g) => (g.matcher || "") === (h.matcher || ""));
     if (twin) twin.hooks.push(entry); else kept.push(group);
-    o.hooks[h.event] = kept;
   }
   return dumpJson(o);
 }

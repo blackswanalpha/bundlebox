@@ -134,6 +134,26 @@ export const DEFAULTS = {
     inject_context: true,   // SessionStart/UserPromptSubmit: hand the agent the snapgen INDEX
     measure_sessions: true, // SessionEnd: measure used/saved
     guard_reads: true,      // PreToolUse(Read): warn on files past the window
+    // ── the enforcement axis ──────────────────────────────────────────────
+    //
+    // Everything above is ADVISORY, and `bb uptake` measured what that is
+    // worth on this workspace: the MCP tools fired in 0 of 15 sessions,
+    // pinpoint in 3 of the 13 that opened five or more distinct files, the
+    // snapgen tables in 5 of the 15 that ran a search. Those 13 sessions
+    // opened between 30 and 598 files each. A surface the model may decline
+    // on a hunch is a surface that gets declined.
+    //
+    // So these three move the work to the side that does it for nothing:
+    auto_pinpoint: true,    // UserPromptSubmit: RUN pinpoint on a task-shaped prompt, inject the map
+    serve_from_brief: true, // PreToolUse: deny a read the brief already quotes, and hand back the quote
+    guard_searches: true,   // PreToolUse: deny a declaration search the symbol tables already answer
+    // How stale a brief may be before the guards stop answering from it. A
+    // guard quoting a region located for a different task is the janitor's
+    // dead-anchor mistake with a faster clock.
+    brief_max_age_min: 45,
+    // Below this share of the working window a whole-file read is too cheap to
+    // argue about, so the quote is not served and the read goes through.
+    serve_min_share: 0.02,
   },
   janitor: {
     // What the hooks do with a compiled heap. Every one of these reads an
