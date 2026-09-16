@@ -145,3 +145,49 @@ test("a capture against a real browser returns a summary, not an image", async (
   assert.ok(r.file.endsWith(".png"));
   assert.ok(Array.isArray(r.screen));
 });
+
+// ── the event channel ───────────────────────────────────────────────────────
+//
+// A CDP message with no `id` is an event, and the session dropped every one of
+// them. That is the silent half: `Page.captureScreenshot` is a call and worked,
+// so nothing failed — there was simply no way to observe a console error, and
+// "this page throws while it loads" was invisible rather than reported. Needs no
+// browser: the routing is the thing that was wrong.
+import { Session } from "../src/dotty/cdp.js";
+
+const fakeWs = () => { const ws = { sent: [], onMessage: null, send(m) { this.sent.push(m); }, close() { this.closed = true; } }; return ws; };
+
+test("an event reaches the listener and a reply does not", async () => {
+  const ws = fakeWs();
+  const s = new Session(ws);
+  const seen = [];
+  s.onEvent = (method, params) => seen.push([method, params]);
+
+  const p = s.call("Page.navigate", { url: "http://x" });
+  ws.onMessage({ method: "Page.frameNavigated", params: { frame: { url: "http://x" } } });
+  ws.onMessage({ id: ws.sent[0].id, result: { frameId: "1" } });
+
+  assert.deepEqual(await p, { frameId: "1" });
+  assert.equal(seen.length, 1, "the reply is not delivered as an event");
+  assert.equal(seen[0][0], "Page.frameNavigated");
+  assert.equal(seen[0][1].frame.url, "http://x");
+  s.close();
+});
+
+test("a listener that throws does not take the session down", async () => {
+  const ws = fakeWs();
+  const s = new Session(ws);
+  s.onEvent = () => { throw new Error("listener is broken"); };
+  assert.doesNotThrow(() => ws.onMessage({ method: "Log.entryAdded", params: {} }));
+  const p = s.call("Runtime.evaluate", {});
+  ws.onMessage({ id: ws.sent[0].id, result: { ok: 1 } });
+  assert.deepEqual(await p, { ok: 1 }, "calls still resolve after a listener threw");
+  s.close();
+});
+
+test("with no listener an event is dropped, exactly as before", () => {
+  const ws = fakeWs();
+  const s = new Session(ws);
+  assert.doesNotThrow(() => ws.onMessage({ method: "Log.entryAdded", params: {} }));
+  s.close();
+});

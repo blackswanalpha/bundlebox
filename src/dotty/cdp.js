@@ -143,6 +143,17 @@ export class Session {
       this.waiting.delete(m.id);
       if (m.error) reject(new Error(`${m.error.message || JSON.stringify(m.error)}`));
       else resolve(m.result || {});
+      return;
+    }
+    // A CDP message with no `id` is an EVENT, and this dropped every one of
+    // them. `Page.captureScreenshot` is a call and needed nothing else; a
+    // console error is only ever an event, so there was no way to observe one
+    // and the whole class of "the screen rendered and the page threw" was
+    // invisible. A caller that wants events sets `onEvent`; one that does not
+    // is unaffected, and a listener that throws must not take the session down
+    // with it.
+    if (!m.id && m.method && this.onEvent) {
+      try { this.onEvent(m.method, m.params || {}); } catch { /* a listener is a courtesy */ }
     }
   }
 

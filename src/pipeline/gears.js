@@ -111,7 +111,7 @@ export const GEARS = [
     stages: [
       { verb: "cookbook", args: ["check"], when: "corpora > 0", description: "the corpus asserts something — no server, no requests" },
       { verb: "cookbook", args: ["run"], when: "corpus_base == 1 and scenarios > 0", description: "the kernel executes it; red steps become findings" },
-      { verb: "mainboard", args: ["run"], flags: { only: "scoreyard,cyberrender" }, when: "corpora > 0", optional: true, description: "what the board means, and what it still does not cover" },
+      { verb: "mainboard", args: ["run"], flags: { only: "scoreyard,turntables,cyberrender" }, when: "corpora > 0", optional: true, description: "what the board means, whether the same scenario still answers the same way, and what it still does not cover" },
       { verb: "frames", args: ["eval"], description: "every eval; a red one becomes a finding under `eval`" },
     ],
   }),

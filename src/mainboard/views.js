@@ -23,10 +23,22 @@ import * as corpus from "../cookbook/corpus.js";
 import * as genesis from "../genesis/index.js";
 import * as simulate from "../simulate/index.js";
 import * as runbook from "../runbook/index.js";
+import * as dotty from "../dotty/index.js";
+import * as cdp from "../dotty/cdp.js";
+import * as bugbash from "./bugbash.js";
+import * as turntables from "./turntables.js";
+import * as store from "../core/store.js";
+import { load } from "../core/config.js";
 import * as expert from "../core/expert.js";
 import * as kernel from "../core/kernel.js";
 
-export const CATEGORIES = ["PLATFORM", "GAP", "CONTRACT", "SCORE", "FRICTION", "PERFORMANCE", "RACE", "SECURITY", "COVERAGE"];
+// The four at the end came in with the bugbash port. They are about the
+// rendered surface rather than about system behaviour, which is why they are
+// their own words and not stretched out of `GAP`: a tap target under the touch
+// floor and a route the corpus never calls are not the same kind of fact and a
+// board that spells them the same cannot be sorted by anybody.
+export const CATEGORIES = ["PLATFORM", "GAP", "CONTRACT", "SCORE", "FRICTION", "PERFORMANCE", "RACE", "SECURITY", "COVERAGE",
+  "UI", "COPY", "A11Y", "STATE"];
 const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(:|\/|$)/i;
 
 export const VIEWS = [
@@ -161,6 +173,81 @@ export const VIEWS = [
           evidence: { calls: p.phantom_calls.slice(0, 12) }, target: "local" });
       }
       return { ran: true, findings, facts: { coverage_pct: p.coverage_pct, declared: p.declared, covered: p.covered, specs: p.specs_total } };
+    },
+  },
+  {
+    id: "bugbash", title: "Bugbash", question: "does the rendered screen clear the bar?", writes: ["UI", "COPY", "A11Y", "STATE"], prefix: "BB",
+    async run({ base = "" } = {}) {
+      const cfg = load()?.mainboard?.bugbash || {};
+      // The board's --base is the API the corpus calls. The UI is a different
+      // service on a different port, and joining a screen path to the API base
+      // probes the API's 404 page and reports on it. So bugbash takes its own
+      // base and only falls back to the board's when nothing declared one.
+      const uiBase = String(cfg.base || base || "");
+      const routes = bugbash.routesFrom(cfg, uiBase);
+      if (!routes.length) {
+        return { ran: false, skipped: "no screen declared. Set `mainboard.bugbash.routes` in .bundlebox/config.json — a list of paths, joined to --base, or absolute URLs. This view never guesses a URL: probing one nobody asked about reports on a page that is not the product" };
+      }
+      const { host, port } = { host: String(cfg.host || "127.0.0.1"), port: Number(cfg.port || 9222) };
+      const up = await cdp.targets({ host, port, timeout: 3000 }).then(() => true).catch(() => false);
+      if (!up) return { ran: false, skipped: `no browser at ${host}:${port}. Every row here is a measurement against a rendered page, and there is nothing rendering — start Chrome with --remote-debugging-port=${port} (\`bb dotty targets\` checks it)` };
+
+      // designlabs measures the DECLARATION and says which of its rules a parse
+      // cannot close. A rule it reports as a pass, contradicted by the pixel, is
+      // the one finding this pair produces that neither half can make alone — so
+      // the declared verdict comes in with the judgement.
+      const dlOpen = new Set(store.get("findings", [])
+        .filter((f) => f.status === "open" && String(f.detector || "").startsWith("designlabs"))
+        .map((f) => String(f.key || f.title || "")));
+      const declared = { "target.min-size": [...dlOpen].some((k) => k.includes("target.min-size")) ? "fail" : "pass" };
+
+      const banned = Array.isArray(cfg.banned) ? cfg.banned : bugbash.BANNED_DEFAULT;
+      const narrowWidth = Number(cfg.narrow) || 390;
+      const findings = [];
+      const facts = { routes: routes.length, swept: 0, blank: 0, errors: 0 };
+      for (const r of routes.slice(0, Number(cfg.max_routes) || 24)) {
+        let row;
+        try { row = await dotty.sweep({ url: r.url, label: r.label, narrow: narrowWidth, flags: { host, port, settle: Number(cfg.settle) || 8000 } }); }
+        catch (e) {
+          findings.push({ id: `BB-${r.label}-unreachable`, category: "STATE", severity: "high",
+            title: `${r.label} could not be captured`,
+            detail: `The browser could not render ${r.url}: ${e.message}. Nothing on this route was checked, which is not the same as this route being fine.`,
+            evidence: { route: r.label, url: r.url, error: String(e.message).slice(0, 200) }, target: "local" });
+          continue;
+        }
+        facts.swept += 1;
+        if (row.blank === true) facts.blank += 1;
+        facts.errors += (row.errors || []).length;
+        const j = bugbash.judge(row, { banned, declared, narrowWidth });
+        findings.push(...j.findings);
+      }
+      return { ran: true, findings, facts };
+    },
+  },
+  {
+    id: "turntables", title: "Turntables", question: "run the same scenario again — does it still give the same answer?", writes: ["RACE", "CONTRACT"], prefix: "TT",
+    async run({ corpusId = "" } = {}) {
+      const ids = corpusId ? [corpusId] : corpus.ids();
+      if (!ids.length) return { ran: false, skipped: "no corpus; there is nothing to have run twice" };
+      const findings = [];
+      const facts = {};
+      const thin = [];
+      for (const id of ids) {
+        // Filter on the board's OWN corpus field, not on the filename: board
+        // files are `<corpus>-<stamp>.json` and a corpus whose id is a prefix of
+        // another's would otherwise be handed the other's history and file
+        // regressions against scenarios it has never run.
+        const history = cookbook.boards(id, { limit: Number(load()?.mainboard?.turntables?.window) || 10 })
+          .filter((b) => b && b.corpus === id);
+        if (history.length < 2) { thin.push(`${id}: ${history.length} stored run(s)`); continue; }
+        const r = turntables.replay(history, { corpus: id });
+        findings.push(...r.findings);
+        facts[id] = r.facts;
+      }
+      if (!Object.keys(facts).length) {
+        return { ran: false, skipped: `a replay needs two runs of the same corpus to compare — ${thin.join(", ")}. \`bb cookbook run\` stores one each time; the \`scenarios\` gear does it on every tick` };
+      }
+      return { ran: true, findings, facts };
     },
   },
 ];
