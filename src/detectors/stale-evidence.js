@@ -26,6 +26,7 @@ export default {
     if (!hits.length) return [];
     return [finding({
       severity: "info", kind: "verify", path: ".", key: "stale", files: [...new Set(hits.map((h) => h.path))].slice(0, 20),
+      auto_fix: "rescan-stale",
       title: `${hits.length} open finding(s) name files that changed since they were scanned`,
       detail: hits.slice(0, 15).map((h) => `  ${h.id}  ${h.detector.padEnd(16)} ${h.path}${h.gone ? "  (gone)" : ""}`).join("\n"),
       evidence: { findings: hits.slice(0, 50), count: hits.length },

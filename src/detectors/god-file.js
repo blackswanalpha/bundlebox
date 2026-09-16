@@ -89,6 +89,7 @@ export default {
       const why = byLines ? `${m.lines} lines vs median ${medLines}` : `${m.functions} functions, longest ${m.max_fn} lines vs median longest ${medFn}`;
       out.push(finding({
         severity: byLines && byFns ? "high" : "medium", kind: "investigate", files: [r], key: r,
+        auto_fix: "plan-file-split",
         title: `${r}: ${why}`,
         detail: `lines ${m.lines}, functions ${m.functions}, longest function ${m.max_fn}, max nesting ${m.max_depth}, imported by ${fanIn.get(r) || 0} file(s)`,
         evidence: { ...m, fan_in: fanIn.get(r) || 0, median_lines: medLines, median_max_fn: medFn, rule: byLines ? "lines" : "functions", thresholds: T },

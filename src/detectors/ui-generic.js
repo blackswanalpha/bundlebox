@@ -254,6 +254,7 @@ function analyse(area, acc, min, cfg) {
     if (out.length) {
       out.push(finding({
         detector: "ui-generic", severity: out.length >= 5 ? "high" : "medium", kind: "investigate",
+        auto_fix: "plan-ui-leverage",
         key: `ui-generic:${area}:count`, path: acc.files[0] || area, files: acc.files.slice(0, 6),
         title: `${area}: ${out.length} generic tells across ${acc.files.length} interface file${acc.files.length === 1 ? "" : "s"}`,
         detail: out.map((f) => `  ${String(f.evidence.tell).padEnd(20)} ${f.title}`).join("\n"),

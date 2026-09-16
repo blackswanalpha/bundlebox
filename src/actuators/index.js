@@ -9,15 +9,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { walk } from "../core/fs.js";
 import { git, run, which } from "../core/exec.js";
+import { langOf } from "../core/fs.js";
 import { ROOT, VAR, abs, rel } from "../core/paths.js";
+import * as store from "../core/store.js";
 import { slug } from "../core/util.js";
-import { REGISTRY, makeCtx } from "../detectors/index.js";
+import { secretSweep } from "../git/repo.js";
+import { REGISTRY, makeCtx, runAll } from "../detectors/index.js";
 import { claims, word } from "../detectors/doc-drift.js";
-import { blankFences, inFence, usedElsewhere } from "../detectors/_shared.js";
+import { blankFences, codeRels, inFence, usedElsewhere } from "../detectors/_shared.js";
 import { exportDeclRe } from "../detectors/dead-exports.js";
 import { isWholeLineDebug } from "../detectors/debug-leftovers.js";
 import { conflictBlocks } from "../detectors/merge-markers.js";
 import { unifiedDiff } from "./_diff.js";
+import * as plans from "./plans.js";
 
 // Actuators the janitor must never run unattended. Every other actuator here
 // either writes a reversible patch or asks git for an operation git itself
@@ -361,10 +365,135 @@ export function dropDeadKnob(f, { apply = false } = {}) {
   return result({ changed: true, applied: apply, removed, declined, patch, files: [r], why: `${removed.length} knob(s) deleted, ${declined.length} declined` });
 }
 
+// ── the four that still edit ────────────────────────────────────────────────
+
+/** Re-derive the findings whose file changed under them. The one survey whose
+ *  fix IS a command: `bb scan` re-runs the detectors against the bytes on disk
+ *  now. Running only the detectors the stale rows name keeps it to the work the
+ *  finding actually describes. */
+export function rescanStale(f, { apply = false } = {}) {
+  const rows = f.evidence?.findings || [];
+  if (!rows.length) return result({ why: "no stale finding recorded" });
+  const names = new Set();
+  for (const s of rows) if (s.detector && REGISTRY[s.detector]) names.add(s.detector);
+  if (!names.size) return result({ ok: false, declined: rows.map((s) => ({ path: s.path, reason: `${s.detector} is not a registered detector; it cannot be re-derived` })), why: "nothing re-derivable" });
+  const only = [...names];
+  if (!apply) return result({ patch: writePatch("rescan-stale", "store", `# bb scan --detector ${only.join(",")}   (${rows.length} stale row(s))\n`), would_rescan: rows.length, why: `${rows.length} row(s) across ${only.length} detector(s); re-run with --apply` });
+  const { findings } = runAll({ only });
+  const before = store.openFindings().length;
+  store.mergeFindings(findings, { detectors: names });
+  const after = store.openFindings().length;
+  return result({ changed: true, applied: true, detectors: only, why: `${only.length} detector(s) re-derived; ${before} open findings became ${after}` });
+}
+
+/** Stop a secret-shaped file reaching the next commit. It does NOT close the
+ *  finding and it never touches the value: a key that reached a remote is
+ *  public whatever .gitignore says, so rotation is still owed and the finding
+ *  stays open to say so. A file git already TRACKS is declined outright —
+ *  ignoring it then changes nothing and reads like it did. */
+export function ignoreSecretFile(f, { apply = false } = {}) {
+  const r = f.path;
+  if (!secretSweep([r]).length) {
+    return result({ declined: [{ path: r, reason: `${r} is not a file whose NAME says it holds credentials; a secret inside ordinary source is removed by editing it, and that is a person's edit` }], why: "declined" });
+  }
+  const tracked = git(["ls-files", "--error-unmatch", r], ROOT).rc === 0;
+  if (tracked) {
+    return result({ ok: false, keeps_open: true, declined: [{ path: r, reason: `git already tracks ${r}; ignoring it now hides the file from the next commit and nothing from the history. Rotate the key, then remove the file with \`git rm --cached\`` }], why: "already tracked" });
+  }
+  const giRel = ".gitignore", gi = abs(giRel);
+  const src = fs.existsSync(gi) ? fs.readFileSync(gi, "utf8") : "";
+  const already = src.split("\n").some((l) => l.trim() === r || l.trim() === `/${r}`);
+  if (already) return result({ keeps_open: true, why: `${giRel} already ignores ${r}; the key still needs rotating` });
+  const next = (src && !src.endsWith("\n") ? src + "\n" : src) + `${r}\n`;
+  const patch = writePatch("ignore-secret-file", r, unifiedDiff(src, next, { from: `a/${giRel}`, to: `b/${giRel}` }));
+  if (apply) fs.writeFileSync(gi, next);
+  return result({ changed: true, applied: apply, keeps_open: true, patch, files: [giRel], why: `${r} added to ${giRel}. The finding stays open: rotate the key` });
+}
+
+/** `.filter(x => p).map(x => f)` -> `.flatMap(x => p ? [f] : [])`, and only when
+ *  both callbacks are one-parameter arrows naming the SAME parameter. The two
+ *  callbacks see different indices once the filter has run, so a rewrite that
+ *  renames a parameter or carries a second argument is a behaviour change
+ *  wearing a refactor's clothes. Every other anti-slop rule is a type decision
+ *  and declines by name. */
+const FILTER_MAP = /\.filter\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*([^;]*?)\s*\)\s*\.map\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*([^;]*?)\s*\)/;
+export function flattenFilterMap(f, { apply = false } = {}) {
+  const r = f.path, p = abs(r);
+  const src = fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+  if (!src) return result({ ok: false, why: `${r} is not readable` });
+  const lines = src.split("\n");
+  const declined = [], edits = [];
+  for (const h of f.evidence?.hits || []) {
+    const at = `${r}:${h.line}`;
+    if (h.rule !== "filter-then-map") { declined.push({ path: at, reason: `${h.rule} is a decision about a type or a seam, not a rewrite` }); continue; }
+    const line = lines[h.line - 1];
+    if (line === undefined) { declined.push({ path: at, reason: `${r} has no line ${h.line} now; re-run \`bb scan\`` }); continue; }
+    const m = FILTER_MAP.exec(line);
+    if (!m) { declined.push({ path: at, reason: "the two callbacks are not one-line single-parameter arrows; this rewrite does not read a block body" }); continue; }
+    const [whole, pa, cond, pb, body] = m;
+    if (pa !== pb) { declined.push({ path: at, reason: `the callbacks name their parameter differently (\`${pa}\` then \`${pb}\`); renaming one is an edit this will not make blind` }); continue; }
+    if (/\bindex\b|\bi\b\s*\)/.test(whole)) { declined.push({ path: at, reason: "a callback takes the index, and the index the map sees is not the index the filter saw" }); continue; }
+    lines[h.line - 1] = line.replace(whole, `.flatMap(${pa} => (${cond}) ? [${body}] : [])`);
+    edits.push({ line: h.line, from: whole.slice(0, 60) });
+  }
+  if (!edits.length) return result({ ok: !declined.length, declined, why: declined.length ? `${declined.length} declined` : "nothing rewritable left" });
+  const next = lines.join("\n");
+  const patch = writePatch("flatten-filter-map", r, unifiedDiff(src, next, { from: `a/${r}`, to: `b/${r}` }));
+  if (apply) fs.writeFileSync(p, next);
+  return result({ changed: true, applied: apply, edits, declined, patch, files: [r], why: `${edits.length} pass(es) collapsed, ${declined.length} declined` });
+}
+
+/** Uppercase a marker the census cannot see. `// todo: ship this` is invisible
+ *  to a survey matching `TODO`, so the count is wrong in the one direction that
+ *  matters: a tree reports fewer open markers than it has. The work the marker
+ *  names is untouched; only its spelling is. */
+const HASH_COMMENT_LANGS = new Set(["py", "ruby", "sh", "bash", "yaml", "yml", "toml", "perl", "r", "make"]);
+const LOWER_MARKER = /(^|[^\w])(\/\/|\/\*|<!--|--|\*|#)(\s*)(todo|fixme|xxx|hack)\b(?=[:\s])/gi;
+export function normalizeTodoMarker(f, { apply = false } = {}) {
+  const ctx = makeCtx();
+  const dir = f.path === "." ? "" : `${f.path}/`;
+  const files = [], declined = [], edits = [];
+  for (const r of codeRels(ctx)) if (r.startsWith(dir)) files.push(r);
+  if (!files.length) return result({ ok: false, why: `no code file under ${f.path}` });
+  const written = [];
+  for (const r of files) {
+    const p = abs(r), hash = HASH_COMMENT_LANGS.has(langOf(r));
+    let src;
+    try { src = fs.readFileSync(p, "utf8"); } catch { declined.push({ path: r, reason: "not readable now" }); continue; }
+    if (!/todo|fixme|xxx|hack/i.test(src)) continue;
+    let touched = 0;
+    const next = src.replace(LOWER_MARKER, (whole, pre, open, gap, marker) => {
+      if (marker === marker.toUpperCase()) return whole;
+      // `#` opens a comment in some languages and an id selector in others; a
+      // rewrite in the wrong one edits a rule rather than a note.
+      if (open === "#" && !hash) return whole;
+      touched++;
+      return `${pre}${open}${gap}${marker.toUpperCase()}`;
+    });
+    if (!touched) continue;
+    edits.push({ file: r, count: touched });
+    written.push([p, next, src]);
+  }
+  if (!edits.length) return result({ ok: true, declined, why: "every marker is already in the form the census counts" });
+  const total = edits.reduce((n, e) => n + e.count, 0);
+  const first = written[0];
+  const patch = writePatch("normalize-todo-marker", f.path, unifiedDiff(first[2], first[1], { from: `a/${rel(first[0])}`, to: `b/${rel(first[0])}` }));
+  if (apply) for (const [p2, text] of written) fs.writeFileSync(p2, text);
+  return result({ changed: true, applied: apply, edits, declined, patch, files: edits.map((e) => e.file), why: `${total} marker(s) in ${edits.length} file(s) raised to the form the census counts` });
+}
+
 export const ACTUATORS = {
   "fix-doc-links": fixDocLinks, "sync-doc-counts": syncDocCounts, "prune-worktrees": pruneWorktrees, "sync-trunk": syncTrunk,
   "drop-dead-export": dropDeadExport, "remove-dead-dep": removeDeadDep, "strip-debug-line": stripDebugLine,
   "relock-npm": relockNpm, "resolve-identical-conflict": resolveIdenticalConflict, "drop-dead-knob": dropDeadKnob,
+  // The eleven that used to name none. Four edit; seven write the plan behind
+  // a decision and leave the finding open for the person who makes it.
+  "rescan-stale": rescanStale, "ignore-secret-file": ignoreSecretFile,
+  "flatten-filter-map": flattenFilterMap, "normalize-todo-marker": normalizeTodoMarker,
+  "plan-file-split": plans.planFileSplit, "plan-file-regions": plans.planFileRegions,
+  "plan-block-lift": plans.planBlockLift, "plan-orphan-disposition": plans.planOrphanDisposition,
+  "plan-catch-reasons": plans.planCatchReasons, "plan-ui-leverage": plans.planUiLeverage,
+  "scaffold-test": plans.scaffoldTest, "plan-fallback-contracts": plans.planFallbackContracts,
 };
 
 /** Run the actuator a finding names. Never throws: a failure is a result. */

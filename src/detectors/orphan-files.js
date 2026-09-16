@@ -43,6 +43,7 @@ export default {
     for (const [dir, files] of [...byDir].sort()) {
       out.push(finding({
         severity: "low", kind: "investigate", files, path: dir, key: dir,
+        auto_fix: "plan-orphan-disposition",
         title: `${dir}: ${files.length} file(s) nothing imports or names`,
         detail: files.slice(0, 20).map((f) => `  ${f} (${text.get(f).split("\n").length} lines)`).join("\n"),
         evidence: { files: files.slice(0, 50), count: files.length, lines: Object.fromEntries(files.slice(0, 50).map((f) => [f, text.get(f).split("\n").length])) },

@@ -60,7 +60,8 @@ export const DEFAULTS = {
               "worktree-hygiene", "dead-exports", "duplicate-blocks", "god-file",
               "orphan-files", "dead-deps", "doc-drift", "lockfile-drift", "stale-evidence",
               "missing-tests", "debug-leftovers", "ui-generic", "anti-slop",
-              "swallowed-errors", "dead-config"],
+              "swallowed-errors", "dead-config", "silent-fallback", "quiet-degrade",
+              "fault-mask"],
     promote_at: "medium",
   },
   designlabs: {

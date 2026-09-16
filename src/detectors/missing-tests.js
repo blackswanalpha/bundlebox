@@ -37,6 +37,7 @@ export default {
     for (const [dir, files] of [...byDir].sort()) {
       out.push(finding({
         severity: "low", kind: "verify", files, path: dir, key: dir,
+        auto_fix: "scaffold-test",
         title: `${dir}: ${files.length} recently changed file(s) with no test naming them`,
         detail: files.slice(0, 20).map((f) => `  ${f}`).join("\n"),
         evidence: { files: files.slice(0, 50), count: files.length, commits: COMMITS, test_files: tests.length },
