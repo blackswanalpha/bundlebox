@@ -35,7 +35,7 @@ export const ROWS = [
   // whose producer must never run on an unattended tick. It is compiled by the
   // SessionEnd hook, where a session that just changed the tree is the thing
   // being reconciled against it, or by hand.
-  { id: "memory", what: "the agent's memory, compiled and swept of claims that no longer resolve", path: () => path.join(OUT, "janitor"), verb: "bb janitor --apply", gear: "", by: "the SessionEnd hook, or `bb janitor --apply`" },
+  { id: "memory", what: "the agent's memory, compiled and swept of claims that no longer resolve", path: () => path.join(OUT, "janitor"), verb: "bb janitor compile", gear: "", by: "the SessionEnd hook, or `bb janitor compile`" },
   { id: "automation", what: "the habits this workspace has, as scripts, snippets, boilerplate and completions", path: () => path.join(OUT, "lathe", "INDEX.md"), verb: "bb lathe learn && bb lathe build --apply", gear: "buckmaster" },
   { id: "commandcenter", what: "one page for this workspace: the pipeline, the window, every session and what it saved", path: () => path.join(OUT, "commandcenter", "index.html"), verb: "bb commandcenter build", gear: "watch" },
 ];

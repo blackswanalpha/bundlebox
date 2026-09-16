@@ -85,3 +85,19 @@ test("a row no gear may build is reported apart from one that is missing", () =>
   assert.ok(r.buildable.includes("tables") || !r.missing.includes("tables"));
   for (const h of r.by_hand) assert.ok(h.by, `${h.id} says nothing about where it comes from`);
 });
+
+test("every row names a verb that exists and is spelled the way `bb help` spells it", async () => {
+  // `bb janitor --apply` was the first answer for the memory row, and it is
+  // read-only — it prints "`bb janitor compile` to write the window". A
+  // checklist naming a command that does not produce the row it is named
+  // against is worse than a row with no command at all.
+  const { VERBS } = await import("../src/cli.js").catch(() => ({ VERBS: null }));
+  for (const r of env.ROWS) {
+    const m = /^bb ([a-z]+)/.exec(r.verb);
+    assert.ok(m, `${r.id}: verb \`${r.verb}\` does not start with \`bb <verb>\``);
+    if (VERBS) assert.ok(VERBS.some?.((v) => (Array.isArray(v) ? v[0] : v) === m[1]), `${r.id} names \`bb ${m[1]}\`, which is not a verb`);
+  }
+  const memory = env.ROWS.find((r) => r.id === "memory");
+  assert.equal(memory.verb, "bb janitor compile", "the writing sub-verb, not the read-only bare verb");
+  assert.match(memory.by, /bb janitor compile/);
+});

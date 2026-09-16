@@ -268,7 +268,7 @@ async function preSearch(payload) {
   const seg = brief.parseBash(input.command);
   if (!seg) return;
   if (seg.kind === "search") {
-    const v = brief.searchVerdict(rec, seg.pattern, { pathArg: seg.pathArg || "", cwd: String(payload.cwd || "") });
+    const v = brief.searchVerdict(rec, seg.pattern, { pathArg: seg.pathArg || "", cwd: String(payload.cwd || ""), stdin: Boolean(seg.stdin) });
     if (v) decide("PreToolUse", v, CAPS["pre-search"]);
     return;
   }
