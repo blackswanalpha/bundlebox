@@ -20,6 +20,7 @@ export const MODULES = [
   ["git", "./git/index.js"],
   ["tokens", "./tokens/index.js"],
   ["snapgen", "./snapgen/index.js"],
+  ["arc", "./arc/index.js"],
   ["pinpoint", "./pinpoint/index.js"],
   ["bench", "./bench/index.js"],
   ["genesis", "./genesis/index.js"],
@@ -90,13 +91,13 @@ const SPENDS = { run: "--apply", bridge: "--run --spend" };
 const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs", "janitor", "finish"]);
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
-const RECORDS = new Set(["scan", "compile", "route", "snapgen", "pinpoint", "bench", "genesis", "cookbook",
+const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
   "simulate", "runbook", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "commandcenter", "pipeline", "scripts", "sieve"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
   ["look", "What is in this tree?", ["init", "doctor", "scan", "findings", "explain", "oversight", "designlabs"]],
-  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
+  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
   ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "commandcenter"]],

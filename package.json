@@ -50,6 +50,8 @@
     "designlabs/",
     "kernel/Cargo.toml",
     "kernel/src/",
+    "arc/Cargo.toml",
+    "arc/src/",
     "expert/bundlebox_expert/",
     "assets/logo.svg",
     "README.md",
@@ -58,7 +60,8 @@
     "EXPLANATION.md",
     "!expert/**/__pycache__",
     "!**/*.pyc",
-    "!kernel/target"
+    "!kernel/target",
+    "!arc/target"
   ],
   "engines": {
     "node": ">=20.0.0"
@@ -68,6 +71,7 @@
     "selftest": "node bin/bb.js selftest",
     "lint": "node scripts/lint.js",
     "kernel": "cargo build --release --manifest-path kernel/Cargo.toml",
+    "arc": "cargo build --release --manifest-path arc/Cargo.toml",
     "expert:test": "python3 -m unittest discover -s expert/tests -v",
     "prepack": "npm run lint && npm test"
   },
