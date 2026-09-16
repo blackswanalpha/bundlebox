@@ -13,6 +13,7 @@ import { load } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { AGENTS, ORDER, INSTRUCTIONS, instructions, START, END, CLAUDE_HOOKS, isOurHook, detectAgents } from "./agents.js";
 import { wired as artemisWired } from "../recom/artemis.js";
+import { commands as proxyCommands } from "./proxy.js";
 
 // Whether this box has a mobile driver registered decides whether the block
 // carries the sentence about one. Read once per process rather than per file:
@@ -25,14 +26,20 @@ export function mobileWired() {
   return _mobile;
 }
 export const setMobileWired = (v) => { _mobile = Boolean(v); };
-const block = () => instructions({ mobile: mobileWired() });
+/** The block as this workspace has it: mobile line if there is a phone, minus
+ *  whatever `bb wire trim --apply` measured nobody reaching for. */
+const block = () => instructions({ mobile: mobileWired(), trim: load().wire?.trim || [] });
 
 // ── edit transforms: (before | null) -> after | null (null = delete/absent) ──
 
 export function addBlock(before) {
   const cur = before || "";
-  const i = cur.indexOf(START), j = cur.indexOf(END);
   const text = block();
+  // A block trimmed down to nothing is not written as an empty block: a heading
+  // with no bullets under it is pure cost in every window. Adding nothing IS
+  // removing what is there.
+  if (!text) return removeBlock(before);
+  const i = cur.indexOf(START), j = cur.indexOf(END);
   if (i >= 0 && j > i) return cur.slice(0, i) + text + cur.slice(j + END.length);
   if (!cur.trim()) return text + "\n";
   return cur.replace(/\s*$/, "") + "\n\n" + text + "\n";
@@ -106,6 +113,40 @@ export function removeClaudeHooks(before) {
   return Object.keys(o).length ? dumpJson(o) : null;
 }
 
+/** Another agent's hooks file, which is a flat `{version, hooks: {event: [...]}}`
+ *  rather than Claude Code's matcher groups.
+ *
+ *  Ours are recognised by the same rule as everywhere else — the command starts
+ *  with `bb hook` — so a user's own entry on the same event survives both
+ *  directions. That rule is the whole reason `bb unwire` can be trusted: this
+ *  box never owns a file it did not create, only the rows inside it that name
+ *  its own binary. */
+export function addAgentHooks(before, { shape }) {
+  const o = parseJson(before);
+  const want = shape();
+  o.version = o.version || want.version || 1;
+  o.hooks = o.hooks && typeof o.hooks === "object" ? o.hooks : {};
+  for (const [event, entries] of Object.entries(want.hooks || {})) {
+    const kept = (Array.isArray(o.hooks[event]) ? o.hooks[event] : []).filter((x) => !isOurHook(x));
+    o.hooks[event] = [...kept, ...entries];
+  }
+  return dumpJson(o);
+}
+export function removeAgentHooks(before) {
+  if (before == null) return null;
+  let o; try { o = parseJson(before); } catch { return before; }
+  if (!o.hooks || typeof o.hooks !== "object") return before;
+  for (const ev of Object.keys(o.hooks)) {
+    if (!Array.isArray(o.hooks[ev])) continue;
+    o.hooks[ev] = o.hooks[ev].filter((x) => !isOurHook(x));
+    if (!o.hooks[ev].length) delete o.hooks[ev];
+  }
+  if (!Object.keys(o.hooks).length) delete o.hooks;
+  // `version` alone is a file we wrote and nothing else: it goes with the rows.
+  if (Object.keys(o).length === 1 && "version" in o) return null;
+  return Object.keys(o).length ? dumpJson(o) : null;
+}
+
 /** TOML: one `[section]` block, appended or replaced by text. No TOML parser
  *  exists in a zero-dependency package, so the edit is a section-bounded
  *  splice: from our header to the next `[` header or EOF. */
@@ -170,6 +211,7 @@ function transform(f, before, mode) {
       case "owned": return mode === "add" ? f.content : null;
       case "json": {
         if (f.edit === "claude-hooks") return mode === "add" ? addClaudeHooks(before) : removeClaudeHooks(before);
+        if (f.edit === "agent-hooks") return mode === "add" ? addAgentHooks(before, f) : removeAgentHooks(before);
         return mode === "add" ? addMcp(before, f) : removeMcp(before, f);
       }
       case "toml": return mode === "add" ? addToml(before, f) : removeToml(before, f);
@@ -262,16 +304,55 @@ function preview(r, root) {
 export const commands = {
   wire: {
     help: "install the instructions block, MCP entry and hooks into each agent",
-    usage: "bb wire [--agents claude,codex,...|auto] [--apply] [--global] [--json] | bb wire status",
+    usage: "bb wire [--agents claude,codex,...|auto] [--apply] [--global] [--json] | bb wire status | bb wire trim [--apply]",
     long: `  Dry run lists every file it would create or modify, with a preview.
   --apply writes, idempotently, between <!-- bundlebox:start/end --> markers.
   --global targets the per-user files (~/.claude, ~/.codex, ~/.gemini, ~/.config/opencode).
+
+  \`bb wire trim\` reads \`bb uptake\` and names the instruction lines that were installed, had the
+  chance to fire at least three times, and fired none. Every line of the block is billed in every
+  window of every session, so a line nothing reaches for is not neutral. --apply writes the ids
+  into \`wire.trim\`; \`bb wire --apply\` then rewrites the files from it.
+
   Agents: ${ORDER.join(", ")}.`,
     run: async ({ _, flags }) => {
       const cfg = load();
       const scope = flags.global ? "global" : "project";
       const { names, unknown } = await resolveAgents(flags.agents, cfg);
       if (unknown.length) warn(`unknown agent(s): ${unknown.join(", ")}; known: ${ORDER.join(", ")}`);
+      if (_[0] === "trim") {
+        const [{ plan: trimPlan, apply: trimApply }, uptake, mcp] = await Promise.all([
+          import("./trim.js"), import("../uptake/index.js"), import("../mcp/tools.js"),
+        ]);
+        const report = uptake.report({ cfg });
+        const p = trimPlan({ cfg, report, mcpTools: mcp.TOOLS });
+        if (flags.json) { emit({ ...p, block_after: undefined }); return 0; }
+        out(`  uptake over ${report.sessions.length} session(s) — what sits in every window, and what reached for it\n`);
+        out("  instructions block — billed on every prompt of every session\n");
+        for (const r of p.rows) {
+          out(`    ${r.verdict.padEnd(11)} ${r.id.padEnd(10)} ~${String(r.tokens).padStart(3)} tok${r.already ? "  (already trimmed)" : ""}   ${r.why}`);
+        }
+        out("\n  MCP tools — name, description and input schema, in the system prompt of every wired session\n");
+        for (const r of p.tools) {
+          out(`    ${r.verdict.padEnd(11)} ${r.name.padEnd(18)} ~${String(r.tokens).padStart(3)} tok${r.already ? "  (already trimmed)" : ""}   ${r.why}`);
+        }
+        if (p.tools_note) out(`    note: ${p.tools_note}`);
+        out("\n  skills — reported only: a skill costs nothing until its trigger fires\n");
+        for (const r of p.skills) out(`    ${"report".padEnd(11)} ${r.name.padEnd(18)} ${r.files} file(s)   ${r.why}`);
+        if (!p.trim.length && !p.trim_tools.length) {
+          out(`\n  nothing measured as dead. The block is ~${p.tokens_before} tokens and every line of it is billed on every prompt.`);
+          return 0;
+        }
+        out("");
+        if (p.trim.length) out(`  ${p.trim.length} instruction line(s) installed, given the chance, and reached for 0 times: ${p.trim.join(", ")}`);
+        if (p.trim_tools.length) out(`  ${p.trim_tools.length} MCP tool(s) nothing has ever called: ${p.trim_tools.join(", ")}`);
+        out(`  the block goes ${p.tokens_before} -> ${p.tokens_after} tokens; together that is ~${p.per_prompt} tokens off EVERY prompt of every session in this workspace.`);
+        if (!flags.apply) { out("\n  dry run. --apply writes `wire.trim` and `wire.trim_tools` into .bundlebox/config.json; `bb wire --apply` then rewrites the agent files."); return 0; }
+        const w = trimApply(p);
+        out(`\n  wrote wire.trim = [${w.wrote.join(", ")}]${w.wrote_tools.length ? `, wire.trim_tools = [${w.wrote_tools.join(", ")}]` : ""}.`);
+        out("  Run `bb wire --apply` to rewrite the agent files; the MCP server drops the trimmed tools from its next `tools/list`.");
+        return 0;
+      }
       if (_[0] === "status") {
         const st = status(names.length ? names : ORDER, { scope });
         if (flags.json) { emit({ scope, agents: st }); return 0; }
@@ -316,6 +397,11 @@ export const commands = {
       return 0;
     },
   },
+  // The doorway, for an agent whose hook system this box cannot write into.
+  // Lives in its own module and is re-exported here so `bb wire`, `bb unwire`,
+  // `bb hook` and `bb proxy` are one group in `bb --help`: they are four halves
+  // of one question, which is what the agent is actually made to do.
+  ...proxyCommands,
   hook: {
     help: "a Claude Code hook handler (stdin JSON in, JSON out, always exit 0)",
     usage: "bb hook session-start|prompt|pre-read|post-tool|pre-compact|session-end",

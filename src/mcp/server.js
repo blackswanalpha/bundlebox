@@ -7,6 +7,19 @@
 // searching for what the factory already knows.
 import { createInterface } from "node:readline";
 import { TOOLS } from "./tools.js";
+import { load } from "../core/config.js";
+
+/** The tools this workspace advertises. Read per call rather than once: the
+ *  server holds one process for the life of a session, and a trim applied
+ *  during it should reach the next `tools/list` rather than the next restart. */
+export function listed() {
+  const off = new Set((load({ fresh: true }).wire?.trim_tools || []).map(String));
+  const kept = TOOLS.filter((t) => !off.has(t.name));
+  // Advertising nothing is how a server looks broken. A trim that would empty
+  // the list is ignored and the full set is served, because "this server has no
+  // tools" is a different claim from "these tools are not worth their window".
+  return kept.length ? kept : TOOLS;
+}
 
 export const PROTOCOL_VERSION = "2025-06-18";
 
@@ -29,7 +42,16 @@ export function serve({ input = process.stdin, output = process.stdout, name = "
       }
       if (method === "notifications/initialized" || method?.startsWith("notifications/")) return;
       if (method === "ping") return reply(id, {});
-      if (method === "tools/list") return reply(id, { tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
+      // `wire.trim_tools` is what `bb wire trim --apply` measured nobody
+      // calling. Every tool listed here puts its name, description and input
+      // schema into the system prompt of every session that has this server
+      // wired, and it is re-sent on every turn — so a tool nothing reaches for
+      // is the same tax the instructions block was.
+      //
+      // Listed, never CALLED-away: a trimmed tool is still dispatched if
+      // something asks for it by name. Hiding a capability is a saving;
+      // breaking one is not.
+      if (method === "tools/list") return reply(id, { tools: listed().map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
       if (method === "tools/call") {
         const tool = TOOLS.find((t) => t.name === params.name);
         if (!tool) return fail(id, -32602, `unknown tool ${params.name}`);

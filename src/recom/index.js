@@ -275,6 +275,27 @@ async function cmd({ _, flags, rest }) {
     return gateCmd({ _, flags, rest });
   }
 
+  if (sub === "repeatable") {
+    const { survey, remember } = await import("./repeatable.js");
+    const id = _[1];
+    if (id && flags.record) {
+      const r = remember(id, { evidence: [] });
+      if (flags.json) { emit(r); return r.ok ? 0 : 1; }
+      if (!r.ok) { warn(r.why); return 1; }
+      out(`  ${r.state}  ${r.id}`);
+      return 0;
+    }
+    const rows = survey({});
+    if (flags.json) { emit({ repeatables: rows }); return 0; }
+    out(table(rows.map((r) => [r.run ? "RUN" : "skip", r.id, String(r.facts), r.verdict, (r.why || "").slice(0, 78)]),
+      { header: ["next", "surface", "facts", "verdict", "why"] }).split("\n").map((l) => "  " + l).join("\n"));
+    const held = rows.filter((r) => !r.run);
+    out(`\n  ${held.length} of ${rows.length} surface(s) do not have to run: every fact they declared reads as it did.`);
+    out("  Everything else runs. `unknown` is not `fresh`, so an unreadable fact is a reason to do the work.");
+    if (held.length) out(`  standing in for ~${Math.round(held.reduce((a, r) => a + (r.saved_wall_s || 0), 0) / 60)} minutes of re-deriving, every time one is read instead of run.`);
+    return 0;
+  }
+
   if (sub === "mobile") {
     const st = artemis.status();
     if (flags.json) { emit(st); return st.ready ? 0 : 1; }
@@ -342,7 +363,7 @@ async function cmd({ _, flags, rest }) {
 export const commands = {
   recom: {
     help: "what has already been driven, and whether that answer still holds (0 model tokens)",
-    usage: "bb recom [list|check <id>|gate <id> -- <cmd>|replay <id>|record --from <file>|refresh <id>|forget <id>|mobile|probes|template] [--apply] [--json]",
+    usage: "bb recom [list|check <id>|gate <id> -- <cmd>|repeatable|replay <id>|record --from <file>|refresh <id>|forget <id>|mobile|probes|template] [--apply] [--json]",
     long: [
       "  bb recom list                 every record, with its verdict right now",
       "  bb recom replay <id>          the answer, if the answer still holds — exits 1 when it does not",

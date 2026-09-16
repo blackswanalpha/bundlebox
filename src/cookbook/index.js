@@ -264,10 +264,30 @@ async function cookbookCmd({ _, flags }) {
       out(`  ${id}: ${input.scenarios.length} scenarios, ${input.scenarios.reduce((a, s) => a + s.steps.length, 0)} steps against ${input.base || "(no base)"}\n  engine ${p.engine} — ${p.why}\n  ${input.rpm ? `paced at ${input.rpm} rpm` : "unpaced"}`);
       return 0;
     }
-    const r = await runCorpus(id, { base: String(flags.base || ""), rpm: flags.rpm, only: only(flags),
+    // A board is the dearest repeatable in this box: it drives a real service,
+    // and nothing about that changes when neither the corpus nor the service
+    // has moved. So the same gate every other repeatable surface now has —
+    // re-probe the declared facts, run only when one of them reads differently.
+    // `--force` is already this verb's word for "run it anyway".
+    // `--base` first, then the one the workspace declared. Without the second
+    // half the `scenarios` pipeline stage names a fix — `bb cookbook run --base
+    // <url>` — that nobody can run from a gear or a cron line, because a gear
+    // has nowhere to put the URL. That is why that stage has never closed here.
+    const base = String(flags.base || loadCfg().mainboard?.bugbash?.base || "");
+    const { shouldRun, remember } = await import("../recom/repeatable.js");
+    const gate = flags.force ? { run: true, verdict: "forced", why: "--force" } : shouldRun("cookbook/board", { base });
+    if (!gate.run) {
+      if (flags.json) { emit({ skipped: true, ...gate }); return 0; }
+      out(`  fresh  the corpus and ${base || "the base"} read exactly as they did when this board was last run, so nothing was driven.`);
+      out(`  ${gate.why}\n  \`bb cookbook board\` shows it. --force runs it anyway.`);
+      return 0;
+    }
+    const r = await runCorpus(id, { base, rpm: flags.rpm, only: only(flags),
       parallel: flags.parallel, engine: String(flags.engine || "auto"), budget: Number(flags.budget) || 0,
       ids: flags.ids ? String(flags.ids).split(",") : null, force: !!flags.force, runId: String(flags.run || "") });
     if (r.rc) { if (flags.json) emit(r); else { warn(r.why); for (const e of r.errors || []) out(`    !! ${e}`); } return r.rc; }
+    remember("cookbook/board", { ok: true, opts: { base }, evidence: [String(r.file || "")].filter(Boolean),
+      summary: `The corpus ran against ${base || "the configured base"}: ${r.board.totals.passed} passed, ${r.board.totals.failed} failed, ${r.board.totals.error} errored. While the corpus and that service read the same, this board stands.` });
     if (flags.json) { emit({ board: r.board, file: r.file, findings: r.findings }); return 0; }
     out(boardText(r.board));
     out(`\n  ${r.findings} finding(s) stored · board ${r.file}`);

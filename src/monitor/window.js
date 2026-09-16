@@ -16,6 +16,7 @@ import * as store from "../core/store.js";
 import * as ledger from "../tokens/ledger.js";
 import * as prices from "../tokens/prices.js";
 import { now, human } from "../core/util.js";
+import { delta as benchDelta } from "../bench/gate.js";
 
 export const BLOCK_HOURS = 5;
 export const LOOKBACK_HOURS = 192;         // 8 days, the window P90 is taken over
@@ -149,10 +150,25 @@ export function snapshot({ plan = "custom", limit = 0, fold = false, at = Date.n
 /** The on-call gate. Everything local is free; this is asked immediately before
  *  the one thing that is not, so a window that is nearly gone is not spent on a
  *  call that will be cut off half-written. */
-export function guard({ plan = "custom", limit = 0, allowNear = false } = {}) {
+export function guard({ plan = "custom", limit = 0, allowNear = false, unit = null, allowUnbenched = false } = {}) {
   const s = snapshot({ plan, limit });
   if (s.state === "indeterminate") return { ok: true, state: s.state, why: s.why || "no limit could be established; not blocking on an unknown" };
   if (s.state === "hit") return { ok: false, state: s.state, why: `the current 5-hour block is at ${s.limit.pct}% of ${human(s.limit.limit)} (${s.limit.source}); it resets in ${s.block?.minutes_left ?? "?"} minutes` };
   if (s.state === "near" && !allowNear) return { ok: false, state: s.state, why: `the current block is at ${s.limit.pct}%, ${human(s.limit.left)} left and burning ${human(s.burn.per_minute)}/min — pass --allow-near to send anyway` };
-  return { ok: true, state: s.state, why: `${s.limit.pct ?? "?"}% of the block used` };
+  // The second question, asked only when the caller names what it is about to
+  // spend on: does the bench say packing this was worth anything?
+  //
+  // A session is opened on the claim that the brief in front of it is cheaper
+  // than the search it replaces, and `bb bench` is the only thing here that
+  // measures that claim. A spend whose work has a MEASURED loss is refused;
+  // one the suite has never covered is allowed and told so, because refusing on
+  // an absent measurement would make the first spend in any workspace
+  // impossible.
+  const b = unit ? benchDelta(unit) : null;
+  if (b && b.known && b.saved_pct <= 0 && !allowUnbenched) {
+    return { ok: false, state: s.state, bench: b,
+      why: `the bench measured this work as costing ${Math.abs(b.saved_pct)}% MORE packed than bare (task \`${b.task}\`, ${String(b.at).slice(0, 10)}) — route it bare, or pass --allow-unbenched` };
+  }
+  return { ok: true, state: s.state, bench: b,
+    why: `${s.limit.pct ?? "?"}% of the block used${b ? (b.known ? `; bench says packing saves ${b.saved_pct}% on \`${b.task}\`` : `; no bench delta for this work (${b.why})`) : ""}` };
 }

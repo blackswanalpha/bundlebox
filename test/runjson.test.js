@@ -12,7 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { checkCmd, stdoutBody, BODY_KEYS } from "../src/cookbook/expect.js";
-import { shellCmd } from "../src/core/exec.js";
+import { shellCmd, pipedOn } from "../src/core/exec.js";
 
 const PAYLOAD = JSON.stringify({
   label: "catalogue", blank: false, nodes: 3,
@@ -129,28 +129,43 @@ test("every body key is one the kernel also knows", async (t) => {
   assert.deepEqual([...theirs].sort(), [...BODY_KEYS].sort());
 });
 
-test("both engines choose the same shell, and neither hard-codes bash on Windows", () => {
-  // The defect this pins: `src/cookbook/engine.js` hard-coded `bash -lc` while
-  // the kernel had already decided on cmd.exe for Windows. On a Windows box
-  // WITH git-bash both engines ran, under DIFFERENT shells, and disagreed about
-  // the same corpus — which is the one failure mode the test above cannot see
-  // now that its command no longer depends on shell quoting.
-  const posix = shellCmd("a | b", { win: false });
+test("both engines choose the same shell, and a pipe reports the right exit code wherever one exists", () => {
+  // Two defects, one rule. The first: `src/cookbook/engine.js` hard-coded
+  // `bash -lc` while the kernel had already decided on cmd.exe for Windows, so
+  // on a Windows box WITH git-bash both engines ran under DIFFERENT shells and
+  // disagreed about the same corpus.
+  //
+  // The second is why the Windows branch is now a fallback rather than the
+  // rule. cmd.exe has no `pipefail` and no equivalent, so `npm test | tee log`
+  // reported `tee`'s exit code and a gate that should have failed came back
+  // `ok`. A gate that cannot fail is worse than no gate. Git for Windows ships
+  // a bash and puts it on PATH, so the POSIX branch is taken there too when one
+  // is reachable, and only a box with none at all falls back — where `pipedOn`
+  // reports the remaining gap instead of hiding it.
+  const posix = shellCmd("a | b", { win: false, bash: "bash" });
   assert.deepEqual(posix, ["bash", "-lc", "set -o pipefail; { a | b ; }"]);
-  assert.deepEqual(shellCmd("a | b", { win: false, merge: true }),
+  assert.deepEqual(shellCmd("a | b", { win: false, merge: true, bash: "bash" }),
     ["bash", "-lc", "set -o pipefail; { a | b ; } 2>&1"]);
 
-  const win = shellCmd("a | b", { win: true });
+  // Windows WITH a bash: the same shell, the same pipefail, the same code.
+  const winBash = shellCmd("a | b", { win: true, bash: "C:\\Program Files\\Git\\bin\\bash.exe" });
+  assert.deepEqual(winBash, ["C:\\Program Files\\Git\\bin\\bash.exe", "-lc", "set -o pipefail; { a | b ; }"]);
+  assert.equal(pipedOn({ win: true, bash: "C:\\bash.exe" }), true);
+
+  // Windows with NO bash anywhere: cmd.exe, and the gap is reported.
+  const win = shellCmd("a | b", { win: true, bash: null });
   assert.equal(win[0], process.env.ComSpec || "cmd.exe");
   assert.deepEqual(win.slice(1), ["/d", "/s", "/c", "a | b"]);
-  assert.deepEqual(shellCmd("a | b", { win: true, merge: true }).slice(1), ["/d", "/s", "/c", "a | b 2>&1"]);
-  assert.ok(!win.includes("bash"), "a stock Windows box has no bash, and a spawn error is not a verdict");
+  assert.deepEqual(shellCmd("a | b", { win: true, merge: true, bash: null }).slice(1), ["/d", "/s", "/c", "a | b 2>&1"]);
+  assert.ok(!win.includes("bash"), "there is none to run, and a spawn error is not a verdict");
+  assert.equal(pipedOn({ win: true, bash: null }), false, "the remaining gap is named, not hidden");
+  assert.equal(pipedOn({ win: false, bash: "bash" }), true);
 
   // And it still mirrors the Rust. Coarse on purpose — it catches the flags
   // moving apart, which is what actually happened, without pinning formatting.
   const rust = fs.readFileSync(path.join(process.cwd(), "kernel", "src", "gate.rs"), "utf8");
-  const shell = rust.slice(rust.indexOf("pub fn shell"), rust.indexOf("pub fn op_gate"));
-  for (const token of ['"/d"', '"/s"', '"/c"', '"bash"', '"-lc"', "set -o pipefail"]) {
+  const shell = rust.slice(rust.indexOf("pub fn bash_path"), rust.indexOf("pub fn op_gate"));
+  for (const token of ['"/d"', '"/s"', '"/c"', '"bash"', '"-lc"', "set -o pipefail", "piped_ok"]) {
     assert.ok(shell.includes(token), `kernel/src/gate.rs::shell no longer carries ${token}; the two engines have drifted`);
   }
 });

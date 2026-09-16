@@ -497,8 +497,34 @@ async function sessionEnd(payload) {
         const em = await import("../lathe/emit.js");
         const r = await em.all(m, { apply: true });
         log("session-end", `lathe ${m.sequence.verbs.length} verb + ${m.sequence.shell.length} shell habit(s), ${r.rows.filter((x) => x.state === "wrote").length} artefact(s)`);
+        // The actuator half. `reach` is free and always runs — it reads the
+        // shapes the learn pass just read — so a script that displaced nothing
+        // is visible without anybody asking. Writing into `scripts/` is a
+        // stronger act and stays behind `lathe.apply_on_end`: a hook that adds
+        // files to somebody's repository unasked is a hook they turn off.
+        const act = await import("../lathe/apply.js");
+        if (cfg.lathe.apply_on_end) {
+          const s = await act.sweep(m, { apply: true, cfg });
+          log("session-end", `lathe applied ${s.applied.rows.filter((x) => x.state === "wrote" || x.state === "updated").length}, tombstoned ${s.tombstoned.length}`);
+        } else {
+          const reach = act.reach({ cfg });
+          if (reach.losing) log("session-end", `lathe ${reach.losing} applied script(s) have displaced nothing — \`bb lathe sweep --apply\``);
+        }
       }
     } catch (e) { log("session-end", `lathe ${String(e && e.message || e).slice(0, 160)}`); }
+  }
+  // The echos, on the same sleep-time budget as the janitor and the lathe: the
+  // session that produced the rows should not pay for reading them. Nothing is
+  // emitted into the window — this session is over — so what it does is file
+  // the findings, and the NEXT session opens with them in `bb findings`.
+  if (cfg.echos?.enabled !== false && cfg.echos?.on_session_end) {
+    try {
+      const echos = await import("../echos/index.js");
+      const r = await echos.run({ cfg });
+      echos.write(r);
+      const filed = echos.file(r);
+      log("session-end", `echos ${r.hits} hit(s) over ${r.sessions} session(s), ${filed} filed (${r.engine})`);
+    } catch (e) { log("session-end", `echos ${String(e && e.message || e).slice(0, 160)}`); }
   }
   if (!cfg.janitor?.refresh) return;
   try {

@@ -64,6 +64,18 @@ export const GEARS = [
       { verb: "bench", args: ["init"], when: "open_findings > 0", description: "a suite from the findings that name a file" },
       { verb: "bench", args: ["run"], when: "open_findings > 0", skip_if_fresh: true, inputs: source,
         description: "both arms, per task; the packed arm against a search and a read" },
+      // Refit the budget's own constants on the tick, for the same reason the
+      // ablation runs here. `churn_factor`, `anchor_widen` and the reserve
+      // table were shipped numbers that nothing on any box ever moved, so every
+      // brief in every workspace was budgeted with one machine's measurement
+      // from one afternoon. This reads stored rows and transcripts and calls
+      // nothing; a factor with too few samples keeps its shipped value and the
+      // report says so.
+      { verb: "tokens", args: ["calibrate"], flags: { apply: true }, description: "refit churn, widen and the reserve table from this workspace's own history" },
+      // The other axis: what the WORK looked like, not what it cost. Reads the
+      // recorded shapes, the folded turns and the brief scopes — all three of
+      // which the stages above just refreshed — and files a finding per hit.
+      { verb: "echos", description: "spin, oscillate, drift, diminishing, converge over the sessions on disk" },
     ],
   }),
   gear({

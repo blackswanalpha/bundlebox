@@ -81,7 +81,15 @@ async function cmd({ _, flags }) {
   }
 
   if (sub === "guard") {
-    const g = guard({ ...opts, allowNear: !!flags.allowNear });
+    // `--for` names the work about to be spent on, so the guard can ask the
+    // second question as well as the first: is the window there, AND did the
+    // bench measure packing this as a win. Without it only the window is
+    // checked, which is what every caller before this got.
+    const forWhat = _.slice(1).filter((x) => !x.startsWith("-")).join(" ") || String(flags.for || "");
+    const unit = forWhat || flags.files
+      ? { title: forWhat, scope: String(flags.files || "").split(",").filter(Boolean) }
+      : null;
+    const g = guard({ ...opts, allowNear: !!flags.allowNear, unit, allowUnbenched: !!flags.allowUnbenched });
     if (flags.json) { emit(g); return g.ok ? 0 : CODES.near; }
     out(`  ${g.ok ? "ok" : "REFUSE"} — ${g.why}`);
     return g.ok ? 0 : CODES[g.state] ?? CODES.error;

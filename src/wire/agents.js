@@ -15,21 +15,43 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { PKG_ROOT } from "../core/paths.js";
+import { load } from "../core/config.js";
 
 export const START = "<!-- bundlebox:start -->";
 export const END = "<!-- bundlebox:end -->";
 
-// One shared block, ~250 tokens. Short on purpose: it sits in EVERY session's
-// window, so every sentence here is paid for on every prompt.
-export const BASE = `${START}
-## bundlebox — zero-token facts about this repository
+export const HEADING = "## bundlebox — zero-token facts about this repository";
 
-- Before searching for where a task lives, call the \`bb_pinpoint\` MCP tool (or run \`bb pinpoint "<task>"\`). It returns the files, the symbols and a packed brief that already fits the window.
-- For layout, symbols and call sites read \`.bundlebox/out/snapgen/INDEX.md\` and the table it points to, instead of grepping the tree.
-- Before opening a large scope run \`bb context <files>\` (or \`bb_context\`) to see whether it fits; read a range (offset/limit) when it does not.
-- Never edit anything under \`.bundlebox/out/\`: it is generated and fingerprinted.
-- Open findings: \`bb findings\` (or \`bb_findings\`); the derivation behind one: \`bb explain <id>\`.
-${END}`;
+/** The block, one addressable line at a time.
+ *
+ *  It used to be one template string, which made it un-trimmable: every line in
+ *  it is billed in EVERY window of EVERY session whether the agent reaches for
+ *  it or not, and `bb uptake` measures exactly which ones nothing reaches for.
+ *  A surface that cannot be measured off a line cannot be removed, so the block
+ *  is now rows with ids, and `bb wire trim --apply` writes the ids of the dead
+ *  ones into `wire.trim`.
+ *
+ *  `surface` names the `bb uptake` row a line is ABOUT, and it is what makes
+ *  the trim a measurement rather than an opinion. A line with no surface — the
+ *  one about not editing generated files — is never trimmed automatically: it
+ *  is a prohibition, and nothing observable happens when a session obeys it. */
+export const BULLETS = [
+  { id: "pinpoint", surface: "pinpoint",
+    text: "Before searching for where a task lives, call the `bb_pinpoint` MCP tool (or run `bb pinpoint \"<task>\"`). It returns the files, the symbols and a packed brief that already fits the window." },
+  { id: "tables", surface: "tables",
+    text: "For layout, symbols and call sites read `.bundlebox/out/snapgen/INDEX.md` and the table it points to, instead of grepping the tree." },
+  { id: "context", surface: "mcp",
+    text: "Before opening a large scope run `bb context <files>` (or `bb_context`) to see whether it fits; read a range (offset/limit) when it does not." },
+  { id: "generated", surface: null,
+    text: "Never edit anything under `.bundlebox/out/`: it is generated and fingerprinted." },
+  { id: "findings", surface: "cli",
+    text: "Open findings: `bb findings` (or `bb_findings`); the derivation behind one: `bb explain <id>`." },
+];
+
+/** The whole block, every line, as it has always been written. Kept as a
+ *  constant so a caller that means "all of it" does not have to know about
+ *  trimming. */
+export const BASE = [START, HEADING, "", ...BULLETS.map((b) => `- ${b.text}`), END].join("\n");
 
 // Added ONLY when a mobile driver is actually registered on this box. Driving a
 // phone is the most expensive thing a session can ask for, so the line is worth
@@ -39,14 +61,33 @@ export const MOBILE = `- Driving a device costs ~10 minutes and ~24k tokens. Bef
 
 /** The block as written into a file. Composed rather than constant because a
  *  sentence about phones in a repository with no phone is a sentence every
- *  prompt pays for and no session uses. */
-export function instructions({ mobile = false } = {}) {
-  if (!mobile) return BASE;
-  return BASE.replace(`\n${END}`, `\n${MOBILE}\n${END}`);
+ *  prompt pays for and no session uses — and, now, because a line `bb uptake`
+ *  measured nobody reaching for is the same tax with a different name.
+ *
+ *  `trim` is a list of bullet ids to leave out. An unknown id is ignored rather
+ *  than an error: it is config, it arrives by hand and by `--apply`, and a
+ *  typo there must not stop every agent on the box being wired. */
+export function instructions({ mobile = false, trim = [] } = {}) {
+  const drop = new Set((trim || []).map(String));
+  const kept = BULLETS.filter((b) => !drop.has(b.id));
+  // Trimming everything would install a heading and nothing under it, which is
+  // pure cost. An empty block is not written at all.
+  if (!kept.length) return "";
+  const lines = [START, HEADING, "", ...kept.map((b) => `- ${b.text}`)];
+  if (mobile) lines.push(MOBILE);
+  lines.push(END);
+  return lines.join("\n");
 }
 
 // Kept so a caller that only wants the base block still reads naturally.
 export const INSTRUCTIONS = BASE;
+
+/** The block for an agent whose whole FILE is ours — Cursor's `.mdc`, Cline's
+ *  and Windsurf's rule files. Those three have no markers to splice between, so
+ *  the descriptor carries the content, and it has to read `wire.trim` when the
+ *  plan is built rather than when this module is imported, or a trim would
+ *  never reach them. */
+export const ownedBlock = () => instructions({ trim: load().wire?.trim || [] });
 
 // The MCP server every agent points at. `bb` on PATH, not an absolute path:
 // the file is committed and other people's boxes do not share this one's HOME.
@@ -77,6 +118,95 @@ export const CLAUDE_HOOKS = [
 
 export const HOOK_PREFIX = "bb hook ";
 export const isOurHook = (h) => h && typeof h === "object" && typeof h.command === "string" && /(^|[\s/])bb(\.js)? hook /.test(h.command);
+
+// ── the enforcement gap, past Claude Code ───────────────────────────────────
+//
+// `CLAUDE_HOOKS` above is why the guards work on one agent. `bb uptake` is why
+// that matters: on this workspace the MCP tools fired in 0 of 19 sessions and
+// pinpoint in 7 of the 17 that opened five or more distinct files. A surface
+// the model may decline on a hunch gets declined, and everything bundlebox
+// installs into the other nine agents is exactly that kind of surface.
+//
+// So: where an agent HAS a hook system, install the same two guards into it.
+// Where it has none, `bb proxy` wraps the command line instead.
+//
+// Every shape here is UNVERIFIED and says so, which is this file's existing
+// rule for a descriptor read out of vendor documentation rather than off this
+// box. That is also why `wire.agent_hooks` is off by default: a guess that
+// writes a hooks file an agent then refuses to start with is a worse failure
+// than not being installed, and the person on that agent is the one who can
+// tell in one run.
+export const AGENT_HOOKS = {
+  cursor: {
+    unverified: "Cursor docs: .cursor/hooks.json, `{version, hooks: {beforeReadFile, beforeShellExecution, ...}}`, each entry `{command}` speaking JSON on stdin/stdout",
+    path: () => path.join(".cursor", "hooks.json"),
+    // `beforeReadFile` is the read guard and `beforeShellExecution` is the
+    // search guard, which is the same split `CLAUDE_HOOKS` makes: half the
+    // reads in the measured transcripts arrive through a shell.
+    shape: () => ({
+      version: 1,
+      hooks: {
+        beforeReadFile: [{ command: `${HOOK_PREFIX}pre-read` }],
+        beforeShellExecution: [{ command: `${HOOK_PREFIX}pre-search` }],
+        stop: [{ command: `${HOOK_PREFIX}session-end` }],
+      },
+    }),
+  },
+  opencode: {
+    unverified: "OpenCode docs: plugins are JS modules under .opencode/plugin/ exporting async hooks; `tool.execute.before` is the pre-tool point",
+    path: () => path.join(".opencode", "plugin", "bundlebox.js"),
+    // A file, not a config entry: OpenCode's extension point is code. It is
+    // owned outright, so `bb unwire` deletes it.
+    content: () => [
+      "// bundlebox — installed by `bb wire --apply`. Delete it, or run `bb unwire`.",
+      "//",
+      "// OpenCode has no PreToolUse of its own, so the guard runs as a plugin: the",
+      "// same `bb hook pre-read` and `bb hook pre-search` handlers Claude Code",
+      "// calls, over the same JSON contract, so there is one implementation of the",
+      "// decision and not two that drift.",
+      "import { spawnSync } from \"node:child_process\";",
+      "",
+      "const ask = (event, payload) => {",
+      "  try {",
+      "    const r = spawnSync(\"bb\", [\"hook\", event], { input: JSON.stringify(payload), encoding: \"utf8\", timeout: 10000 });",
+      "    return r.status === 0 && r.stdout ? JSON.parse(r.stdout) : null;",
+      "  } catch { return null; }          // a guard that can break a session will eventually break one",
+      "};",
+      "",
+      "export const bundlebox = async () => ({",
+      "  \"tool.execute.before\": async (input, output) => {",
+      "    const name = String(input?.tool || \"\");",
+      "    const event = name === \"read\" ? \"pre-read\" : /^(grep|glob|bash)$/.test(name) ? \"pre-search\" : \"\";",
+      "    if (!event) return;",
+      "    const got = ask(event, { tool_name: name, tool_input: output?.args || input?.args || {}, session_id: input?.sessionID || \"\" });",
+      "    const d = got?.hookSpecificOutput;",
+      "    if (d?.permissionDecision === \"deny\") throw new Error(d.permissionDecisionReason || \"bundlebox: already located\");",
+      "  },",
+      "});",
+    ].join("\n"),
+  },
+  codex: {
+    unverified: "Codex CLI docs: config.toml carries `notify = [...]`, a program called with a JSON argument on session events. It is a NOTIFICATION point and cannot deny a tool call: pack at the doorway with `bb proxy` instead",
+    path: () => path.join(".codex", "config.toml"),
+    section: "hooks",
+    body: `notify = ["bb", "hook", "session-end"]`,
+    // Named so `bb wire status` can say the guard is NOT available here rather
+    // than implying an installed notify hook is one.
+    advisory: true,
+  },
+};
+
+/** Hook rows for an agent, or [] when this box does not know that agent's hook
+ *  system or `wire.agent_hooks` is off. */
+export function hookFiles(name, scope) {
+  if (scope === "global") return [];                         // every shape here is per project
+  if (!load().wire?.agent_hooks) return [];
+  const h = AGENT_HOOKS[name];
+  if (!h) return [];
+  if (h.content) return [{ path: h.path(), kind: "owned", content: h.content() + "\n", unverified: h.unverified }];
+  if (h.section) return [{ path: h.path(), kind: "toml", section: h.section, body: h.body, unverified: h.unverified }];
+  return [{ path: h.path(), kind: "json", edit: "agent-hooks", shape: h.shape, unverified: h.unverified }];
+}
 
 const home = (...p) => path.join(os.homedir(), ...p);
 
@@ -147,6 +277,7 @@ export const AGENTS = {
         { path: "AGENTS.md", kind: "block" },
         { path: path.join(".codex", "config.toml"), kind: "toml", section: "mcp_servers.bundlebox", body: `command = "bb"\nargs = ["mcp"]` },
         ...skillFiles(path.join(".codex", "skills")),
+        ...hookFiles("codex", scope),
       ],
   },
   gemini: {
@@ -175,6 +306,7 @@ export const AGENTS = {
       : [
         { path: "AGENTS.md", kind: "block" },
         { path: "opencode.json", kind: "json", edit: "mcp", key: "mcp", shape: () => ({ type: "local", command: [SERVER.command, ...SERVER.args], enabled: true }) },
+        ...hookFiles("opencode", scope),
       ],
   },
   cursor: {
@@ -183,8 +315,9 @@ export const AGENTS = {
     verified: null,
     unverified: "Cursor docs: .cursor/rules/*.mdc with `alwaysApply: true` frontmatter; .cursor/mcp.json mcpServers.<name> {command,args}",
     files: (scope) => scope === "global" ? [] : [
-      { path: path.join(".cursor", "rules", "bundlebox.mdc"), kind: "owned", content: `---\ndescription: bundlebox zero-token facts about this repository\nalwaysApply: true\n---\n\n${INSTRUCTIONS}\n` },
+      { path: path.join(".cursor", "rules", "bundlebox.mdc"), kind: "owned", content: `---\ndescription: bundlebox zero-token facts about this repository\nalwaysApply: true\n---\n\n${ownedBlock()}\n` },
       { path: path.join(".cursor", "mcp.json"), kind: "json", edit: "mcp", key: "mcpServers", shape: () => ({ command: SERVER.command, args: SERVER.args }) },
+      ...hookFiles("cursor", scope),
     ],
   },
   copilot: {
@@ -203,7 +336,7 @@ export const AGENTS = {
     verified: null,
     unverified: "Cline docs: .clinerules/ directory of markdown rule files; MCP servers are configured in the extension's own settings, not a repo file",
     files: (scope) => scope === "global" ? [] : [
-      { path: path.join(".clinerules", "bundlebox.md"), kind: "owned", content: INSTRUCTIONS + "\n" },
+      { path: path.join(".clinerules", "bundlebox.md"), kind: "owned", content: ownedBlock() + "\n" },
     ],
   },
   windsurf: {
@@ -212,7 +345,7 @@ export const AGENTS = {
     verified: null,
     unverified: "Windsurf docs: .windsurf/rules/*.md; MCP servers live in ~/.codeium/windsurf/mcp_config.json, which is per-user and not written here",
     files: (scope) => scope === "global" ? [] : [
-      { path: path.join(".windsurf", "rules", "bundlebox.md"), kind: "owned", content: INSTRUCTIONS + "\n" },
+      { path: path.join(".windsurf", "rules", "bundlebox.md"), kind: "owned", content: ownedBlock() + "\n" },
     ],
   },
   aider: {

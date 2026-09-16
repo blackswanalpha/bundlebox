@@ -12,13 +12,14 @@
 //! to return at most fourteen rows. `arc build` turns them into one binary
 //! index; `arc lookup` answers exact, prefix and suffix queries with two binary
 //! searches and no full read.
+mod echos;
 mod index;
 mod json;
 
 use std::io::{Read, Write};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const OPS: &[&str] = &["version", "build", "lookup", "stat"];
+const OPS: &[&str] = &["version", "build", "lookup", "stat", "echos"];
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -183,6 +184,7 @@ fn main() {
         "build" => op_build(&input),
         "lookup" => op_lookup(&input),
         "stat" => op_stat(&input),
+        "echos" => echos::op(&input),
         _ => {
             eprintln!("arc: unknown op {}. ops: {}", op, OPS.join(" "));
             std::process::exit(2);

@@ -39,11 +39,20 @@ export async function unsafeVerbs(gearName = CRON_GEAR) {
   } catch { return []; }
 }
 
-export function line({ every = 30, root = ROOT } = {}) {
+/** The recom record the worker gates on. Without it the line fires every 30
+ *  minutes whatever the tree did, which on a quiet box is 48 full pipeline runs
+ *  a day over code nobody touched — the most expensive kind of working cron
+ *  line there is, in the second sense. `bb recom gate` prints the recorded
+ *  answer and runs NOTHING while every declared fact still reads the same. */
+export const GATE_ID = "cron/factory";
+
+export function line({ every = 30, root = ROOT, gate = true } = {}) {
   const bb = which("bb") || path.join(PKG_ROOT, "bin", "bb.js");
   const lock = path.join(HOME, "cron.lock"), log = path.join(HOME, "logs", "factory.log");
   const flock = which("flock") ? `flock -n ${lock} ` : "";
-  return `*/${Math.max(1, Math.min(59, Number(every) || 30))} * * * * cd ${JSON.stringify(root)} && ${flock}${JSON.stringify(bb)} pipeline run ${CRON_GEAR} --apply --quiet >> ${JSON.stringify(log)} 2>&1  ${MARK} ${root}`;
+  const work = `${JSON.stringify(bb)} pipeline run ${CRON_GEAR} --apply --quiet`;
+  const cmd = gate ? `${JSON.stringify(bb)} recom gate ${GATE_ID} -- ${work}` : work;
+  return `*/${Math.max(1, Math.min(59, Number(every) || 30))} * * * * cd ${JSON.stringify(root)} && ${flock}${cmd} >> ${JSON.stringify(log)} 2>&1  ${MARK} ${root}`;
 }
 function current() {
   if (!which("crontab")) return null;
@@ -59,7 +68,13 @@ const ours = (l) => l.includes(`${MARK} ${ROOT}`);
 export const commands = {
   cron: {
     help: "the unattended worker: one crontab line running the free pipeline",
-    usage: "bb cron install [--every 30] [--apply] | status | remove [--apply]",
+    usage: "bb cron install [--every 30] [--no-gate] [--apply] | status | remove [--apply]",
+    long: [
+      `  The line runs under \`bb recom gate ${GATE_ID}\`: it re-probes the head commit, the tree`,
+      "  and the config, prints the recorded answer and runs NOTHING while all three read the same.",
+      "  Anything that is not provably fresh runs, so the failure direction costs one extra pipeline",
+      "  pass and never a stale answer. `--no-gate` installs the old unconditional line.",
+    ].join("\n"),
     run: async ({ _, flags }) => {
       const sub = _[0] || "status";
       const cur = current();
@@ -71,7 +86,7 @@ export const commands = {
         return 0;
       }
       if (sub === "install") {
-        const l = line({ every: flags.every });
+        const l = line({ every: flags.every, gate: flags.gate !== false });
         fs.mkdirSync(path.join(HOME, "logs"), { recursive: true });
         const bad = await unsafeVerbs();
         if (bad.length) { warn(`refusing to install: \`${CRON_GEAR}\` reaches a verb that can spend (${bad.join(", ")}). A cron line does not get to say that.`); return 2; }

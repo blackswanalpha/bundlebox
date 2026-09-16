@@ -28,6 +28,7 @@ import { ROOT, abs } from "../core/paths.js";
 import { git, gitOk } from "../core/exec.js";
 import { human, stamp, shortId } from "../core/util.js";
 import { overheadOf } from "../compile/context.js";
+import { losers as benchLosers, verdictFor as benchVerdict } from "../bench/gate.js";
 
 // One fixed namespace so a (run_id, lane_id) pair names the same session on
 // every machine; the runner resumes a lane by this id after a crash.
@@ -77,6 +78,26 @@ export function plan(units, { runId = "", maxParallel = 0, agent = "" } = {}) {
   const local = [], remaining = [];
   for (const u of units || []) (u.actuator || u.status === "local" ? local : remaining).push(u);
 
+  // The bench, as a gate rather than a report.
+  //
+  // `bb bench run` has always printed the tasks where the packed brief costs
+  // MORE than a bare search and read. Nothing consumed that, so those tasks
+  // were packed again on the next run and lost again. Here they are marked
+  // `pack: false` before anything is sized, and the runner hands those lanes
+  // their scope instead of a brief. A task that is measurably losable should be
+  // unroutable-as-packed, not merely visible in a table somebody may read.
+  //
+  // Computed ONCE for the whole plan: the verdict reads the same stored run for
+  // every unit, and re-reading it per unit is the shape of cost this file spends
+  // its time removing.
+  const bench = benchLosers({ cfg });
+  for (const u of remaining) {
+    const v = benchVerdict(u, { cfg, l: bench });
+    u.pack = v.pack;
+    u.pack_verdict = v.verdict;
+    if (!v.pack) u.pack_why = v.why;
+  }
+
   const ceiling = Number(b.max_tokens) || 0;
   const floor = Number(b.min_tokens) || 0;
   // The same overhead the compiler budgeted with. Merging two lanes saves
@@ -121,6 +142,11 @@ export function plan(units, { runId = "", maxParallel = 0, agent = "" } = {}) {
       est_tokens: Math.floor(ln.est_tokens),
       cwd: null, worktree: null, branch: `bb/${run_id}-${id.toLowerCase()}`,
       wave: 0, agent: agentName, model: laneModel(ln.units, cfg),
+      // A lane packs unless one of its units measured worse packed. Per lane
+      // and not per unit, because the brief is what opens the session and a
+      // session cannot be half-briefed.
+      pack: ln.units.every((u) => u.pack !== false),
+      pack_why: ln.units.filter((u) => u.pack === false).map((u) => u.pack_why).slice(0, 2),
       // A lane whose one unit is most of the window will spill into a second
       // context; two slots keeps the wave from over-committing the box.
       slots: ln.units.some((u) => u.est_tokens > ceiling * 0.6) ? 2 : 1,
@@ -240,7 +266,10 @@ export function report(p) {
     lines.push(`  ${ln.id.padEnd(5)} ${human(ln.est_tokens).padStart(7)} ${(ln.model || "-").padEnd(8)} ${String(ln.slots).padStart(5)} ${String(ln.wave).padStart(4)}  ${ck}`);
     for (const u of ln.units) lines.push(`      · ${u.title}`);
     if (ln.warning) lines.push(`      ! ${ln.warning}`);
+    for (const w of ln.pack_why || []) lines.push(`      bare: ${w}`);
   }
+  const bare = p.lanes.filter((ln) => ln.pack === false).length;
+  if (bare) lines.push(`  ${bare} lane(s) routed BARE — the bench measured packing them as a loss (\`bb bench gate\`)`);
   lines.push(`  waves: ${p.waves.map((w) => w.join(",")).join(" | ")}   (ESTIMATE: ctx is projected, not measured)`);
   const over = p.lanes.filter((ln) => ln.est_tokens > p.budget.ceiling).length;
   const under = p.lanes.filter((ln) => ln.est_tokens < p.budget.floor).length;

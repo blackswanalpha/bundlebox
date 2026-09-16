@@ -25,8 +25,9 @@ import * as store from "../core/store.js";
 import * as suite from "./suite.js";
 import { bare, packed, BARE_READ_CAP } from "./arms.js";
 import * as swebench from "./swebench.js";
+import * as gate from "./gate.js";
 
-export { swebench };
+export { swebench, gate };
 
 export const DIR = () => path.join(OUT, "bench");
 export const LATEST = () => path.join(DIR(), "latest.json");
@@ -43,6 +44,10 @@ export async function runTask(t, { cap = BARE_READ_CAP, maxFiles = 6 } = {}) {
     const saved = a.tokens - b.tokens;
     return { ...row, bare: a.tokens, packed: b.tokens, saved, saved_pct: pct(saved, a.tokens),
       bare_files_read: a.read, bare_files_found: a.considered, packed_files: b.scope.length,
+      // The file lists, not only their counts. `bb bench gate` decides whether a
+      // unit is the same task as a benched one, and files are what that is
+      // measured on: two counts cannot tell you a run was about the same code.
+      bare_files: a.files.map((f) => f.file), packed_files_list: b.scope,
       anchors: b.anchors, verdict: b.verdict, terms: a.terms, prompt: b.path };
   } catch (e) {
     return { ...row, error: String((e && e.message) || e).split("\n")[0], bare: 0, packed: 0, saved: 0, saved_pct: 0 };
@@ -198,6 +203,30 @@ async function cmd({ _, flags }) {
     return 2;
   }
 
+  if (sub === "gate") {
+    // With a task, it answers for that task; with nothing, it reports every
+    // task the last run says is not worth packing, which is the list `bb route`
+    // now consults instead of packing them again.
+    const title = _.slice(1).filter((x) => !x.startsWith("-")).join(" ");
+    const L = gate.losers({});
+    if (title) {
+      const v = gate.verdictFor({ title, scope: String(flags.files || "").split(",").filter(Boolean) }, { l: L });
+      if (flags.json) { emit(v); return v.pack ? 0 : 1; }
+      out(`  ${v.pack ? "pack" : "BARE"}  ${v.why}`);
+      return v.pack ? 0 : 1;
+    }
+    if (!L.ok) { if (flags.json) { emit(L); return 2; } warn(L.why); return 2; }
+    if (flags.json) { emit(L); return L.lost.length || L.thin.length ? 1 : 0; }
+    out(`  ${L.suite} — measured ${L.at.slice(0, 16)}, ${L.age_hours}h ago; margin ${L.margin}%\n`);
+    if (!L.lost.length && !L.thin.length) { out("  every measured task costs less packed than bare. Nothing is opted out."); return 0; }
+    out(table([...L.lost, ...L.thin].map((t) => [t.id.slice(0, 14), (t.title || "").slice(0, 44),
+      human(t.bare), human(t.packed), `${t.saved_pct}%`, t.saved_pct <= 0 ? "loses" : "thin"]),
+      { header: ["id", "task", "bare", "packed", "saved", "verdict"] }).split("\n").map((l) => "  " + l).join("\n"));
+    out(`\n  ${L.lost.length} task(s) cost more packed, ${L.thin.length} win by less than ${L.margin}%.`);
+    out("  `bb route` routes work matching these BARE; `bb monitor guard` refuses a spend whose brief has no delta.");
+    return 1;
+  }
+
   if (sub === "run") {
     const id = (_[1] && !_[1].startsWith("-") ? _[1] : String(flags.suite || "")) || "default";
     const r = await run(id, { cap, maxFiles, write: flags.write !== false });
@@ -206,18 +235,20 @@ async function cmd({ _, flags }) {
     out(report(r));
     return 0;
   }
-  warn(`unknown bench sub-verb: ${sub}. run | init | suites | show | arm | swebench`);
+  warn(`unknown bench sub-verb: ${sub}. run | init | suites | show | gate | arm | swebench`);
   return 2;
 }
 
 export const commands = {
   bench: {
     help: "the ablation benchmark: what a task costs with the factory and without it (no tokens)",
-    usage: "bb bench [run [suite]] | init [--limit N] | suites | show | swebench run [--n 12] [--repos a,b] [--json] [--cap 10]",
+    usage: "bb bench [run [suite]] | init [--limit N] | suites | show | gate [<task>] | swebench run [--n 12] [--repos a,b] [--json] [--cap 10]",
     long: [
       "  bb bench run                     measure every task in the default suite, both arms",
       "  bb bench init                    derive a suite from the open findings that name a file",
       "  bb bench show --json             the last run as data",
+      "  bb bench gate                    the tasks not worth packing; rc 1 when there are any",
+      "  bb bench gate \"<task>\"           should THIS task be packed? rc 1 = route it bare",
       "  bb bench swebench run --n 12     the same two arms on public SWE-bench Verified instances",
       "  bb bench swebench show           the last SWE-bench run",
       "  bb bench swebench instances      which repositories the cached instances come from",

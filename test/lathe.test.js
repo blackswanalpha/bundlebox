@@ -36,7 +36,22 @@ test("a command is shaped by its work, not by how the shell was entered", () => 
   assert.deepEqual(lathe.commandShapes("cd /x && npm test"), ["npm test"]);
   assert.deepEqual(lathe.commandShapes("cd a && cd b && cd c"), [], "cd is how a shell is entered, not work");
   assert.deepEqual(lathe.commandShapes("set -euo pipefail"), []);
-  assert.deepEqual(lathe.commandShapes("grep -rn foo src/ | head -20"), ["grep", "head"]);
+  // A PIPELINE is one thing a person did, and its first stage is the thing.
+  // Shaping each piece made `grep ; head` the seventh-strongest habit on this
+  // box at 70 occurrences, `timeout ; tail` at 78 and `head ; ls` at 26 — none
+  // of which is a sequence anybody could automate. And `grep` on its own is a
+  // tool rather than the work, so it is not a shape at all.
+  assert.deepEqual(lathe.commandShapes("grep -rn foo src/ | head -20"), [],
+    "a pipe destination is how a command is READ, not what was run");
+  assert.deepEqual(lathe.commandShapes("npm test | tee log"), ["npm test"],
+    "the first stage is the work; the rest reads its output");
+  assert.deepEqual(lathe.commandShapes("timeout 30 npm test"), ["npm test"],
+    "a wrapper's ARGUMENT is the command: `timeout` was the most supported shape on this box before this");
+  // A heredoc body is TEXT. Shaping it put `const n`, `} catch` and
+  // `Math.random()` on disk as commands, and made `python3 ; s` a habit at 26
+  // occurrences — `s` being a fragment of a sed expression inside one.
+  assert.deepEqual(lathe.commandShapes("python3 - <<'EOF'\nimport os\nfor x in y: pass\nEOF"), ["python3"],
+    "what is inside the heredoc is a file being written, not commands being run");
   assert.deepEqual(lathe.commandShapes("git commit -m 'one; two'"), ["git commit"], "a quoted separator is not a separator");
   assert.deepEqual(lathe.commandShapes("/usr/local/bin/node --test"), ["node"], "the path is not the command");
 });
@@ -49,13 +64,16 @@ test("shell grammar is not a command", () => {
   // command costs one occurrence; mining a loop variable as a command costs the
   // model its meaning.
   assert.deepEqual(lathe.commandShapes("if test -f a; then echo b; fi"), []);
-  assert.deepEqual(lathe.commandShapes("(node -e 1) | head -5"), ["node", "head"], "a leading paren is grouping");
+  assert.deepEqual(lathe.commandShapes("(git log) | head -5"), ["git log"],
+    "a leading paren is grouping, and the pipe destination is not a second command");
 });
 
 test("a sub-verb is part of the shape, an argument is not", () => {
   assert.equal(lathe.commandShape("git push origin main"), "git push");
   assert.equal(lathe.commandShape("git commit -m x"), "git commit");
-  assert.equal(lathe.commandShape("sed -n 40,60p src/a.js"), "sed", "a flag is not a sub-verb");
+  assert.equal(lathe.commandShape("sed -n 40,60p src/a.js"), "",
+    "`sed` reads another command's output or a file: it names a tool, not the work");
+  assert.equal(lathe.commandShape("cargo build --release"), "cargo build", "a flag is not a sub-verb");
   assert.equal(lathe.commandShape("node src/index.js"), "node", "a path is not a sub-verb");
 });
 

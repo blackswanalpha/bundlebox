@@ -8,13 +8,53 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Is a POSIX `bash` reachable on this box?
+///
+/// Git for Windows ships one and puts it on PATH, which is what closes the
+/// pipefail gap below. Probed once and cached: `shell` is called per gate and
+/// per scenario step, and a PATH search per call is a syscall storm for an
+/// answer that does not change inside one process.
+pub fn bash_path() -> Option<String> {
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let probe = if cfg!(windows) { "where" } else { "which" };
+            let out = Command::new(probe).arg("bash").stdin(Stdio::null()).output().ok()?;
+            if !out.status.success() {
+                return None;
+            }
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .map(str::to_string)
+        })
+        .clone()
+}
+
+/// Does a piped command report the first failing stage's code under the shell
+/// this box would pick? False only on Windows with no bash anywhere, and a
+/// caller reporting a verdict says so rather than printing a green it cannot
+/// stand behind.
+pub fn piped_ok() -> bool {
+    !cfg!(windows) || bash_path().is_some()
+}
+
 /// The shell that runs a command, per platform.
 ///
 /// `set -o pipefail` is the whole point of the POSIX wrapping: without it a pipe
-/// eats the exit code and every acceptance passes. cmd.exe has neither that nor
-/// a `bash` to run it, so hard-coding one made every gate on Windows come back
-/// as a spawn error instead of a verdict — and a spawn error is not a failing
-/// gate, it is no gate at all.
+/// eats the exit code and EVERY acceptance passes. That was the Windows gap:
+/// cmd.exe has no pipefail and no equivalent, so `npm test | tee log` reported
+/// `tee`'s code and a gate that should have failed came back `ok`. A gate that
+/// cannot fail is worse than no gate.
+///
+/// So the POSIX branch is used on Windows too WHEN a bash is reachable — Git for
+/// Windows ships one — and only a box with none at all falls back to cmd.exe,
+/// where `piped_ok` reports the remaining gap instead of hiding it.
+///
+/// `src/core/exec.js::shellCmd` mirrors this line for line and must keep
+/// mirroring it: two engines running one corpus under two different shells on
+/// the same box is exactly what `test/runjson.test.js` exists to catch.
 ///
 /// `cfg!` and not `#[cfg]`: both arms are type-checked on every platform, so the
 /// branch that only ever runs on Windows cannot be the one that fails to build
@@ -25,14 +65,21 @@ use std::time::{Duration, Instant};
 /// runner pipes the two separately and needs them kept apart.
 pub fn shell(cmd: &str, merge_stderr: bool) -> Command {
     let redir = if merge_stderr { " 2>&1" } else { "" };
-    if cfg!(windows) {
-        let mut c = Command::new(std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()));
-        c.arg("/d").arg("/s").arg("/c").arg(format!("{}{}", cmd, redir));
-        c
-    } else {
-        let mut c = Command::new("bash");
-        c.arg("-lc").arg(format!("set -o pipefail; {{ {} ; }}{}", cmd, redir));
-        c
+    // On a POSIX box `bash` is the answer whether or not the probe found a path
+    // for it: falling through to ComSpec there because `which` was missing
+    // would run every gate under a shell that does not exist.
+    let sh = if cfg!(windows) { bash_path() } else { Some(bash_path().unwrap_or_else(|| "bash".to_string())) };
+    match sh {
+        Some(bash) => {
+            let mut c = Command::new(bash);
+            c.arg("-lc").arg(format!("set -o pipefail; {{ {} ; }}{}", cmd, redir));
+            c
+        }
+        None => {
+            let mut c = Command::new(std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()));
+            c.arg("/d").arg("/s").arg("/c").arg(format!("{}{}", cmd, redir));
+            c
+        }
     }
 }
 
@@ -62,6 +109,11 @@ pub fn op_gate(input: &Json) -> Json {
     out.set("seconds", ((started.elapsed().as_secs_f64() * 10.0).round() / 10.0).into());
     out.set("timed_out", timed_out.into());
     out.set("verdict", (if timed_out { "timeout" } else if rc == 0 { "passed" } else { "failed" }).into());
+    // Whether this `rc` can be believed for a PIPED command. True everywhere a
+    // bash was found; false only on a Windows box with none, where cmd.exe
+    // reports the last stage's code and a passing gate may be a `tee` that
+    // worked. The caller prints it; a verdict that hides the gap is the gap.
+    out.set("piped_exit_code", piped_ok().into());
     out.set("output_tail", String::from_utf8_lossy(tail).to_string().into());
     out.set("output_bytes", buf.len().into());
     out

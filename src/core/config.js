@@ -59,7 +59,8 @@ export const DEFAULTS = {
     enabled: ["doc-links", "todo-census", "secret-scan", "big-file", "merge-markers",
               "worktree-hygiene", "dead-exports", "duplicate-blocks", "god-file",
               "orphan-files", "dead-deps", "doc-drift", "lockfile-drift", "stale-evidence",
-              "missing-tests", "debug-leftovers", "ui-generic", "anti-slop"],
+              "missing-tests", "debug-leftovers", "ui-generic", "anti-slop",
+              "swallowed-errors", "dead-config"],
     promote_at: "medium",
   },
   designlabs: {
@@ -98,10 +99,21 @@ export const DEFAULTS = {
   },
   headroom: { enabled: false, port: 8787, host: "127.0.0.1" },
   sieve: {
-    // The input axis: a tool result shrunk before it enters the window. Off
-    // until it is turned on, because the elide tier is the only lossy thing in
-    // this box and `bb sieve replay` measures it for nothing first.
-    enabled: false,
+    // The input axis: a tool result shrunk before it enters the window.
+    //
+    // ON by default since the replay settled the argument. `bb sieve replay`
+    // pushes every tool result already on disk through the identical pure
+    // transform, and what it reports on this box is log, probe and test output:
+    // Bash, Task, WebFetch, Grep. Read, Edit and Write are absent from
+    // SAFE_TOOLS by construction, so the text a later exact-match edit is
+    // written against is never touched — which is the one way this could cost a
+    // session anything.
+    //
+    // The lossy tier stays bounded rather than trusted: an elided payload is
+    // spilled to `var/sieve/` first and the marker carries the path, so
+    // recovery is a grep. `bb sieve replay` still measures before and after,
+    // and `sieve.enabled: false` in .bundlebox/config.json turns it all off.
+    enabled: true,
     // The share of the WORKING window (max_tokens - reserve_output) one tool
     // result may occupy before its middle is cut. A share, not a constant: the
     // same log is 6% of a 130k window and 1.5% of a 500k one.
@@ -178,6 +190,31 @@ export const DEFAULTS = {
     // Below this share of the working window a whole-file read is too cheap to
     // argue about, so the quote is not served and the read goes through.
     serve_min_share: 0.02,
+    // ── enforcement past Claude Code ──────────────────────────────────────
+    //
+    // The guards above are PreToolUse handlers, and PreToolUse is Claude
+    // Code's. Every other agent on the box gets the instructions block, which
+    // is advice, and `bb uptake` says what advice is worth. Two answers:
+    //
+    //   agent_hooks   write each agent's own pre-read/pre-search guard where
+    //                 that agent has a hook system. Shapes are per agent and
+    //                 most of them are UNVERIFIED (see wire/agents.js), so
+    //                 this is off until somebody on that agent turns it on.
+    //   proxy         `bb proxy -- <agent command>` packs the prompt, serves
+    //                 the located regions and sieves the output at the
+    //                 DOORWAY, for an agent with no hook system at all. It is
+    //                 what `lanes.custom_command` is meant to hold.
+    agent_hooks: false,
+    // Which bullets of the instructions block are installed. Empty = all of
+    // them. `bb wire trim --apply` writes the ids of the ones `bb uptake`
+    // measured nobody reaching for: every line here is billed on every prompt
+    // of every session whether it is used or not.
+    trim: [],
+    // The same, for MCP tools. A tool's name, description and input schema all
+    // sit in the system prompt of a session that has the server wired. Trimmed
+    // tools are dropped from `tools/list` and still DISPATCH if something asks
+    // for one by name: hiding a capability is a saving, breaking one is not.
+    trim_tools: [],
   },
   janitor: {
     // What the hooks do with a compiled heap. Every one of these reads an
@@ -208,7 +245,52 @@ export const DEFAULTS = {
     // SessionEnd: re-learn and re-emit while the session's own shapes are
     // fresh. 1.4s measured, because it reads the recorded shapes rather than
     // the transcripts they came from.
-    learn_on_end: true
+    learn_on_end: true,
+    // ── the actuator ──────────────────────────────────────────────────────
+    //
+    // Everything above PROPOSES. `bb lathe apply` is the half that closes the
+    // loop: a habit at or over `apply_at` becomes a tagged script in
+    // `scripts/`, with a recom record behind it so the script goes stale when
+    // the tree it was learned from moves.
+    //
+    // Higher than MIN_SUPPORT on purpose. Three occurrences is enough to call
+    // something a habit and print it; writing a file into the repository is a
+    // stronger claim, and the extra two occurrences are what pays for it.
+    apply_at: 5,
+    // Applied scripts are re-judged on this clock. A script whose habit has not
+    // recurred since it was written displaced nothing, and it is the same dead
+    // wiring `bb uptake` measures everywhere else.
+    reach_days: 21,
+    reach_min: 1,             // occurrences since it was applied, below which it is tombstoned
+    apply_on_end: false,      // SessionEnd may propose; writing into scripts/ stays a decision
+  },
+  bench: {
+    // `bb bench run` prints the tasks where packed costs MORE than bare. This
+    // turns that report into a gate: a task that loses is opted out of packing
+    // by the router rather than packed and lost again.
+    gate: true,
+    // How much packed has to win by before the router trusts it. 0 = any win.
+    // A task inside this band is routed bare, because a 2% win does not pay for
+    // the locate.
+    min_win_pct: 2,
+    // Past this age the last run is not evidence about the tree as it is now.
+    max_age_hours: 336,
+  },
+  echos: {
+    // The session-level agents: what the WORK looks like from outside it.
+    // Every other detector reads the tree; an echo reads the record of what
+    // sessions did to it, and reports the four shapes that mean a loop is not
+    // converging (arc/src/echos.rs).
+    enabled: true,
+    on_session_end: true,     // SessionEnd: run them while the session's own rows are fresh
+    // Thresholds, as data. Each is the floor at which a shape stops being a
+    // coincidence of one session; `bb echos --json` prints every one it used.
+    spin_repeats: 4,          // identical command shape, this many times in a row
+    oscillate_flips: 3,       // a file's content returning to a value it already had
+    drift_turns: 12,          // turns in a session before "no file changed" is a finding
+    diminishing_ratio: 1.6,   // late-window cost per change over early-window cost
+    converge_similarity: 0.95,// brief-to-brief scope overlap at which the work has stabilised
+    converge_runs: 3,         // consecutive briefs that must hold it
   },
   finish: {
     // `bb finish`: the acceptance ledger. The Stop hook is a STRUCTURAL
@@ -228,6 +310,20 @@ export const DEFAULTS = {
     guard_writes: true,
     floor: 3,               // fewer hits than this is a word, not a habit
     max_hits: 5,            // lines named in the one band it emits
+  },
+  recom: {
+    // Every repeatable surface in this box re-drives on a schedule today: the
+    // cron line, each pipeline stage, a cookbook board, a genesis coverage
+    // check. `bb recom gate` already knows how to not run something whose
+    // answer still holds; this points it at those four.
+    //
+    // A fact-record is written the first time each one runs and re-probed
+    // afterwards, so a stage whose inputs have not moved is SKIPPED rather
+    // than re-derived. That kills whole sessions, not tokens inside one.
+    auto_facts: true,
+    // Written for a surface only once it has actually produced something. A
+    // record made from a failed run would gate on a fact about nothing.
+    record_on_success: true,
   },
   cron: { sweep_every_min: 30, autonomous_fix: false },
 };
@@ -258,6 +354,11 @@ export function load({ fresh = false } = {}) {
     if (cal.churn_factor) cfg.budget.churn_factor = cal.churn_factor;
     if (cal.overhead_tokens) cfg.budget.overhead_tokens = cal.overhead_tokens;
     if (cal.overhead_lean) cfg.budget.overhead_lean = cal.overhead_lean;
+    // Fitted per repo by `bb tokens calibrate --apply`, alongside churn. They
+    // were shipped constants that nothing ever refitted, so every brief in
+    // every workspace was budgeted with one box's numbers.
+    if (cal.anchor_widen) cfg.budget.anchor_widen = cal.anchor_widen;
+    if (cal.reserve_by_kind) cfg.budget.reserve_by_kind = { ...cfg.budget.reserve_by_kind, ...cal.reserve_by_kind };
   }
   cfg.workspace.root = ROOT;
   _cache = cfg;
