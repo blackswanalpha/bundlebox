@@ -131,6 +131,14 @@ export const DEFAULTS = {
   wire: {
     // Which agents `bb wire` installs into. auto = every one detected on this box.
     agents: ["auto"],
+    // SessionStart: a session that opens where no `.bundlebox` exists gets one
+    // written before it does anything else, and a detached `bb env up --apply`
+    // builds the artefacts behind it. Every other surface here assumes the
+    // environment is present; in a workspace nobody inited, all of them are
+    // absent and none of them says so, so the session searches the tree. Only
+    // fires over a directory with positive evidence of being a project — a git
+    // worktree, or a manifest at the root or one level down.
+    auto_init: true,
     inject_context: true,   // SessionStart/UserPromptSubmit: hand the agent the snapgen INDEX
     measure_sessions: true, // SessionEnd: measure used/saved
     guard_reads: true,      // PreToolUse(Read): warn on files past the window
