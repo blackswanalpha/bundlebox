@@ -105,7 +105,7 @@ export const commands = {
       // missing and the one command that builds all of it.
       try {
         const env = await import("./env.js");
-        const rep = env.report();
+        const rep = await env.report();
         out(`  environment: ${rep.present} of ${rep.total} artefacts${rep.complete ? " — complete" : `; missing ${rep.missing.join(", ")}`}`);
         out(`\n  next:  bb wire --apply  ·  bb env up --apply${rep.complete ? "" : "   (builds the missing artefacts; no tokens)"}  ·  bb cron --apply   (keeps them fresh, no agent)`);
         out("         bb doctor  ·  bb kernel install  ·  cargo build --release --manifest-path arc/Cargo.toml   (optional, faster)");
