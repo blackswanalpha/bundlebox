@@ -1,6 +1,6 @@
 {
   "name": "bundlebox",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The zero-token software factory for AI coding agents: a Node CLI, a Rust kernel and a Python expert system that scan, pack, route and run work across Claude Code, Codex, Gemini CLI, Cursor, Aider, OpenCode and any custom agent, and measure every token used and saved.",
   "keywords": [
     "accessibility",
