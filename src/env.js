@@ -22,11 +22,27 @@ import { human } from "./core/util.js";
  *
  *  `gear` is the declared pipeline that produces the row, so a missing artefact
  *  names its own fix. Nothing here is optional in the sense of being
- *  decorative: a row that is absent is a turn some session will pay for. */
+ *  decorative: a row that is absent is a turn some session will pay for.
+ *
+ *  `needs` is what has to exist on the box before that fix can work. A row
+ *  whose `needs` is unmet is reported with what is missing instead of with a
+ *  command, because a checklist naming a command that cannot produce the row it
+ *  is named against is worse than a row with no command at all. Two rows have
+ *  one, and both were found the same way — by running the thing and watching it
+ *  advise something impossible. */
 export const ROWS = [
   { id: "config", what: "the workspace's own settings, gates and detected agents", path: () => path.join(BB_DIR, "config.json"), verb: "bb init --apply", gear: "" },
   { id: "tables", what: "the reference tables a session reads instead of searching", path: () => path.join(OUT, "snapgen", "INDEX.md"), verb: "bb snapgen build", gear: "orient" },
-  { id: "index", what: "the tables compiled to one binary index the guards read per tool call", path: () => path.join(OUT, "arc", "index.arc"), verb: "bb arc build", gear: "orient" },
+  // The npm package ships arc's SOURCE, not a binary, so `bb arc build` exits 2
+  // on a box that has never compiled it — and the `orient` gear skips the stage
+  // as optional, which is the right degradation and the wrong advice. Measured
+  // on this box: a fresh `npm install -g` reached 7 of 9, with the index row
+  // recommending a gear run that could not produce it.
+  { id: "index", what: "the tables compiled to one binary index the guards read per tool call", path: () => path.join(OUT, "arc", "index.arc"), verb: "bb arc build", gear: "orient",
+    needs: async () => {
+      try { const arc = await import("./arc/index.js"); return Boolean(arc.BIN()); } catch { return false; }
+    },
+    without: "the arc binary is not built here — `cargo build --release --manifest-path arc/Cargo.toml` (needs rustc and cargo; the guards fall back to scanning the tables until then)" },
   { id: "findings", what: "what the local detectors found, with no model involved", path: () => path.join(VAR, "findings.json"), verb: "bb scan", gear: "intake" },
   { id: "oversight", what: "the tree measured against its own medians", path: () => path.join(OUT, "oversight"), verb: "bb oversight scan --write", gear: "intake" },
   { id: "worklist", what: "every measured gap, located and budgeted before a model sees it", path: () => path.join(OUT, "pinpoint", "WORKLIST.md"), verb: "bb pinpoint gaps", gear: "orient" },
@@ -35,19 +51,25 @@ export const ROWS = [
   // whose producer must never run on an unattended tick. It is compiled by the
   // SessionEnd hook, where a session that just changed the tree is the thing
   // being reconciled against it, or by hand.
-  { id: "memory", what: "the agent's memory, compiled and swept of claims that no longer resolve", path: () => path.join(OUT, "janitor"), verb: "bb janitor compile", gear: "", by: "the SessionEnd hook, or `bb janitor compile`" },
+  { id: "memory", what: "the agent's memory, compiled and swept of claims that no longer resolve", path: () => path.join(OUT, "janitor"), verb: "bb janitor compile", gear: "",
+    by: "compiled by the SessionEnd hook, or by `bb janitor compile` — it writes files a person wrote, so no unattended tick gets to run it" },
   { id: "automation", what: "the habits this workspace has, as scripts, snippets, boilerplate and completions", path: () => path.join(OUT, "lathe", "INDEX.md"), verb: "bb lathe learn && bb lathe build --apply", gear: "buckmaster" },
   { id: "commandcenter", what: "one page for this workspace: the pipeline, the window, every session and what it saved", path: () => path.join(OUT, "commandcenter", "index.html"), verb: "bb commandcenter build", gear: "watch" },
 ];
 
 const stat = (p) => { try { return fs.statSync(p); } catch { return null; } };
 
-export function report() {
+/** The report, with each row's `needs` resolved. Async because a need is a fact
+ *  about the box — a binary on disk, a runtime on PATH — and not a constant. */
+export async function report() {
+  const ready = new Map();
+  for (const r of ROWS) ready.set(r.id, r.needs ? await r.needs().catch(() => false) : true);
   const rows = ROWS.map((r) => {
     const p = r.path();
     const st = stat(p);
     const size = st ? (st.isDirectory() ? dirBytes(p) : st.size) : 0;
-    return { ...r, file: rel(p), present: Boolean(st), bytes: size, age_hours: st ? Math.round((Date.now() - st.mtimeMs) / 36000) / 100 : null };
+    return { ...r, file: rel(p), present: Boolean(st), bytes: size, ready: ready.get(r.id) !== false,
+      age_hours: st ? Math.round((Date.now() - st.mtimeMs) / 36000) / 100 : null };
   });
   const missing = rows.filter((r) => !r.present);
   return {
@@ -56,8 +78,9 @@ export function report() {
     // What a gear can build, and what only a hook or a hand can. Reporting them
     // together made `bb env up --apply` promise to build the janitor's heap,
     // which is the one row it must not touch.
-    buildable: missing.filter((r) => r.gear).map((r) => r.id),
-    by_hand: missing.filter((r) => !r.gear).map((r) => ({ id: r.id, by: r.by || `\`${r.verb}\`` })),
+    buildable: missing.filter((r) => r.gear && r.ready).map((r) => r.id),
+    by_hand: missing.filter((r) => !r.gear || !r.ready)
+      .map((r) => ({ id: r.id, by: r.ready ? (r.by || `\`${r.verb}\``) : r.without })),
     complete: missing.length === 0,
   };
 }
@@ -91,19 +114,21 @@ export const commands = {
         const { runGear } = await import("./pipeline/runner.js");
         const r = await runGear(BOOTSTRAP, { apply: !!flags.apply, quiet: !!flags.quiet, trigger: "hand" });
         if (!flags.apply) out("\n  dry run: --apply builds the environment.");
-        const after = report();
+        const after = await report();
         out(`\n  ENVIRONMENT — ${after.present} of ${after.total} artefacts${after.complete ? ", complete" : `; still missing ${after.missing.join(", ")}`}`);
-        for (const h of after.by_hand) out(`  ${h.id} is not a gear's to build: ${h.by}.`);
+        for (const h of after.by_hand) out(`  ${h.id}: ${h.by}`);
         return r && r.rc ? r.rc : 0;
       }
       if (sub !== "status") { warn(`unknown sub-verb: ${sub}. ${commands.env.usage}`); return 2; }
-      const rep = report();
+      const rep = await report();
       if (flags.json) { emit(rep); return 0; }
       out(`  ENVIRONMENT — ${rep.present} of ${rep.total} artefacts present${rep.complete ? "" : `, ${rep.total - rep.present} missing`}`);
       out("");
       for (const r of rep.rows) {
         const mark = r.present ? "ok  " : "MISS";
-        const age = r.present ? `${r.age_hours < 1 ? "<1h" : `${Math.round(r.age_hours)}h`} old, ${human(r.bytes)}b` : (r.gear ? `\`bb pipeline run ${r.gear} --apply\`` : `\`${r.verb}\``);
+        const age = r.present ? `${r.age_hours < 1 ? "<1h" : `${Math.round(r.age_hours)}h`} old, ${human(r.bytes)}b`
+          : !r.ready ? "not buildable on this box"
+          : (r.gear ? `\`bb pipeline run ${r.gear} --apply\`` : `\`${r.verb}\``);
         out(`  ${mark} ${r.id.padEnd(14)} ${r.file.padEnd(40)} ${age}`);
         if (!r.present) out(`       ${r.what}`);
       }
@@ -111,7 +136,7 @@ export const commands = {
       if (rep.complete) out("  `bb cron --apply` keeps every row above fresh on a thirty-minute tick, with no agent involved.");
       else {
         if (rep.buildable.length) out(`  \`bb env up --apply\` builds ${rep.buildable.join(", ")} — locally, no tokens.`);
-        for (const h of rep.by_hand) out(`  ${h.id} comes from ${h.by}: it writes files a person wrote, so no tick gets to.`);
+        for (const h of rep.by_hand) out(`  ${h.id}: ${h.by}`);
       }
       return 0;
     },

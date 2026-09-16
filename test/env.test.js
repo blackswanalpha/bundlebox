@@ -17,8 +17,8 @@ w("package.json", JSON.stringify({ name: "fixture", type: "module" }));
 
 const env = await import("../src/env.js");
 
-test("a bare workspace reports every artefact missing, and names the verb for each", () => {
-  const r = env.report();
+test("a bare workspace reports every artefact missing, and names the verb for each", async () => {
+  const r = await env.report();
   assert.equal(r.present, 0);
   assert.equal(r.complete, false);
   assert.equal(r.missing.length, r.total);
@@ -54,11 +54,11 @@ test("the bootstrap gear brings up what a session reads, and never folds a trans
   assert.ok(!chain.includes("measure"), "a workspace being bootstrapped has no transcripts to fold");
 });
 
-test("an artefact appearing on disk flips its row", () => {
+test("an artefact appearing on disk flips its row", async () => {
   const tables = env.ROWS.find((r) => r.id === "tables");
   fs.mkdirSync(path.dirname(tables.path()), { recursive: true });
   fs.writeFileSync(tables.path(), "# tables\n");
-  const r = env.report();
+  const r = await env.report();
   assert.equal(r.present, 1);
   assert.ok(!r.missing.includes("tables"));
   assert.ok(r.rows.find((x) => x.id === "tables").bytes > 0);
@@ -78,8 +78,8 @@ test("nothing on the unattended tick can spend", async () => {
   assert.deepEqual(await cron.unsafeVerbs(env.BOOTSTRAP), []);
 });
 
-test("a row no gear may build is reported apart from one that is missing", () => {
-  const r = env.report();
+test("a row no gear may build is reported apart from one that is missing", async () => {
+  const r = await env.report();
   assert.ok(r.by_hand.some((h) => h.id === "memory"), "the janitor writes files a person wrote, so no tick gets to run it");
   assert.ok(!r.buildable.includes("memory"), "`bb env up --apply` must not promise to build it");
   assert.ok(r.buildable.includes("tables") || !r.missing.includes("tables"));
@@ -100,4 +100,23 @@ test("every row names a verb that exists and is spelled the way `bb help` spells
   const memory = env.ROWS.find((r) => r.id === "memory");
   assert.equal(memory.verb, "bb janitor compile", "the writing sub-verb, not the read-only bare verb");
   assert.match(memory.by, /bb janitor compile/);
+});
+
+test("a row whose need is unmet reports what is missing, not a command that cannot work", async () => {
+  // Found by installing the npm package: it ships arc's SOURCE, so `bb arc
+  // build` exits 2 on a box that has never compiled it, and the `orient` gear
+  // skips the stage as optional. A fresh install reached 7 of 9 with the index
+  // row recommending a gear run that could not produce it.
+  const index = env.ROWS.find((r) => r.id === "index");
+  assert.equal(typeof index.needs, "function", "the index row must state what it needs");
+  assert.ok(index.without && /cargo build/.test(index.without), index.without);
+
+  const r = await env.report();
+  const row = r.rows.find((x) => x.id === "index");
+  assert.equal(typeof row.ready, "boolean");
+  if (!row.ready) {
+    assert.ok(!r.buildable.includes("index"), "an unbuildable row is not offered to `bb env up --apply`");
+    assert.ok(r.by_hand.some((h) => h.id === "index" && /cargo build/.test(h.by)));
+  }
+  for (const x of r.rows) if (!x.needs) assert.equal(x.ready, true, `${x.id} has no need, so it is always ready`);
 });
