@@ -28,13 +28,22 @@ export const HOME = path.join(os.homedir(), ".bundlebox");
 // wrong. fileURLToPath is the only correct decoder on both.
 export const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+export const abs = (p) => (path.isAbsolute(p) ? p : path.join(ROOT, p));
 // Workspace-relative paths are ALWAYS forward-slash: they are finding ids,
 // store keys and brief text, and a key that differs by OS is two findings.
+//
+// A relative input is resolved against the ROOT, not against cwd. It used to
+// use path.resolve, which is cwd-relative, so the two agreed only while cwd
+// happened to BE the root. Anywhere else — `bb` run from a subdirectory, a hook
+// whose cwd the harness chose, any test whose BB_ROOT is a fixture — `rel("a/b")`
+// walked out of the workspace, failed the `..` test and came back as an absolute
+// path into a different tree entirely. It surfaced as a pinpoint anchor whose
+// path pointed at a file of the same name in the REAL repository while the brief
+// described the fixture, which the read guard then could not match.
 export const rel = (p) => {
-  const r = path.relative(ROOT, path.resolve(p)).split(path.sep).join("/");
-  return r.startsWith("..") ? path.resolve(p) : r || ".";
+  const r = path.relative(ROOT, abs(p)).split(path.sep).join("/");
+  return r.startsWith("..") ? abs(p) : r || ".";
 };
-export const abs = (p) => (path.isAbsolute(p) ? p : path.join(ROOT, p));
 export function ensureDirs() {
   for (const d of [BB_DIR, VAR, OUT, HOME]) fs.mkdirSync(d, { recursive: true });
 }

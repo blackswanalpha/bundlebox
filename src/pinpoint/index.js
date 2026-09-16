@@ -328,8 +328,15 @@ const list = (v) => (typeof v === "string" ? v.split(",").map((s) => s.trim()).f
 export const commands = {
   pinpoint: {
     help: "one problem, one focused prompt: where, regions, scope, evidence, gate (no tokens)",
-    usage: "bb pinpoint \"<problem>\" [--files a,b] [--max-files N] [--kind fix|verify|investigate|build|write] [--print] [--json]",
+    usage: "bb pinpoint \"<problem>\" [--files a,b] [--max-files N] [--kind fix|verify|investigate|build|write] [--print] [--json]\n     bb pinpoint gaps [--no-findings] [--no-auditor] [--max N]   every measured gap as a located brief\n     bb pinpoint next [N] [--print]                              make a worklist row the active brief",
     run: async ({ _, flags }) => {
+      // The two sub-verbs come first: a worklist row is a problem somebody
+      // already stated, and re-stating it on the command line is the work this
+      // whole file exists to avoid.
+      if (_[0] === "gaps" || _[0] === "next") {
+        const w = await import("./worklist.js");
+        return w.commands[_[0]].run({ _: _.slice(1), flags });
+      }
       const problem = _.join(" ").trim();
       if (!problem) { warn(commands.pinpoint.usage); return 2; }
       const b = await build(problem, { files: list(flags.files), maxFiles: Number(flags.maxFiles) || 6, kind: flags.kind ? String(flags.kind) : "fix" });
