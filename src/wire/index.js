@@ -174,6 +174,11 @@ function transform(f, before, mode) {
       }
       case "toml": return mode === "add" ? addToml(before, f) : removeToml(before, f);
       case "yaml-read": return mode === "add" ? addYamlRead(before, f) : removeYamlRead(before);
+      // A file copied from the package: a skill document. The whole file is
+      // ours, so `add` is its current contents and `remove` is deletion —
+      // unlike every other kind here, which owns a marked block inside a file
+      // somebody else also writes to.
+      case "copy": return mode === "add" ? fs.readFileSync(f.from, "utf8") : null;
       default: return { manual: `unknown edit kind ${f.kind}` };
     }
   } catch (e) {

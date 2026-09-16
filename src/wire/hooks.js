@@ -11,14 +11,14 @@ import { VAR, OUT, ROOT, ensureDirs } from "../core/paths.js";
 import { load } from "../core/config.js";
 import * as store from "../core/store.js";
 import { text as estimateText, file as estimateFile } from "../tokens/estimate.js";
-import { now } from "../core/util.js";
+import { now, human } from "../core/util.js";
 import * as brief from "./brief.js";
 
 // A cap is what a band may cost, not what it should. `pre-read` and
 // `pre-search` are the two that carry an ANSWER rather than a pointer, so they
 // are the two allowed to be expensive: what they replace is the whole file or
 // the whole search.
-const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-search": 500, "restate-rules": 700 };
+const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-search": 500, "post-tool": 300, "restate-rules": 700 };
 
 // ── the janitor's three touch points ────────────────────────────────────────
 //
@@ -257,7 +257,7 @@ async function preSearch(payload) {
   const rec = brief.current({ maxAgeMin: Number(cfg.wire.brief_max_age_min) || 45, sessionId: String(payload.session_id || "") });
 
   if (tool === "Grep") {
-    const v = brief.searchVerdict(rec, input.pattern, { glob: input.glob || "", pathArg: input.path || "" });
+    const v = brief.searchVerdict(rec, input.pattern, { glob: input.glob || "", pathArg: input.path || "", cwd: String(payload.cwd || "") });
     if (v) decide("PreToolUse", v, CAPS["pre-search"]);
     return;
   }
@@ -268,7 +268,7 @@ async function preSearch(payload) {
   const seg = brief.parseBash(input.command);
   if (!seg) return;
   if (seg.kind === "search") {
-    const v = brief.searchVerdict(rec, seg.pattern, { pathArg: seg.pathArg || "" });
+    const v = brief.searchVerdict(rec, seg.pattern, { pathArg: seg.pathArg || "", cwd: String(payload.cwd || "") });
     if (v) decide("PreToolUse", v, CAPS["pre-search"]);
     return;
   }
@@ -277,13 +277,51 @@ async function preSearch(payload) {
   if (v) decide("PreToolUse", v, CAPS["pre-read"]);
 }
 
-/** The input axis. Imported lazily: every other hook on this list runs once per
- *  session or once per prompt, and this one runs once per TOOL CALL, so the
- *  cost of loading a module it will not use is paid hundreds of times. */
+/** The input axis, and the output axis.
+ *
+ *  Imported lazily: every other hook on this list runs once per session or once
+ *  per prompt, and this one runs once per TOOL CALL, so the cost of loading a
+ *  module it will not use is paid hundreds of times. */
 async function postTool(payload) {
-  if (!load().sieve?.enabled) return;
-  const { postTool: run } = await import("../sieve/index.js");
-  run(payload);
+  const cfg = load();
+  if (cfg.sieve?.enabled) {
+    const { postTool: run } = await import("../sieve/index.js");
+    run(payload);
+  }
+  if (cfg.slop?.guard_writes) await slopGuard(payload, cfg);
+}
+
+/** The prose the AGENT writes, measured by the same rules as the prose bb
+ *  writes.
+ *
+ *  `bb slop` has always existed and every brief, commit message and PR body
+ *  this factory emits goes through it. What it never saw was the other half of
+ *  the session: the markdown the model writes into the tree, which is read by
+ *  the NEXT session and billed again, every time, until somebody deletes it. A
+ *  document is the only artefact here that charges rent.
+ *
+ *  Advisory, and deliberately so. A hedge is sometimes the honest word, and a
+ *  hook that rewrites somebody's sentence without being asked is worse than the
+ *  sentence. This reports the rule, the line and the token cost, and stops. */
+async function slopGuard(payload, cfg) {
+  const tool = String(payload.tool_name || "");
+  if (!/^(Write|Edit|MultiEdit|NotebookEdit)$/.test(tool)) return;
+  const fp = String(payload?.tool_input?.file_path || payload?.tool_input?.path || "");
+  if (!/\.(md|mdx|markdown|txt|rst)$/i.test(fp)) return;     // prose files only: code has its own detector
+  const edits = payload?.tool_input?.edits;
+  const written = [payload?.tool_input?.content, payload?.tool_input?.new_string,
+    ...(Array.isArray(edits) ? edits.map((e) => e && e.new_string) : [])].filter((x) => typeof x === "string" && x.trim());
+  if (!written.length) return;
+  const { lint } = await import("../slop/index.js");
+  const { text: estimate } = await import("../tokens/estimate.js");
+  const r = lint(written.join("\n\n"));
+  const max = Number(cfg.slop.max_hits) || 5;
+  if (r.count < (Number(cfg.slop.floor) || 3)) return;        // one hedge is a word, not a habit
+  const top = Object.entries(r.byRule).sort((a, b) => b[1] - a[1]).slice(0, max);
+  const lines = r.hits.slice(0, max).map((h) => `  ${path.basename(fp)}:${h.line} ${h.rule} — "${h.text}"`);
+  emit({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: capTokens(
+    `bundlebox anti-slop: ${r.count} hit${r.count === 1 ? "" : "s"} in what you just wrote to ${path.basename(fp)} (~${human(estimate(written.join("\n"), "prose"))} tokens, re-read and billed by every session after this one).\n${lines.join("\n")}\n${top.map(([k, v]) => `${k} x${v}`).join(", ")} — \`bb slop ${fp}\` for all of them, \`bb slop fix ${fp} --apply\` strips what cannot lose a fact.`,
+    CAPS["post-tool"]) } });
 }
 
 /** Nothing is emitted from here. Whether a PreCompact hook's stdout reaches the
@@ -300,6 +338,25 @@ async function preCompact(payload) {
   } catch (e) { log("pre-compact", `marker ${String(e && e.message || e).slice(0, 120)}`); }
 }
 
+/** The Stop hook: the fourth verification layer, and the only one that is not
+ *  the work reviewing itself.
+ *
+ *  It executes nothing. What it can say is whether the ledger this work
+ *  declared is still sitting there with gates unmet — the one question a
+ *  session about to report "done" cannot answer about itself. Silent when there
+ *  is no ledger, because a workspace that never declared a bar has not failed
+ *  to meet one. */
+async function stop(payload) {
+  const cfg = load();
+  if (!cfg.finish?.stop_hook) return;
+  const { LEDGER, stopHook } = await import("../finish/index.js");
+  if (!fs.existsSync(LEDGER())) return;
+  const r = stopHook(JSON.stringify(payload || {}));
+  const text = String(r.out || "").trim();
+  if (text) process.stdout.write(text.endsWith("\n") ? text : text + "\n");
+  else if (r.err) log("stop", `checker ${String(r.err).slice(0, 160)}`);
+}
+
 async function sessionEnd(payload) {
   const cfg = load();
   if (cfg.wire.measure_sessions) {
@@ -311,6 +368,10 @@ async function sessionEnd(payload) {
   // outside the session that pays for it. This is also the only moment the mark
   // pass has a complete transcript to trace reachability from — during the
   // session the file it needs is still being written.
+  // The per-session brief record goes with the session that owned it. Age is
+  // the only signal a hook has for the ones whose sessions never reached this
+  // handler.
+  try { brief.sweep(); } catch { /* a stale record expires on its own */ }
   if (!cfg.janitor?.refresh) return;
   try {
     const { build } = await import("../janitor/index.js");
@@ -335,7 +396,8 @@ export async function handle(event) {
     else if (event === "pre-search") await preSearch(payload);
     else if (event === "post-tool") await postTool(payload);
     else if (event === "pre-compact") await preCompact(payload);
-    else if (event === "session-end" || event === "stop") await sessionEnd(payload);
+    else if (event === "stop") await stop(payload);
+    else if (event === "session-end") await sessionEnd(payload);
     else log(event || "(none)", "unknown event");
     log(event, `ok ${Date.now() - t0}ms`);
   } catch (e) {
@@ -343,4 +405,4 @@ export async function handle(event) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "pre-search", "post-tool", "pre-compact", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "pre-search", "post-tool", "pre-compact", "stop", "session-end"];

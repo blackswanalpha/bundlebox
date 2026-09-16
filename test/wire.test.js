@@ -17,7 +17,7 @@ process.env.BB_ROOT = root;
 fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "fixture", type: "module" }));
 
 const wire = await import("../src/wire/index.js");
-const { CLAUDE_HOOKS, isOurHook } = await import("../src/wire/agents.js");
+const { CLAUDE_HOOKS, isOurHook, skills } = await import("../src/wire/agents.js");
 
 const rows = (json) => {
   const o = JSON.parse(json);
@@ -66,4 +66,37 @@ test("unwire removes only ours", () => {
   const theirs = { hooks: { PreToolUse: [{ matcher: "Write", hooks: [{ type: "command", command: "./my-own-guard.sh" }] }] } };
   const after = JSON.parse(wire.removeClaudeHooks(wire.addClaudeHooks(JSON.stringify(theirs))));
   assert.deepEqual(after, theirs);
+});
+
+// ── skills ──────────────────────────────────────────────────────────────────
+//
+// A skill is the one surface bb installs that costs nothing until it triggers,
+// unlike the instructions block, which arrives in every system prompt and is
+// billed whether or not the session was about that.
+
+test("every skill in the package is wired, and unwire takes it back out", () => {
+  const all = skills();
+  assert.ok(all.length >= 2, `expected the packaged skills, got ${all.map((s) => s.name).join(", ") || "none"}`);
+  for (const s of all) assert.ok(s.files.includes("SKILL.md"), `${s.name} has no SKILL.md`);
+  const rows = wire.plan(["claude"], { root, scope: "project", mode: "add" }).filter((r) => r.kind === "copy");
+  assert.equal(rows.length, all.reduce((n, s) => n + s.files.length, 0));
+  for (const s of all) assert.ok(rows.some((r) => r.path.includes(path.join(".claude", "skills", s.name, "SKILL.md"))), `${s.name} is not wired`);
+  assert.ok(rows.every((r) => r.action === "create"), "nothing is installed in the fixture yet");
+  wire.applyPlan(rows);
+  const again = wire.plan(["claude"], { root, scope: "project", mode: "add" }).filter((r) => r.kind === "copy");
+  assert.ok(again.every((r) => r.action === "unchanged"), "applying twice changes nothing");
+  const removal = wire.plan(["claude"], { root, scope: "project", mode: "remove" }).filter((r) => r.kind === "copy");
+  assert.ok(removal.every((r) => r.action === "delete"));
+  wire.applyPlan(removal);
+  assert.equal(fs.existsSync(path.join(root, ".claude", "skills", all[0].name, "SKILL.md")), false);
+});
+
+test("a skill document declares the name its directory carries", () => {
+  for (const s of skills()) {
+    const fm = fs.readFileSync(path.join(s.dir, "SKILL.md"), "utf8").split("---")[1] || "";
+    const name = /^name:\s*(\S+)/m.exec(fm);
+    assert.ok(name, `${s.name}/SKILL.md has no name in its frontmatter`);
+    assert.equal(name[1], s.name, "the frontmatter name and the directory must agree, or the agent loads neither");
+    assert.match(fm, /^description:\s*\S/m, `${s.name} has no description, which is the only thing that decides whether it triggers`);
+  }
 });

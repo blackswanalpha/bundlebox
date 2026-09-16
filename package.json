@@ -46,6 +46,7 @@
   "files": [
     "bin/",
     "src/",
+    "skills/",
     "designlabs/",
     "kernel/Cargo.toml",
     "kernel/src/",

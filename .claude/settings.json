@@ -77,6 +77,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bb hook stop",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

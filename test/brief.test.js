@@ -220,3 +220,87 @@ test("tableHits honours the same filter", () => {
   assert.equal(brief.tableHits(["loginToken"], { under: "src/" }).length, 1);
   assert.deepEqual(brief.tableHits(["loginToken"], { under: "test/" }), []);
 });
+
+// ── one identifier is the whole boundary of what an index may refuse ─────────
+//
+// Both of these were measured on this guard's first hour, against its own
+// author. A declaration index answers "where is X declared" and nothing else,
+// so it may only stand in for a search that asks exactly that.
+
+test("a multi-term pattern is never answered from the index", () => {
+  const v = brief.searchVerdict(null, "usage|process.argv|exitCode|loginToken", {});
+  assert.equal(v, null, "one of four alternatives is a symbol name; the other three are not, and a quarter of an answer is a wrong one");
+});
+
+test("a single identifier still is", () => {
+  assert.equal(brief.searchVerdict(null, "loginToken", {}).permissionDecision, "deny");
+});
+
+test("the shell's cwd scopes a search with no path argument", () => {
+  assert.equal(brief.dirFilter("", "", path.join(root, "src", "finish", "vendor")), "src/finish/vendor/");
+  assert.equal(brief.dirFilter("", "", root), "");
+  assert.equal(brief.dirFilter("lib/", "", path.join(root, "src", "finish")), "src/finish/lib/");
+  assert.equal(brief.dirFilter("src/finish/lib/", "", path.join(root, "src", "finish")), "src/finish/lib/", "an argument already under cwd is not doubled");
+  assert.equal(brief.searchVerdict(null, "loginToken", { cwd: path.join(root, "src", "finish") }), null, "the declaration is in src/, and this search cannot reach it");
+});
+
+test("segments respects quotes, so an alternation is one search", () => {
+  assert.deepEqual(brief.segments('grep -n "effect\\|GROUPS\\|groupOf" src/cli.js | head -20'),
+    ['grep -n "effect\\|GROUPS\\|groupOf" src/cli.js', "head -20"]);
+  assert.deepEqual(brief.segments("cat a.js && npm test"), ["cat a.js", "npm test"]);
+  assert.deepEqual(brief.segments("echo 'a;b' ; ls"), ["echo 'a;b'", "ls"]);
+  assert.deepEqual(brief.segments("git commit -m 'one || two'"), ["git commit -m 'one || two'"]);
+});
+
+test("an alternation through the shell is not a declaration lookup", () => {
+  const seg = brief.parseBash('grep -n "effect\\|GROUPS\\|groupOf" src/cli.js');
+  assert.equal(seg.kind, "search");
+  assert.equal(seg.pattern, "effect\\|GROUPS\\|groupOf");
+  assert.equal(brief.searchVerdict(null, seg.pattern, { pathArg: seg.pathArg }), null, "three terms, one of which is a symbol name, is not a lookup the index owns");
+});
+
+// ── one slot per session ────────────────────────────────────────────────────
+//
+// A single brief.json is wrong the moment two sessions share a checkout, which
+// is the normal case here: `bb uptake` counts fifteen sessions on this tree.
+// Session B's prompt overwrote session A's brief, A's guards refused to answer
+// from a record belonging to B, and the whole benefit quietly stopped arriving.
+
+test("two sessions keep their own brief", () => {
+  const a = REC(); a.session_id = "SA"; a.problem = "task A";
+  const b = REC(); b.session_id = "SB"; b.problem = "task B";
+  brief.activate(a);
+  brief.activate(b);
+  assert.equal(brief.current({ sessionId: "SA" }).problem, "task A");
+  assert.equal(brief.current({ sessionId: "SB" }).problem, "task B", "and B did not overwrite A");
+});
+
+test("a record with no session id is picked up by anyone, one with another's id is not", () => {
+  fs.rmSync(brief.DIR(), { recursive: true, force: true });
+  const g = REC(); g.session_id = ""; g.problem = "handed over from the command line";
+  brief.activate(g);
+  assert.equal(brief.current({ sessionId: "SC" }).problem, "handed over from the command line");
+  const other = REC(); other.session_id = "SD";
+  brief.activate(other);
+  assert.equal(brief.current({ sessionId: "SC" }).problem, "handed over from the command line", "SD's record is not SC's to read");
+});
+
+test("with no session id the command line gets the newest brief anybody is working on", () => {
+  fs.rmSync(brief.DIR(), { recursive: true, force: true });
+  fs.rmSync(brief.GLOBAL(), { force: true });
+  const old = REC(); old.session_id = "SE"; old.problem = "older"; old.at = new Date(Date.now() - 20 * 60000).toISOString();
+  const now = REC(); now.session_id = "SF"; now.problem = "newer";
+  brief.activate(old);
+  brief.activate(now);
+  assert.equal(brief.current({}).problem, "newer");
+});
+
+test("sweep drops the records of sessions that ended", () => {
+  const stale = REC(); stale.session_id = "SG"; stale.at = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  const live = REC(); live.session_id = "SH";
+  brief.activate(stale);
+  brief.activate(live);
+  assert.equal(brief.sweep({ maxAgeMin: 60 }), 1);
+  assert.ok(brief.current({ sessionId: "SH" }));
+  assert.equal(brief.current({ sessionId: "SG" }), null);
+});

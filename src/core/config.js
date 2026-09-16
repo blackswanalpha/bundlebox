@@ -173,6 +173,25 @@ export const DEFAULTS = {
     // janitor that asserts a stale fact about staleness has failed twice.
     max_age_hours: 168,
   },
+  finish: {
+    // `bb finish`: the acceptance ledger. The Stop hook is a STRUCTURAL
+    // backstop and executes no check — it reports a declared gate that is
+    // still unmet when a session is about to say it is done. Silent in a
+    // workspace with no GATES.md, because a tree that declared no bar has not
+    // failed to meet one.
+    stop_hook: true,
+  },
+  slop: {
+    // The prose the AGENT writes. `bb slop` has always run over every brief,
+    // commit message and PR body this factory emits; what it never saw was the
+    // markdown the model writes into the tree, which the next session re-reads
+    // and is billed for again. Advisory only: a hedge is sometimes the honest
+    // word, and a hook that rewrites somebody's sentence unasked is worse than
+    // the sentence.
+    guard_writes: true,
+    floor: 3,               // fewer hits than this is a word, not a habit
+    max_hits: 5,            // lines named in the one band it emits
+  },
   cron: { sweep_every_min: 30, autonomous_fix: false },
 };
 

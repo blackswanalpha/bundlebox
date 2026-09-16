@@ -30,6 +30,7 @@ export const MODULES = [
   ["recom", "./recom/index.js"],
   ["dotty", "./dotty/index.js"],
   ["slop", "./slop/index.js"],
+  ["finish", "./finish/index.js"],
   ["sieve", "./sieve/index.js"],
   ["janitor", "./janitor/index.js"],
   ["frames", "./frames/index.js"],
@@ -86,7 +87,7 @@ export async function loadCommands() {
 const SPENDS = { run: "--apply", bridge: "--run --spend" };
 // Verbs that can change a file a human wrote. Everything here is a dry run
 // until --apply; that is the whole contract and the column states it once.
-const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs", "janitor"]);
+const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs", "janitor", "finish"]);
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "pinpoint", "bench", "genesis", "cookbook",
@@ -98,7 +99,7 @@ const CHAPTERS = [
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
-  ["ship", "What closes the loop?", ["git", "fix", "pipeline", "scripts", "cron", "buckmaster", "commandcenter"]],
+  ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "commandcenter"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
 ];
 

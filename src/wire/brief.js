@@ -32,8 +32,21 @@ import { VAR, OUT, abs, rel, ensureDirs } from "../core/paths.js";
 import { readText } from "../core/fs.js";
 import { now, human } from "../core/util.js";
 import { file as estimateFile } from "../tokens/estimate.js";
+import { clean } from "../slop/index.js";
 
-export const PATH = () => path.join(VAR, "brief.json");
+// One slot per session, not one slot per workspace.
+//
+// The first version wrote a single `brief.json`, which is wrong the moment two
+// sessions share a checkout — and that is the normal case here, not the edge
+// one: `bb uptake` counts fifteen sessions on this tree, and two others were
+// running while this paragraph was written. Session B's prompt would overwrite
+// session A's brief, A's guards would then see a record belonging to B, refuse
+// to answer from it, and silently fall back to advisory. Nothing broke; the
+// whole benefit just quietly stopped arriving.
+export const DIR = () => path.join(VAR, "brief");
+export const GLOBAL = () => path.join(VAR, "brief.json");
+const safe = (id) => String(id).replace(/[^\w.-]/g, "").slice(0, 64);
+export const PATH = (sessionId = "") => (sessionId ? path.join(DIR(), `${safe(sessionId)}.json`) : GLOBAL());
 
 /** How much of one quoted region the denial reason may carry. A reason the
  *  harness truncates is a reason that served half a function. */
@@ -77,28 +90,59 @@ export function record(b, { sessionId = "", briefPath = "" } = {}) {
 export function activate(rec) {
   try {
     ensureDirs();
-    const p = PATH();
+    const p = PATH(rec.session_id || "");
+    fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p + ".tmp" + process.pid, JSON.stringify(rec));
     fs.renameSync(p + ".tmp" + process.pid, p);
     return true;
   } catch { return false; }
 }
 
+const readRec = (p) => { try { const r = JSON.parse(fs.readFileSync(p, "utf8")); return r && r.v === 1 ? r : null; } catch { return null; } };
+const fresh = (rec, maxAgeMin) => {
+  const age = (Date.now() - Date.parse(rec.at || 0)) / 60000;
+  return Number.isFinite(age) && age <= maxAgeMin;
+};
+
 /** The active record, or null. A brief older than `maxAgeMin`, or one belonging
  *  to another session, answers nothing: the guards would be quoting a region
  *  located for a different task, which is the exact mistake the janitor's
  *  stale guard exists to prevent. */
 export function current({ maxAgeMin = 45, sessionId = "" } = {}) {
-  let rec;
-  try { rec = JSON.parse(fs.readFileSync(PATH(), "utf8")); } catch { return null; }
-  if (!rec || rec.v !== 1) return null;
-  const age = (Date.now() - Date.parse(rec.at || 0)) / 60000;
-  if (!Number.isFinite(age) || age > maxAgeMin) return null;
-  if (sessionId && rec.session_id && rec.session_id !== sessionId) return null;
-  return rec;
+  if (sessionId) {
+    const own = readRec(PATH(sessionId));
+    if (own && fresh(own, maxAgeMin)) return own;
+    // A record with no session id was written by the command line — `bb
+    // pinpoint next`, a gap handed over deliberately — and belongs to whoever
+    // picks it up. One with somebody else's id does not.
+    const g = readRec(GLOBAL());
+    return g && !g.session_id && fresh(g, maxAgeMin) ? g : null;
+  }
+  // No session id: the caller is the command line, and what it means by "the
+  // active brief" is the newest one anybody is working on.
+  const all = [GLOBAL()];
+  try { for (const n of fs.readdirSync(DIR())) if (n.endsWith(".json")) all.push(path.join(DIR(), n)); } catch { /* no per-session dir yet */ }
+  const best = all.map(readRec).filter((r) => r && fresh(r, maxAgeMin)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+  return best || null;
 }
 
-const save = (rec) => { try { fs.writeFileSync(PATH(), JSON.stringify(rec)); } catch { /* a lost tally costs one duplicate */ } };
+/** Records for sessions that have ended. The hook cannot know which those are,
+ *  so age is the only honest signal. */
+export function sweep({ maxAgeMin = 24 * 60 } = {}) {
+  let gone = 0;
+  try {
+    for (const n of fs.readdirSync(DIR())) {
+      if (!n.endsWith(".json")) continue;
+      const p = path.join(DIR(), n);
+      const r = readRec(p);
+      if (r && fresh(r, maxAgeMin)) continue;
+      try { fs.unlinkSync(p); gone++; } catch { /* next time */ }
+    }
+  } catch { /* nothing to sweep */ }
+  return gone;
+}
+
+const save = (rec) => { try { fs.writeFileSync(PATH(rec.session_id || ""), JSON.stringify(rec)); } catch { /* a lost tally costs one duplicate */ } };
 const norm = (p) => { try { return rel(abs(String(p))); } catch { return String(p); } };
 
 // ── what goes back into the window ──────────────────────────────────────────
@@ -127,7 +171,7 @@ export function band(rec) {
   const g = rec.gates || {};
   if (g.quick || g.full) L.push("", `done when: ${[g.quick, g.full !== g.quick ? g.full : ""].filter(Boolean).join("  /  ")}`);
   L.push("", `full brief (evidence, traps, guidelines, what it does not settle): ${rec.path}`);
-  return L.join("\n");
+  return clean(L.join("\n"));
 }
 
 // ── the read guard ──────────────────────────────────────────────────────────
@@ -195,8 +239,22 @@ export function patternTerms(pattern) {
 
 /** The directory a search was restricted to, or "" for the whole tree. A glob
  *  contributes only its fixed leading path: `src/wire/*.js` restricts to
- *  `src/wire/`, while `**` restricts to nothing. */
-export function dirFilter(pathArg, glob) {
+ *  `src/wire/`, while `**` restricts to nothing.
+ *
+ *  `cwd` is the last word. A shell search with no path argument is scoped by
+ *  the directory it runs in, and the harness tells the hook which one that is;
+ *  reading it as "the whole tree" is what let this guard answer a search of
+ *  `src/finish/vendor/` with rows from `src/tokens/`. */
+export function dirFilter(pathArg, glob, cwd = "") {
+  const here = cwd ? norm(cwd) : "";
+  const base = here && here !== "." && !here.startsWith("/") ? here.replace(/\/$/, "") + "/" : "";
+  const inner = innerFilter(pathArg, glob);
+  if (!base) return inner;
+  if (!inner) return base;
+  return inner.startsWith(base) ? inner : base + inner;
+}
+
+function innerFilter(pathArg, glob) {
   const p = String(pathArg || "").replace(/^\.\//, "");
   if (p && !p.includes("*")) return p.endsWith("/") || !path.extname(p) ? (p.endsWith("/") ? p : p + "/") : p;
   const g = String(glob || "").replace(/^\.\//, "");
@@ -243,10 +301,22 @@ export function tableHits(terms, { cap = SEARCH_ROWS, under = "" } = {}) {
  *
  *  Order matters. The active brief is checked first, because it was built for
  *  THIS task and its rows are ranked; the tables answer anything but rank
- *  nothing. */
-export function searchVerdict(rec, pattern, { glob = "", pathArg = "" } = {}) {
+ *  nothing.
+ *
+ *  ONE identifier is the whole boundary of what an index may refuse. A
+ *  declaration index answers "where is X declared" and nothing else, so it may
+ *  only stand in for a search that asks exactly that. Measured, twice, on this
+ *  guard's first hour: `grep -n "usage|process.argv|EXIT|exitCode"` was refused
+ *  because one of its four alternatives happens to be a symbol name, and the
+ *  answer handed back covered a quarter of the question. A partial answer to a
+ *  search is not an answer, it is a wrong one with rows attached.
+ *
+ *  The duplicate check is different and applies to any pattern: running the
+ *  same search twice in one window is waste whatever its shape. */
+export function searchVerdict(rec, pattern, { glob = "", pathArg = "", cwd = "" } = {}) {
   const terms = patternTerms(pattern);
   if (!terms.length) return null;                            // a punctuation search; let it run
+  const lookup = terms.length === 1;                         // one name: a declaration lookup
 
   if (rec) {
     const key = terms.join("+").toLowerCase();
@@ -255,7 +325,7 @@ export function searchVerdict(rec, pattern, { glob = "", pathArg = "" } = {}) {
       return deny(`bundlebox: this search already ran in this session (${terms.join(", ")}). Its result is in your context. Re-running it returns the same rows and bills them twice.`);
     }
     tally(rec, "searches", key);
-    const tl = terms.map((t) => t.toLowerCase());
+    const tl = lookup ? terms.map((t) => t.toLowerCase()) : [];
     const rows = [
       ...rec.symbols.filter((h) => tl.some((t) => h.symbol.toLowerCase().includes(t))).map((h) => `${h.file}:${h.line} — ${h.symbol}`),
       ...rec.grep.filter((h) => tl.some((t) => h.text.toLowerCase().includes(t))).map((h) => `${h.file}:${h.line} — ${h.text}`),
@@ -271,7 +341,8 @@ export function searchVerdict(rec, pattern, { glob = "", pathArg = "" } = {}) {
   // name declared in `src/` is asking who CALLS it, and the index has no rows
   // for that. Measured the honest way: this guard denied exactly that search of
   // its own author's, one minute after it was installed.
-  const under = dirFilter(pathArg, glob);
+  if (!lookup) return null;
+  const under = dirFilter(pathArg, glob, cwd);
   const hits = tableHits(terms, { under });
   if (!hits.length) return null;                             // the tables do not know; the tree might
   const rows = hits.map((h) => `  ${h.file}:${h.line} — ${h.symbol}`).join("\n");
@@ -294,8 +365,35 @@ const SEARCHERS = /^(grep|egrep|fgrep|rg|ag|ack)$/;
  *  segment, and anything that is not plainly one read or one search of one
  *  target is left alone. Guessing at shell semantics in a hook is how a guard
  *  starts denying `npm test`. */
+/** Split a command on the shell operators, RESPECTING QUOTES.
+ *
+ *  `String.split(/\|/)` was the first version and it was wrong in the most
+ *  common case there is: `grep -n "effect\|GROUPS\|groupOf" src/cli.js` is one
+ *  search with an alternation, and splitting it produced three segments whose
+ *  first looked exactly like a single-identifier lookup. The guard then refused
+ *  a three-term search on the strength of one term — the same false denial this
+ *  file has now been corrected for twice, arriving through the parser instead of
+ *  through the rule. */
+export function segments(command) {
+  const src = String(command || "");
+  const out = [];
+  let cur = "", q = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) { cur += c; if (c === q && src[i - 1] !== "\\") q = ""; continue; }
+    if (c === "'" || c === '"') { q = c; cur += c; continue; }
+    if (c === ";" || c === "|" || (c === "&" && src[i + 1] === "&")) {
+      if (c === "&" || (c === "|" && src[i + 1] === "|")) i++;
+      out.push(cur); cur = ""; continue;
+    }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+
 export function parseBash(command) {
-  const segs = String(command || "").split(/&&|\|\||\||;/).map((s) => s.trim()).filter(Boolean);
+  const segs = segments(command);
   for (const seg of segs) {
     const parts = seg.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
     if (!parts.length) continue;

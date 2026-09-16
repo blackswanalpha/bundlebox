@@ -22,6 +22,7 @@ import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
+import { clean } from "../slop/index.js";
 import { rank, informative } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 
@@ -306,7 +307,14 @@ export function prompt(b) {
     "- `git stash`, `git checkout` on a shared checkout, `--no-verify`, or a commit outside the scope",
     "- widen into cleanup, refactor or docs. One problem, one diff.",
     "", `Reference tables, read instead of searching: ${b.tables.length ? b.tables.join(", ") : "(none built; `bb snapgen build`)"}`);
-  return L.join("\n") + "\n";
+  // Through the anti-slop pass on the way out. This is the document in this
+  // tree with the strongest claim to it: every brief here is READ BY A MODEL
+  // AND BILLED, so a hedge is not a style complaint, it is tokens the lane pays
+  // for and then has to decide to ignore. `clean` masks fenced blocks and inline
+  // spans, so the quoted regions and the gate command come back byte for byte;
+  // only the prose around them is touched, and only by deletions and
+  // one-for-one replacements.
+  return clean(L.join("\n")) + "\n";
 }
 
 export function write(b) {
