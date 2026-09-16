@@ -165,6 +165,162 @@ export async function shot({ label = "shot", url = "", dir = null, flags = {} } 
   } finally { session.close(); }
 }
 
+/** The page, measured against the rows a machine can check.
+ *
+ *  Ported from spinwish's `mainboard/bugbash/sweep.spec.ts`, which ran the same
+ *  six checks through Playwright. There is no Playwright here and installing one
+ *  to ask whether an image has an `alt` would be the third browser this box
+ *  drives; CCDP is already attached for the screenshot, so the checks run in the
+ *  page it is attached to.
+ *
+ *  Everything below is a MEASUREMENT taken against a rendered screen, never a
+ *  read of the source. That distinction is the mainboard's third rule and it is
+ *  the reason this is worth the browser: a component that declares an `alt` prop
+ *  and never passes it through reads correct and renders wrong.
+ *
+ *  The narrow pass is a separate measurement, not a guess from the wide one. A
+ *  layout that fits at 1280 and overflows at 390 is the common case and the only
+ *  one anybody ships by accident. */
+export async function sweep({ url = "", label = "", dir = null, narrow = 390, flags = {} } = {}) {
+  const { host, port } = endpoint(flags);
+  const name = label || slug(url.replace(/^https?:\/\//, "")) || "sweep";
+  const outDir = dir || path.join(DIR(), `${stamp()}-${slug(name)}`);
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const { session, target } = await cdp.attach({ host, port, url });
+  const errors = [];
+  // The navigated document's OWN response. `Page.navigate` resolves the same
+  // way for a 200 and for a 404 — the browser rendered the server's error page,
+  // which is a page — so without this a route that does not exist is measured
+  // as though it were the product, and its failed main request was reported as
+  // a missing subresource. Measured: `/selftest/states.html` against an API
+  // base filed "asked for 1 file the server did not give it" instead of "this
+  // route is a 404".
+  let doc = null;
+  try {
+    // Listening BEFORE the navigation, because an exception thrown while the
+    // page boots is the one worth catching and it is over before any call the
+    // navigation returns from.
+    session.onEvent = (method, params) => {
+      // Everything observed before the new document commits belongs to the
+      // PREVIOUS one. `cdp.attach` reuses the tab, so a timer left running by
+      // the route swept a moment ago throws into this capture and the finding
+      // names the wrong page — measured: a clean studio reported a TypeError
+      // from the deliberately broken fixture swept before it. The main frame's
+      // navigation is the line between the two documents, so it clears what was
+      // collected up to that point.
+      if (method === "Network.responseReceived" && params.type === "Document") {
+        doc = { status: params.response?.status ?? null, url: params.response?.url || "", mime: params.response?.mimeType || "" };
+        return;
+      }
+      if (method === "Page.frameNavigated" && !params.frame?.parentId) { errors.length = 0; return; }
+      if (errors.length >= 40) return;
+      if (method === "Runtime.exceptionThrown") {
+        const d = params.exceptionDetails || {};
+        errors.push({ kind: "exception", text: String(d.exception?.description || d.text || "").split("\n")[0].slice(0, 200) });
+      } else if (method === "Log.entryAdded" && params.entry?.level === "error") {
+        errors.push({ kind: params.entry.source || "log", text: String(params.entry.text || "").slice(0, 200), url: params.entry.url || "" });
+      } else if (method === "Runtime.consoleAPICalled" && params.type === "error") {
+        errors.push({ kind: "console", text: (params.args || []).map((a) => String(a.value ?? a.description ?? "")).join(" ").slice(0, 200) });
+      }
+    };
+    await session.call("Page.enable");
+    await session.call("Runtime.enable");
+    await session.call("Network.enable").catch(() => null);
+    await session.call("Log.enable").catch(() => null);
+
+    if (url) {
+      await session.call("Page.navigate", { url });
+      const until = Date.now() + (Number(flags.settle) || 8000);
+      for (;;) {
+        const r = await session.call("Runtime.evaluate", {
+          expression: "document.readyState === 'complete' && document.body && document.body.innerText.trim().length",
+          returnByValue: true,
+        }).catch(() => null);
+        if (r?.result?.value) break;
+        if (Date.now() > until) break;
+        await new Promise((s2) => setTimeout(s2, 150));
+      }
+    }
+
+    const measured = await measure(session);
+    const png = await session.call("Page.captureScreenshot", { format: "png" }, { timeout: 30000 });
+    const buf = Buffer.from(png.data, "base64");
+    const file = path.join(outDir, `${slug(name)}.png`);
+    fs.writeFileSync(file, buf);
+
+    // The narrow pass. The override is cleared in every exit path: a session
+    // that leaves a device override behind hands the NEXT capture a 390px
+    // browser nobody asked for, and that failure looks exactly like a
+    // responsive bug in an unrelated screen.
+    let narrowRow = null;
+    try {
+      await session.call("Emulation.setDeviceMetricsOverride", { width: narrow, height: 844, deviceScaleFactor: 0, mobile: true });
+      await new Promise((s2) => setTimeout(s2, 400));
+      narrowRow = await measure(session);
+    } catch { /* an endpoint without Emulation reports the wide pass only */ }
+    finally { await session.call("Emulation.clearDeviceMetricsOverride").catch(() => null); }
+
+    await session.call("Accessibility.enable").catch(() => null);
+    const ax = await session.call("Accessibility.getFullAXTree", {}, { timeout: 30000 }).catch(() => ({ nodes: [] }));
+    const screen = summarise(ax.nodes);
+    const frame = inspect(buf);
+
+    const row = {
+      label: name, url: measured.url || url || target.url, title: measured.title || target.title,
+      file: rel(file), at: new Date().toISOString(),
+      viewport: `${measured.innerW}x${measured.innerH}`, narrow_viewport: narrowRow ? `${narrow}x844` : "",
+      status: doc ? doc.status : null, mime: doc ? doc.mime : "",
+      blank: frame.blank, blank_why: frame.why, bytes: buf.length,
+      wide: measured, narrow: narrowRow, errors, nodes: screen.length, screen,
+    };
+    writeJson(path.join(outDir, `${slug(name)}.json`), row);
+    return { ...row, dir: rel(outDir) };
+  } finally { session.onEvent = null; session.close(); }
+}
+
+/** One round trip, every mechanizable row. Kept as one expression because each
+ *  extra `Runtime.evaluate` is a round trip against a page that may still be
+ *  settling, and two of them can disagree about the same screen. */
+async function measure(session) {
+  const expr = `(() => {
+    const out = {};
+    const de = document.documentElement;
+    out.url = location.href; out.title = document.title;
+    out.viewportMeta = !!document.querySelector('meta[name=viewport]');
+    out.innerW = window.innerWidth; out.innerH = window.innerHeight;
+    out.scrollW = de ? de.scrollWidth : 0;
+    out.overflow = out.scrollW - out.innerW;
+    const body = document.body;
+    out.text = body ? body.innerText.slice(0, 120000) : "";
+    out.textLen = out.text.length;
+    const imgs = Array.prototype.slice.call(document.images || []);
+    out.images = imgs.length;
+    out.noAlt = imgs.filter(i => !i.hasAttribute('alt'))
+      .map(i => String(i.currentSrc || i.src || '').slice(-90)).slice(0, 10);
+    out.noAltCount = imgs.filter(i => !i.hasAttribute('alt')).length;
+    const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,[role=button],[role=link],[role=tab],[onclick]';
+    const nodes = Array.prototype.slice.call(document.querySelectorAll(SEL));
+    out.interactive = nodes.length;
+    const small = [], unlabelled = [];
+    const labelOf = (n) => String(n.innerText || n.getAttribute('aria-label') || n.getAttribute('title') || n.value || '').trim();
+    for (const n of nodes) {
+      const b = n.getBoundingClientRect();
+      if (b.width === 0 || b.height === 0) continue;
+      const label = labelOf(n);
+      if (b.width < 44 || b.height < 44) small.push({ tag: n.tagName.toLowerCase(), label: label.slice(0, 40), w: Math.round(b.width), h: Math.round(b.height) });
+      if (!label && !n.querySelector('img,svg') && !n.getAttribute('aria-labelledby')) {
+        unlabelled.push({ tag: n.tagName.toLowerCase(), cls: String(n.getAttribute('class') || '').slice(0, 40) });
+      }
+    }
+    out.smallCount = small.length; out.small = small.slice(0, 12);
+    out.unlabelledCount = unlabelled.length; out.unlabelled = unlabelled.slice(0, 12);
+    return JSON.stringify(out);
+  })()`;
+  const r = await session.call("Runtime.evaluate", { expression: expr, returnByValue: true }, { timeout: 20000 }).catch(() => null);
+  try { return JSON.parse(r.result.value); } catch { return { url: "", title: "", viewportMeta: true, innerW: 0, innerH: 0, scrollW: 0, overflow: 0, text: "", textLen: 0, images: 0, noAlt: [], noAltCount: 0, interactive: 0, small: [], smallCount: 0, unlabelled: [], unlabelledCount: 0 }; }
+}
+
 const MARK = (b) => (b === true ? "BLANK" : b === null ? "UNCHECKED" : "ok");
 
 function printShot(r) {

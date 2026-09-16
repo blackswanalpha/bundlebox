@@ -29,6 +29,7 @@ export const MODULES = [
   ["simulate", "./simulate/index.js"],
   ["mainboard", "./mainboard/index.js"],
   ["runbook", "./runbook/index.js"],
+  ["viewport", "./viewport/index.js"],
   ["recom", "./recom/index.js"],
   ["dotty", "./dotty/index.js"],
   ["slop", "./slop/index.js"],
@@ -94,13 +95,13 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "commandcenter", "pipeline", "scripts", "sieve"]);
+  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "commandcenter", "pipeline", "scripts", "sieve"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
   ["look", "What is in this tree?", ["init", "doctor", "env", "scan", "findings", "explain", "oversight", "designlabs"]],
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
-  ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "recom", "dotty", "mainboard", "frames", "failsafe"]],
+  ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
   ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "commandcenter"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],

@@ -7,7 +7,8 @@
 // stopped working is visible somewhere, unlike the original's `2>/dev/null`.
 import fs from "node:fs";
 import path from "node:path";
-import { VAR, OUT, ROOT, ensureDirs } from "../core/paths.js";
+import os from "node:os";
+import { VAR, OUT, ROOT, PKG_ROOT, ensureDirs } from "../core/paths.js";
 import { load } from "../core/config.js";
 import * as store from "../core/store.js";
 import { text as estimateText, file as estimateFile } from "../tokens/estimate.js";
@@ -57,10 +58,98 @@ function capTokens(s, cap) {
 }
 const emit = (obj) => process.stdout.write(JSON.stringify(obj) + "\n");
 
+/** Manifests that make a directory a project rather than a place someone
+ *  happened to open a terminal. One level down as well, because a workspace of
+ *  subrepos carries its manifests in the children and not at the top — the same
+ *  case `detectRepo` already handles for `bb init`. */
+const MANIFESTS = ["package.json", "go.mod", "pyproject.toml", "Cargo.toml", "pom.xml", "build.gradle",
+  "build.gradle.kts", "Gemfile", "composer.json", "requirements.txt", "mix.exs", "pubspec.yaml", "CMakeLists.txt"];
+
+/** Is this root worth writing a `.bundlebox` into?
+ *
+ *  The cost of being wrong is asymmetric and the directions are not symmetric
+ *  either. Declining to init a real project costs one line of advice the session
+ *  can act on. Initing a home directory, a mount point or `/tmp` scatters a
+ *  state directory somewhere nobody asked for it and starts a background build
+ *  over a tree that is not a codebase. So: refuse the obvious non-projects by
+ *  name, then require positive evidence — a git worktree, or a manifest at the
+ *  root or one level under it. */
+function looksLikeProject(root) {
+  const home = os.homedir();
+  const resolved = path.resolve(root);
+  if (resolved === path.parse(resolved).root || resolved === home) return "";
+  if (resolved === os.tmpdir() || resolved.startsWith(os.tmpdir() + path.sep)) return "";
+  if (fs.existsSync(path.join(resolved, ".git"))) return "git worktree";
+  for (const m of MANIFESTS) if (fs.existsSync(path.join(resolved, m))) return m;
+  let kids = [];
+  try { kids = fs.readdirSync(resolved, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).slice(0, 40); }
+  catch { return ""; }
+  for (const k of kids) for (const m of MANIFESTS) if (fs.existsSync(path.join(resolved, k.name, m))) return `${k.name}/${m}`;
+  return "";
+}
+
+/** A session that opens where no environment exists gets one, before it does
+ *  anything else.
+ *
+ *  Every other surface in this box assumes `.bundlebox` is there: the tables the
+ *  session reads instead of searching, the brief the guards answer from, the
+ *  findings the prompt hook cites. In a workspace that was never inited all of
+ *  them are absent, none of them says so, and the session does what a session
+ *  with no environment has always done — it searches the tree. Advising `bb
+ *  init` in that window loses to the model's own habit about three times in
+ *  four, which is the measurement this release was built on. So the hook runs
+ *  it.
+ *
+ *  Two halves, split by what they cost. `bb init` is detection over the tree and
+ *  finishes in well under the 30s SessionStart budget, so it runs inline and the
+ *  session is told what it now has. Building the artefacts is minutes of
+ *  scanning, indexing and rendering, which is not a hook's to spend — it is
+ *  detached, and the returned line says it is still building rather than
+ *  implying the environment is ready. */
+async function autoInit(cfg) {
+  if (cfg.wire.auto_init === false) return "";
+  if (fs.existsSync(path.join(ROOT, ".bundlebox", "config.json"))) return "";
+  const why = looksLikeProject(ROOT);
+  if (!why) return "";
+  const log_ = (m) => log("session-start", `auto-init ${m}`);
+  const { setMode } = await import("../core/log.js");
+  try {
+    // The hook's stdout is a protocol, not a terminal: `bb init` prints a
+    // report, and one line of it on this channel is a malformed hook response.
+    setMode({ quiet: true, json: false });
+    const init = await import("../init.js");
+    await init.commands.init.run({ _: [], flags: {} });
+  } catch (e) { log_(`failed: ${String(e && e.message || e).slice(0, 120)}`); return ""; }
+  finally { setMode({ quiet: false, json: false }); }
+  if (!fs.existsSync(path.join(ROOT, ".bundlebox", "config.json"))) { log_("wrote nothing"); return ""; }
+  let building = false;
+  try {
+    const { spawn } = await import("node:child_process");
+    const child = spawn(process.execPath, [path.join(PKG_ROOT, "bin", "bb.js"), "env", "up", "--apply", "--quiet"],
+      { cwd: ROOT, detached: true, stdio: "ignore" });
+    child.unref();
+    building = true;
+  } catch (e) { log_(`env up did not start: ${String(e && e.message || e).slice(0, 120)}`); }
+  log_(`inited (${why})${building ? ", env up running" : ""}`);
+  return `bundlebox: no environment here, so one was just created — \`.bundlebox/config.json\` written (${why}).`
+    + (building
+      ? " The reference tables, findings, oversight and worklist are building in the background; they are not ready this second."
+        + " Re-run `bb env`, or call `bb_pinpoint` for the task, before searching the tree."
+      : " Run `bb env up --apply` to build the tables, findings and worklist — locally, no tokens.");
+}
+
 async function sessionStart() {
   const cfg = load();
-  if (!cfg.wire.inject_context) return;
+  const created = await autoInit(cfg);
+  if (!cfg.wire.inject_context) {
+    // `auto_init` is not a context-injection feature and does not switch off
+    // with one. A workspace that was just created has to say so, or the session
+    // is handed an environment it has no reason to believe exists.
+    if (created) emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: created } });
+    return;
+  }
   const parts = [];
+  if (created) parts.push(created);
   // First, because `capTokens` truncates from the END and this is the only part
   // that corrects something already in the window. The reference tables are a
   // pointer the agent can re-read at any time; a line saying which of the

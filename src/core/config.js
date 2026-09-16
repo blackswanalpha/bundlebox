@@ -127,10 +127,34 @@ export const DEFAULTS = {
     thresholds: {},          // overrides for the board rules; `bb frames`/expert holds the defaults
   },
   simulate: { thresholds: {} },
+  mainboard: {
+    // `bugbash` measures a RENDERED page, so it needs to be told which pages.
+    // Empty on purpose and never inferred: a view that guesses a URL probes
+    // something nobody asked about and files findings against a page that is
+    // not the product. `routes` are paths joined to --base, or absolute URLs.
+    // `banned` is copy this workspace has committed against — it is a fact
+    // about one product, so there is no default list.
+    // `base` is the UI's own origin. The board's --base is the API the corpus
+    // calls, and those are two services on two ports: joining a screen path to
+    // the API base probes its 404 page and files findings about it.
+    bugbash: { base: "", routes: [], banned: [], narrow: 390, max_routes: 24, settle: 8000, host: "127.0.0.1", port: 9222 },
+    // How many stored boards `turntables` compares. Two is a replay; ten is
+    // enough history to tell a scenario that changed its mind from one that
+    // changed once and stayed.
+    turntables: { window: 10 },
+  },
   commandcenter: { port: 7788, host: "127.0.0.1" },
   wire: {
     // Which agents `bb wire` installs into. auto = every one detected on this box.
     agents: ["auto"],
+    // SessionStart: a session that opens where no `.bundlebox` exists gets one
+    // written before it does anything else, and a detached `bb env up --apply`
+    // builds the artefacts behind it. Every other surface here assumes the
+    // environment is present; in a workspace nobody inited, all of them are
+    // absent and none of them says so, so the session searches the tree. Only
+    // fires over a directory with positive evidence of being a project — a git
+    // worktree, or a manifest at the root or one level down.
+    auto_init: true,
     inject_context: true,   // SessionStart/UserPromptSubmit: hand the agent the snapgen INDEX
     measure_sessions: true, // SessionEnd: measure used/saved
     guard_reads: true,      // PreToolUse(Read): warn on files past the window
