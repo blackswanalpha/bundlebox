@@ -132,6 +132,21 @@ export function observe(turns) {
   return { ...o, files: paths.size };
 }
 
+/** Session ids the UserPromptSubmit hook located a task for.
+ *
+ *  The brief record is the evidence, and it is the only evidence there can be:
+ *  a hook leaves no turn in a transcript, so a locator that runs itself would
+ *  otherwise be invisible to the verb whose whole job is saying whether the
+ *  surface was reached for. Automating a surface must not make it unmeasurable. */
+export function briefedSessions() {
+  const out = new Set();
+  const dir = path.join(ROOT, ".bundlebox", "var", "brief");
+  try {
+    for (const n of fs.readdirSync(dir)) if (n.endsWith(".json")) out.add(n.replace(/\.json$/, ""));
+  } catch { /* no records yet */ }
+  return out;
+}
+
 /** The surfaces `bb wire` installs, each with what would count as firing and
  *  what would count as the chance to fire.
  *
@@ -140,6 +155,7 @@ export function observe(turns) {
  *  with the reason so the gap is visible rather than absent. */
 export function surfaces(cfg = load()) {
   const block = instructions({ mobile: false });
+  const briefed = briefedSessions();
   return [
     { id: "mcp", what: "the bb_* MCP tools", observable: true,
       installed: () => exists(path.join(ROOT, ".mcp.json")) && /bundlebox/.test(fs.readFileSync(path.join(ROOT, ".mcp.json"), "utf8")),
@@ -151,16 +167,28 @@ export function surfaces(cfg = load()) {
       chance: (o) => o.shell > 0,
       fired: (o) => o.bbVerbs.length > 0,
       detail: (o) => (o.bbVerbs.length ? [...new Set(o.bbVerbs)].slice(0, 6).join(" ") : `${o.shell} shell call(s), none of them bb`) },
+    // A session counts as located when the HOOK did it, not only when the
+    // session thought to. That third case is the one this file could not see
+    // and the one that now matters most: `wire.auto_pinpoint` runs the locator
+    // from UserPromptSubmit, and a hook leaves no turn in a transcript, so
+    // automating the surface would otherwise have made it invisible to the verb
+    // that measures whether it was reached for. The record it writes per
+    // session is the evidence.
     { id: "pinpoint", what: "locate the task before opening files", observable: true,
       installed: () => true,
       chance: (o) => (o.files || o.opens) >= READ_FLOOR,
-      fired: (o) => o.bbVerbs.includes("pinpoint") || o.mcp.includes("bb_pinpoint"),
+      fired: (o) => o.bbVerbs.includes("pinpoint") || o.mcp.includes("bb_pinpoint") || briefed.has(o.session_id),
       detail: (o) => `opened ${o.opens} file(s), ${o.files} distinct` },
     { id: "tables", what: "read out/snapgen instead of grepping", observable: true,
       installed: () => exists(path.join(SNAPGEN(), "INDEX.md")),
       chance: (o) => o.searches > 0,
       fired: (o) => o.snapgen > 0,
       detail: (o) => `${o.searches} search(es)` },
+    { id: "auto", what: "the locator run FOR the session by UserPromptSubmit", observable: true,
+      installed: () => Boolean(cfg.wire?.auto_pinpoint),
+      chance: () => true,
+      fired: (o) => briefed.has(o.session_id),
+      detail: (o) => (briefed.has(o.session_id) ? "a brief was recorded for this session" : "no brief recorded; the prompt was not task-shaped, or the hook was not installed yet") },
     { id: "block", what: `the instructions block (${human(estimateText(block, "prose"))} tokens, every window)`, observable: false,
       installed: () => true,
       why: "it arrives in the system prompt, and a system prompt is not a turn" },
@@ -189,7 +217,7 @@ export function report({ cfg = load(), since = "" } = {}) {
     if (!tr || !tr.turns?.length) continue;
     const last = tr.turns[tr.turns.length - 1]?.ts || "";
     if (since && last && last < since) continue;
-    const o = observe(tr.turns);
+    const o = { ...observe(tr.turns), session_id: tr.sessionId };
     const hit = {};
     for (const s of defs) {
       if (!s.observable) continue;
