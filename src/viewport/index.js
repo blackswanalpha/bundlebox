@@ -7,7 +7,7 @@
 // survives the session that produced it and can be opened without a server.
 import fs from "node:fs";
 import path from "node:path";
-import { BB_DIR, rel, ensureDirs } from "../core/paths.js";
+import { BB_DIR, ROOT, rel, ensureDirs } from "../core/paths.js";
 import { out, emit, warn } from "../core/log.js";
 import { human } from "../core/util.js";
 import { run, which } from "../core/exec.js";
@@ -15,6 +15,12 @@ import { ports } from "./ports.js";
 import { index, detail } from "./page.js";
 
 export const DIR = () => path.join(BB_DIR, "viewport");
+
+/** One port, one checkout per path. Every served page hangs under the name of
+ *  this directory, so a second workspace on the same port answers somewhere
+ *  else instead of overwriting the first answer. */
+export const BASE = () => `/${path.basename(ROOT)}/`;
+export const PORT = 65432;
 
 /** Write the index and one page per declared service. Returns what it wrote, so
  *  the caller reports files rather than claiming success. */
@@ -59,15 +65,31 @@ function say(m) {
  *  what is running now must not serve a page that was true when it was written;
  *  the served copy carries a refresh, the written copy deliberately does not. */
 async function serve(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    warn(`${port} is not a port: a TCP port is 1-65535. Default is ${PORT}.`);
+    return 2;
+  }
+  const base = BASE();
   const http = await import("node:http");
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
+    // `/` and `/<dirname>` both mean the index, but only `/<dirname>/` makes the
+    // relative links on the page resolve, so send the browser there first.
+    if (url.pathname === "/" || `${url.pathname}/` === base) {
+      res.writeHead(302, { location: base });
+      return res.end();
+    }
+    if (!url.pathname.startsWith(base)) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      return res.end(`this port serves ${path.basename(ROOT)}, at ${base}`);
+    }
     const m = ports();
-    if (url.pathname === "/api/ports") {
+    const rest = url.pathname.slice(base.length);
+    if (rest === "api/ports") {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       return res.end(JSON.stringify(m));
     }
-    const name = url.pathname.replace(/^\/|\.html$/g, "");
+    const name = rest.replace(/\.html$/, "");
     const row = name && name !== "index" ? m.services.find((r) => r.id === name) : null;
     if (name && name !== "index" && !row) { res.writeHead(404, { "content-type": "text/plain" }); return res.end(`no service ${name}`); }
     const html = (row ? detail(m, row) : index(m)).replace("</head>", '<meta http-equiv="refresh" content="10"></head>');
@@ -77,7 +99,7 @@ async function serve(port) {
   return new Promise((resolve) => {
     server.on("error", (e) => { warn(`cannot serve on ${port}: ${e.message}`); resolve(2); });
     server.listen(port, "127.0.0.1", () => {
-      out(`  viewport on http://127.0.0.1:${port} — rebuilt on every request, the page refreshes every 10s. Ctrl-C to stop.`);
+      out(`  viewport on http://127.0.0.1:${port}${base} — rebuilt on every request, the page refreshes every 10s. Ctrl-C to stop.`);
     });
   });
 }
@@ -94,7 +116,7 @@ function openIn(file) {
 export const commands = {
   viewport: {
     help: "the ports this workspace is served by, as a page: what is listening, for which directory, and whether it answers (0 tokens)",
-    usage: "bb viewport [status] [--json] | bb viewport build | bb viewport serve [--port 7789] | bb viewport open",
+    usage: "bb viewport [status] [--json] | bb viewport build | bb viewport serve [--port 65432] | bb viewport open",
     long: [
       "  `bb runbook status` answers for the declared system. This one reads the socket table and",
       "  joins it to the declaration, so it can report the case runbook cannot: a declared service",
@@ -106,7 +128,9 @@ export const commands = {
       "",
       "  `build` writes .bundlebox/viewport/index.html, one page per service, and ports.json.",
       "  `serve` rebuilds on every request; the written copy carries no refresh, because a file on",
-      "  disk should not pretend to be live.",
+      "  disk should not pretend to be live. It answers on 127.0.0.1:65432 under the name of this",
+      "  directory — http://127.0.0.1:65432/<dirname>/ — so a viewport in another checkout can hold",
+      "  the same port and still be a different page.",
     ].join("\n"),
     run: async ({ _, flags }) => {
       const sub = _[0] || "status";
@@ -126,7 +150,7 @@ export const commands = {
         out(`  ${r.files.length} file(s) under ${r.dir}: ${r.files.map((f) => path.basename(f)).join(", ")}`);
         return 0;
       }
-      if (sub === "serve") return serve(Number(flags.port) || 7789);
+      if (sub === "serve") return serve(flags.port === undefined ? PORT : Number(flags.port));
       if (sub === "open") {
         const f = path.join(DIR(), "index.html");
         if (!fs.existsSync(f)) build();
