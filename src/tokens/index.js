@@ -56,11 +56,28 @@ async function tokensCmd({ _, flags }) {
     return 0;
   }
   if (sub === "calibrate") {
-    const f = calibrate.fit({ sample: flags.sample || 4000 });
-    if (flags.json) { emit(f); return f.ok ? 0 : 1; }
-    out(calibrate.report(f));
-    if (!f.ok) return 1;
-    if (flags.write) out(`  wrote ${rel(calibrate.write(f))}`); else out("  dry run — add --write to save into var/calibration.json");
+    // Every per-repo factor by default, not only the estimator's coefficients.
+    // `churn_factor`, `anchor_widen` and `reserve_by_kind` were shipped
+    // constants with no refit anywhere in the box, which meant one machine's
+    // 2.4 silently mis-budgeted every brief in every other workspace.
+    // `--tokens-only` is the old behaviour for a caller that wants just that.
+    if (flags.tokensOnly) {
+      const f = calibrate.fit({ sample: flags.sample || 4000 });
+      if (flags.json) { emit(f); return f.ok ? 0 : 1; }
+      out(calibrate.report(f));
+      if (!f.ok) return 1;
+      if (flags.write || flags.apply) out(`  wrote ${rel(calibrate.write(f))}`); else out("  dry run — add --apply to save into var/calibration.json");
+      return 0;
+    }
+    const a = calibrate.fitAll({ sample: flags.sample || 4000 });
+    if (flags.json) { emit(a); return 0; }
+    out(calibrate.reportAll(a));
+    if (flags.write || flags.apply) {
+      const w = calibrate.writeAll(a);
+      out(w.wrote.length ? `\n  wrote ${w.wrote.join(", ")} into ${rel(w.path)}` : "\n  nothing had enough samples to fit; the shipped numbers stand");
+    } else {
+      out("\n  dry run — add --apply to read-merge what fitted into var/calibration.json.");
+    }
     return 0;
   }
   if (sub === "profile") {
@@ -151,7 +168,7 @@ async function headroomCmd({ _, flags }) {
 }
 
 export const commands = {
-  tokens: { help: "estimate, ledger, calibrate, profile, prices, budget", usage: "bb tokens estimate <paths> | ledger | calibrate [--write] | profile [--probe] | prices | budget [--json]", run: tokensCmd },
+  tokens: { help: "estimate, ledger, calibrate, profile, prices, budget", usage: "bb tokens estimate <paths> | ledger | calibrate [--apply] [--tokens-only] | profile [--probe] | prices | budget [--json]", run: tokensCmd },
   session: { help: "what a session used and saved (MEASURED vs ESTIMATE)", usage: "bb session [id] [--write] | end --session <id> --transcript <path> | list [--json]", run: sessionCmd },
   headroom: { help: "the wire: local compression proxy", usage: "bb headroom start --apply | status | stop | savings | doctor [--json]", run: headroomCmd },
 };

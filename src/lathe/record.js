@@ -28,12 +28,64 @@ export const FILE = () => path.join(VAR, "shapes.jsonl");
  *  eventually deletes by hand. */
 export const MAX_ROWS = 20000;
 
+/** A shape is a binary and at most one sub-verb. Anything else is a fragment of
+ *  something that was not a command — the first version of this file shaped
+ *  heredoc bodies, so `} catch`, `const n` and `Math.random()` are all on disk
+ *  here. The caller filters too; this is the guard on the WRITE, because what
+ *  reaches this file is what the file promises never to contain. */
+export const SHAPE = /^[A-Za-z0-9_][\w.+-]+(?::[\w.-]+)?( [a-z][\w:-]*)?$/;
+const MAX_SHAPE = 64;
+
+/** Shapes that name an interpreter and nothing else. `node`, `python3` and `sh`
+ *  are how a one-liner is RUN; a pattern made only of these says a session ran
+ *  three one-liners, which is true of nearly every session and automates
+ *  nothing. It lives here beside `SHAPE` because both answer the same question
+ *  — what a recorded shape is worth — and the actuator reads them without
+ *  importing the model that writes them. */
+export const GENERIC = /^(node|nodejs|python|python3|py|sh|bash|zsh|ksh|dash|ruby|perl|php|deno|bun|ts-node|ls|which|type|file|stat|printf|read|mkdir|touch|rm|cp|mv|chmod|test)$/;
+
+/** Commands that only ever read another command's output. A pipe destination is
+ *  not a unit of work: `grep -rn x src | head -20` is one thing a person did.
+ *
+ *  Here beside `SHAPE` and `GENERIC` because all three answer one question —
+ *  what a recorded shape is worth — and three readers need them: the model that
+ *  learns habits, the actuator that writes scripts, and `bb echos`, which asks
+ *  whether a repeated shape means anything. */
+export const PLUMBING = /^(head|tail|grep|egrep|fgrep|rg|wc|sort|uniq|cut|tr|awk|sed|tee|xargs|column|jq|less|more|cat|nl|paste|join|fold|rev|tac|strings)$/;
+
+/** Wrappers whose ARGUMENT is the command. `timeout 30 npm test` is a habit of
+ *  running the tests, not a habit of running `timeout`. */
+export const WRAPPER = /^(sudo|doas|time|timeout|env|nice|ionice|nohup|stdbuf|command|npx|bunx|pnpx|exec|xvfb-run|script)$/;
+
+/** Does this shape NAME the work, or only the tool that carried it?
+ *
+ *  `npm test`, `cargo build` and `bb scan` identify what ran. A bare `grep`,
+ *  `cat` or `node` does not: the shape drops the arguments, so ten `cat`s in a
+ *  row are ten different files and not one command repeated. Anything reasoning
+ *  about REPEATS has to know the difference, or it reports reading as spinning. */
+export function names(shape) {
+  const s = String(shape || "");
+  if (!SHAPE.test(s)) return false;
+  const [bin, sub] = s.split(" ");
+  if (LANG.test(bin)) return false;                          // a heredoc leftover, not a command
+  if (sub) return true;                                      // a sub-verb is the work
+  return !GENERIC.test(bin) && !PLUMBING.test(bin) && !WRAPPER.test(bin);
+}
+
+/** Language keywords, which reach this log exactly one way: a heredoc body that
+ *  `commandShapes` shaped before it learned to strip them. The rows are still on
+ *  disk — the file is append-only and rewriting history would be worse — so the
+ *  filter runs on the way out. `import` and `await` were the fourth and fifth
+ *  most repeated "commands" on this box. */
+export const LANG = /^(import|export|from|await|async|const|let|var|class|function|return|new|this|typeof|instanceof|delete|yield|throw|catch|finally|try|switch|default|extends|implements|interface|type|enum|struct|impl|fn|pub|use|mod|match|where|def|elif|lambda|pass|raise|with|assert|global|nonlocal|print|None|True|False|null|undefined)$/;
+
 /** One PostToolUse payload -> the shapes it ran. Returns how many were kept, so
  *  a caller can log nothing when the answer is zero. */
 export function record(payload, { shapesOf }) {
   const tool = String(payload?.tool_name || "");
   if (tool !== "Bash") return 0;
-  const shapes = shapesOf(payload?.tool_input?.command || "");
+  const shapes = (shapesOf(payload?.tool_input?.command || "") || [])
+    .map(String).filter((s) => s.length <= MAX_SHAPE && SHAPE.test(s));
   if (!shapes.length) return 0;
   const row = { at: now(), s: String(payload.session_id || "").slice(0, 36), v: shapes };
   try {

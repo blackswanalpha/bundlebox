@@ -152,7 +152,7 @@ function status(cfg, flags) {
   const limits = limitsFor(cfg);
   const led = ledger();
   if (flags.json) { emit({ enabled: !!cfg.sieve?.enabled, limits, ledger: led, spill_dir: DIR() }); return 0; }
-  out(`  sieve  ${cfg.sieve?.enabled ? "enabled" : "disabled"} — set sieve.enabled in .bundlebox/config.json; the hook is installed by \`bb wire --apply\``);
+  out(`  sieve  ${cfg.sieve?.enabled ? "enabled (the default)" : "disabled by sieve.enabled in .bundlebox/config.json"} — the hook is installed by \`bb wire --apply\``);
   out(table([
     ["cap per result", `${human(limits.maxTokens)} tokens (${cfg.sieve?.max_share} of the working window)`],
     ["kept", `first ${limits.headLines} lines, last ${limits.tailLines}`],
@@ -265,12 +265,16 @@ export const commands = {
       "(head + tail + the error lines carried out of the middle). Read, Edit and Write are never touched:",
       "their output is the text a later exact-match edit is written against.",
       "",
-      "Installed by `bb wire --apply` as a PostToolUse hook, and off until `sieve.enabled` is set. It stays",
-      "off by default on purpose: replayed across four workspaces on one box the saving ran 1.8% to 34.1% of",
-      "tool output, and in every one of them it was almost entirely the ELIDE tier — scrub and dedup together",
-      "never reached 3% of the win. So enabling this is a decision to accept lossy compression for a benefit",
-      "that depends on what your sessions actually run. The replay reports the split; the default does not",
-      "guess. Measure first: `bb sieve replay` needs no wiring and spends nothing.",
+      "Installed by `bb wire --apply` as a PostToolUse hook, and ON by default. It shipped off while the",
+      "only argument for it was an argument: replayed across four workspaces on one box the saving ran 1.8%",
+      "to 34.1% of tool output, almost entirely in the ELIDE tier, and a lossy default needs better than a",
+      "range. What settled it is that the tier is BOUNDED rather than trusted — the allowlist reaches log,",
+      "probe and test output only, the elided middle spills to `var/sieve/` before the marker is written, and",
+      "the error lines are carried out of the cut. Read, Edit and Write are not on the allowlist and cannot",
+      "be added by a tool appearing with the right shape.",
+      "",
+      "`sieve.enabled: false` in .bundlebox/config.json turns it off. Measure yours either way: `bb sieve",
+      "replay` runs the identical transform over transcripts already on disk and spends nothing.",
     ].join("\n"),
     run: cmd,
   },

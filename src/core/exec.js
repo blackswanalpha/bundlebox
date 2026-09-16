@@ -53,17 +53,45 @@ function resolveBin(bin) {
  *  This mirrors that Rust function line for line and must keep mirroring it.
  *
  *  `set -o pipefail` is the whole point of the POSIX wrapping: without it a pipe
- *  eats the exit code and every acceptance passes. cmd.exe has neither that nor
- *  a `bash` to run it, so on Windows a PIPED command still reports the last
- *  stage's code — the documented gap, now identical in both engines instead of
- *  being a place they silently differ.
+ *  eats the exit code and EVERY acceptance passes. That was the Windows gap:
+ *  cmd.exe has no pipefail and no equivalent, so `npm test | tee log` reported
+ *  `tee`'s exit code and a gate that should have failed reported `ok`. A gate
+ *  that cannot fail is worse than no gate.
  *
- *  Pure, so the Windows branch is testable on a machine that is not Windows. */
-export function shellCmd(cmd, { merge = false, win = WIN } = {}) {
-  const redir = merge ? " 2>&1" : "";
-  if (win) return [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", `${cmd}${redir}`];
-  return ["bash", "-lc", `set -o pipefail; { ${cmd} ; }${redir}`];
+ *  It is closed rather than documented now. Git for Windows ships `bash` and
+ *  puts it on PATH, so on Windows the POSIX branch is used WHEN a bash is
+ *  there — which is the same shell, the same pipefail and the same exit code as
+ *  everywhere else. Only a box with no bash at all falls back to cmd.exe, and
+ *  `pipedOn` names that case so a caller can say so instead of trusting a green.
+ *
+ *  `kernel/src/gate.rs::shell` mirrors this decision line for line and must
+ *  keep mirroring it: on a Windows box the two engines running one corpus under
+ *  two different shells is exactly what `test/runjson.test.js` exists to catch.
+ *
+ *  Pure apart from the bash probe, which is memoised and injectable, so the
+ *  Windows branch stays testable on a machine that is not Windows. */
+let _bash = null;
+export function bashPath({ fresh = false } = {}) {
+  if (_bash !== null && !fresh) return _bash;
+  // `where` rather than `which`: this runs on the Windows side, and a `bash` on
+  // PATH there is Git for Windows' one.
+  const r = spawnSync(WIN ? "where" : "which", ["bash"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+  _bash = r.status === 0 ? String(r.stdout || "").trim().split(/\r?\n/)[0] || null : null;
+  return _bash;
 }
+
+export function shellCmd(cmd, { merge = false, win = WIN, bash = undefined } = {}) {
+  const redir = merge ? " 2>&1" : "";
+  const sh = bash === undefined ? (win ? bashPath() : "bash") : bash;
+  if (win && !sh) return [process.env.ComSpec || "cmd.exe", "/d", "/s", "/c", `${cmd}${redir}`];
+  return [sh || "bash", "-lc", `set -o pipefail; { ${cmd} ; }${redir}`];
+}
+
+/** Does a piped command report the FIRST failing stage's code under the shell
+ *  this box would pick? False only on a Windows box with no bash, and a caller
+ *  that reports a gate verdict says so rather than printing a green it cannot
+ *  stand behind. */
+export const pipedOn = ({ win = WIN, bash = undefined } = {}) => !win || Boolean(bash === undefined ? bashPath() : bash);
 
 export function run(cmd, { cwd, timeout = 120000, input, env } = {}) {
   const [bin0, ...args] = Array.isArray(cmd) ? cmd : String(cmd).split(/\s+/);

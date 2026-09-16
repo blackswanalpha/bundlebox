@@ -32,10 +32,12 @@ import missingTests from "./missing-tests.js";
 import debugLeftovers from "./debug-leftovers.js";
 import uiGeneric from "./ui-generic.js";
 import antiSlop from "./anti-slop.js";
+import swallowedErrors from "./swallowed-errors.js";
+import deadConfig from "./dead-config.js";
 
 export const REGISTRY = Object.fromEntries([docLinks, todoCensus, secretScan, bigFile, mergeMarkers,
   worktreeHygiene, deadExports, duplicateBlocks, godFile, orphanFiles, deadDeps, docDrift, lockfileDrift,
-  staleEvidence, missingTests, debugLeftovers, uiGeneric, antiSlop].map((d) => [d.name, d]));
+  staleEvidence, missingTests, debugLeftovers, uiGeneric, antiSlop, swallowedErrors, deadConfig].map((d) => [d.name, d]));
 
 export const SEVERITY = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
 // Exponential, not linear: a critical was never traded against four lows.
@@ -48,7 +50,7 @@ export const PRECISION = { exact: 0.95, probe: 0.8, heuristic: 0.6 };
 // worktree with 21 dirty files became an opus lane opened inside that tree.
 export const JUDGEMENT = new Set(["todo-census", "big-file", "worktree-hygiene", "stale-evidence", "lockfile-drift"]);
 // A named list plus a named table is an edit, not a judgement: cheap tier.
-const MECHANICAL = new Set(["doc-links", "doc-drift", "dead-deps", "merge-markers", "debug-leftovers"]);
+const MECHANICAL = new Set(["doc-links", "doc-drift", "dead-deps", "merge-markers", "debug-leftovers", "dead-config"]);
 
 /** The ctx every detector reads. Exported so an actuator can re-count with the
  *  same walker and the same caches the scan used. */

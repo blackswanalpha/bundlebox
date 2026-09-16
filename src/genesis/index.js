@@ -75,8 +75,19 @@ async function genesisCmd({ _, flags }) {
   }
 
   if (sub === "plan") {
+    // The coverage check re-reads the world and the whole corpus to answer a
+    // question whose only inputs are those two things. When neither has moved
+    // the answer cannot have, so it is gated like every other repeatable.
+    const { shouldRun, remember } = await import("../recom/repeatable.js");
+    const gate = flags.force ? { run: true, verdict: "forced", why: "--force" } : shouldRun("genesis/coverage", { world: id });
+    if (!gate.run && !flags.json) {
+      out(`  fresh  the world and the corpus read as they did, so coverage was not re-derived.\n  ${gate.why}\n  --force re-derives it.`);
+      return 0;
+    }
     const p = plan(id, { corpusId: String(flags.persona || ""), limit: Number(flags.limit) || 40 });
     if (p.rc) { warn(p.why); return p.rc; }
+    remember("genesis/coverage", { ok: true, opts: { world: id },
+      summary: `${p.covered} of ${p.declared} declared capabilities are covered by corpus ${p.corpus} (${p.coverage_pct ?? "—"}%), ${p.shallow} shallow.` });
     if (flags.json) { emit(p); return 0; }
     out(`  ${p.id} against corpus ${p.corpus}: ${p.covered}/${p.declared} capabilities covered (${p.coverage_pct ?? "—"}%), ${p.shallow} of them shallow`);
     if (p.phantom_calls.length) out(`  ${p.phantom_calls.length} call(s) the corpus makes against nothing the document declares: ${p.phantom_calls.slice(0, 4).join(", ")}`);

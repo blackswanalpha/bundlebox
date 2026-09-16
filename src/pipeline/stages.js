@@ -2,7 +2,7 @@
 // stage and the one command that closes it.
 //
 //   genesis -> situation -> orient -> corpus -> scenarios -> simulation
-//           -> pinpoint  -> agent   -> monitor -> ship
+//           -> pinpoint  -> agent   -> monitor -> echos -> ship
 //
 // Every stage before `agent` is free. The value of writing the stages down is
 // that a pipeline fails by SKIPPING, not by erroring: a corpus nobody ran, a
@@ -23,6 +23,7 @@ import * as expert from "../core/expert.js";
 import { BB_DIR, VAR, OUT, ROOT, rel } from "../core/paths.js";
 import { readJson, load as loadCfg } from "../core/config.js";
 import { gitOk, git } from "../core/exec.js";
+import { shouldRun, REPEATABLES } from "../recom/repeatable.js";
 
 const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
 const newest = (dir, suffix = ".json") => {
@@ -90,12 +91,23 @@ export const STAGES = [
   },
   {
     id: "scenarios", title: "Scenarios", question: "has the corpus been run against the system since it last changed?",
-    cost: 0, fix: "bb cookbook run --base <url>",
+    cost: 0, fix: "set mainboard.bugbash.base in .bundlebox/config.json, then: bb cookbook run",
     exit() {
       const boards = newest(path.join(VAR, "boards"));
       const scen = newest(path.join(BB_DIR, "cookbook"));
       if (!scen) return unknown("no corpus to run");
-      if (!boards) return gap("the corpus has never been run; a corpus nobody runs is documentation");
+      // The gap `bb doctor` has been reporting on this box for weeks — "9 of 10
+      // stages hold, first gap scenarios" — and it is not one a person can
+      // close by typing the fix, because the fix needs a URL nobody has told
+      // this box about. A stage whose command cannot be run without an argument
+      // the workspace has not declared is UNKNOWN, not a gap: reporting it as a
+      // gap says the corpus was not run when what happened is that nothing here
+      // knows what to run it against.
+      const base = String(loadCfg().mainboard?.bugbash?.base || "");
+      if (!boards && !base) {
+        return unknown("nothing declares the service to run the corpus against: set `mainboard.bugbash.base` in .bundlebox/config.json, or pass `bb cookbook run --base <url>`", { needs: "mainboard.bugbash.base" });
+      }
+      if (!boards) return gap(`the corpus has never been run against ${base}; a corpus nobody runs is documentation`, { base });
       if (boards < scen) return gap(`the newest board is older than the newest scenario (${ago(boards)} vs ${ago(scen)}) — it is reporting on a corpus that has changed`, { board_at: boards, corpus_at: scen });
       return ok(`board is ${ago(boards)}, newer than the corpus`, { board_at: boards });
     },
@@ -149,6 +161,32 @@ export const STAGES = [
     },
   },
   {
+    id: "echos", title: "Echos", question: "is the work itself going anywhere?",
+    cost: 0, fix: "bb echos",
+    exit() {
+      // The only stage that asks about the WORK rather than the artefacts. Every
+      // stage above it checks that something was derived and is fresh; none of
+      // them could say whether the sessions doing the deriving are spinning,
+      // undoing themselves or carrying a window instead of changing code.
+      const f = path.join(OUT, "echos", "latest.json");
+      const t = mtime(f);
+      if (!t) return gap("the echos have never run here; nothing has looked at whether the work is converging", { fix: "bb echos" });
+      const r = readJson(f, {});
+      const age = (Date.now() - t) / 3600000;
+      if (age > 24) return gap(`the last echo pass is ${Math.round(age)}h old; it is reporting on sessions that have since been replaced`, { at: r.at });
+      const hits = (r.echos || []).filter((e) => e.verdict === "hit");
+      const dark = (r.echos || []).filter((e) => e.verdict === "unknown");
+      if (hits.length) {
+        return gap(`${hits.length} echo(s) hit over ${r.sessions} session(s): ${[...new Set(hits.map((e) => e.id))].join(", ")}`,
+          { hits: hits.length, ids: [...new Set(hits.map((e) => e.id))] });
+      }
+      if (dark.length && dark.length === (r.echos || []).length) {
+        return unknown(`every echo returned unknown: ${dark[0].detail}`, { at: r.at });
+      }
+      return ok(`${(r.echos || []).length} echo(s) clear over ${r.sessions} session(s), ran ${ago(t)}`, { sessions: r.sessions });
+    },
+  },
+  {
     id: "ship", title: "Ship", question: "is there a command that proves a change, and a clean way out?",
     cost: 0, fix: "bb init   (writes kernel.gates)   then   bb git status",
     exit() {
@@ -164,12 +202,24 @@ export const STAGES = [
 
 /** Every stage evaluated now. Never throws: a criterion that blew up is a row
  *  reading `unknown` with the error, because one broken check must not hide the
- *  other nine. */
+ *  other nine.
+ *
+ *  A stage that has a declared fact-record and whose facts still READ THE SAME
+ *  carries `held: true`. It is not a different verdict — the exit criterion is
+ *  still evaluated and still decides, because a record about inputs cannot
+ *  answer a question about outputs. What it changes is the RUNNER: a stage
+ *  whose facts hold does not have to re-derive, which is the difference between
+ *  spending a pipeline run and reading one. */
 export function status() {
   return STAGES.map((s) => {
     let r;
     try { r = s.exit(); } catch (e) { r = unknown(`the check itself failed: ${e.message}`); }
-    return { id: s.id, title: s.title, question: s.question, fix: s.fix, cost: s.cost, ...r };
+    let facts = null;
+    if (REPEATABLES[`pipeline/${s.id}`]) {
+      try { facts = shouldRun(`pipeline/${s.id}`); } catch (e) { facts = { run: true, verdict: "unknown", why: String(e.message || e) }; }
+    }
+    return { id: s.id, title: s.title, question: s.question, fix: s.fix, cost: s.cost, ...r,
+      held: Boolean(facts && !facts.run), facts };
   });
 }
 
@@ -177,5 +227,6 @@ export function gaps() {
   const rows = status();
   return { stages: rows, gaps: rows.filter((r) => r.state === "gap"), unknown: rows.filter((r) => r.state === "unknown"),
     ok: rows.filter((r) => r.state === "ok").length, of: rows.length,
+    held: rows.filter((r) => r.held).map((r) => r.id),
     next: rows.find((r) => r.state === "gap") || null };
 }

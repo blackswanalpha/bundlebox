@@ -31,11 +31,14 @@ import path from "node:path";
 import { OUT, VAR, rel, abs } from "../core/paths.js";
 import { readText } from "../core/fs.js";
 import { out, emit, warn } from "../core/log.js";
-import { now, shellSegments } from "../core/util.js";
+import { now } from "../core/util.js";
 import * as store from "../core/store.js";
 import * as expert from "../core/expert.js";
 import * as emitters from "./emit.js";
 import * as record from "./record.js";
+import * as actuator from "./apply.js";
+
+export { actuator };
 
 export const NAME = "LATHE-1";
 export const DIR = () => path.join(OUT, "lathe");
@@ -82,6 +85,84 @@ export const NOISE = /^(cd|set|export|echo|source|\.|true|false|pwd|clear|exit|u
  *  68. Those words are how a shell is written, not work a script displaces. */
 export const KEYWORD = /^(for|while|until|do|done|if|then|elif|else|fi|case|esac|in|break|continue|return|function|select|coproc|time|exec|eval|trap|local|declare|readonly|shift|wait)$/;
 
+/** A pipe DESTINATION is not a unit of work, and this was measured too.
+ *
+ *  `shellSegments` splits on `;`, `&&` and `|` alike, which is right for a
+ *  caller counting what a shell executed and wrong for one counting habits:
+ *  `grep -rn x src | head -20` is ONE thing a person did, and taking the head
+ *  of each piece made `grep ; head` the seventh-most-supported habit on this
+ *  box at 70 occurrences, with `timeout ; tail` at 78 and `head ; ls` at 26.
+ *  None of those is a sequence anybody could automate — they are how a command
+ *  is read, not what was run, exactly like `cd` and `for i` before them.
+ *
+ *  So a pipeline contributes its FIRST stage and nothing else. Statements are
+ *  split on `;`, `&&`, `||` and newlines, which are the separators that really
+ *  do mean "then this happened". */
+export function statements(command) {
+  const src = String(command || "");
+  const out = [];
+  let cur = "", q = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) { cur += c; if (c === q && src[i - 1] !== "\\") q = ""; continue; }
+    if (c === "'" || c === '"') { q = c; cur += c; continue; }
+    if (c === "\n" || c === ";" || (c === "&" && src[i + 1] === "&") || (c === "|" && src[i + 1] === "|")) {
+      if (c === "&" || c === "|") i++;
+      out.push(cur); cur = ""; continue;
+    }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+
+/** The first stage of one statement: everything before its first unquoted `|`. */
+export function firstStage(statement) {
+  const src = String(statement || "");
+  let q = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) { if (c === q && src[i - 1] !== "\\") q = ""; continue; }
+    if (c === "'" || c === '"') { q = c; continue; }
+    if (c === "|" && src[i + 1] !== "|") return src.slice(0, i).trim();
+  }
+  return src.trim();
+}
+
+/** The shape vocabulary lives in `record.js`, the leaf both the model and the
+ *  actuator read: `PLUMBING` is a pipe destination, `WRAPPER` is a command whose
+ *  argument is the real one, `GENERIC` names a tool rather than the work, and
+ *  `SHAPE` is what a shape may look like at all. Re-exported here so this file
+ *  still reads as the one place the segmenting rules are explained. */
+export const PLUMBING = record.PLUMBING;
+
+/** A heredoc body is TEXT, not commands, and leaving it in was the worst bug in
+ *  this model.
+ *
+ *  `python3 - <<'EOF' ... EOF` is one command. Splitting the whole string on
+ *  `;` and newlines made every line of the script a "command": the recorded
+ *  shapes on this box contain `const n`, `} catch`, `Math.random()` and
+ *  `rec.MAX_ROWS`, and `python3 ; s` was the eighth-strongest habit at 26
+ *  occurrences — `s` being a fragment of a `sed` expression inside a heredoc.
+ *
+ *  It is also why the promise at the top of `record.js` was not being kept. A
+ *  log of shapes cannot leak a secret passed on a command line, which is true;
+ *  a log that shapes heredoc bodies is logging file CONTENT, which is a
+ *  different claim and was never the one being made. */
+export const stripHeredocs = (cmd) => String(cmd).replace(/<<-?\s*['"]?(\w+)['"]?[\s\S]*?^\1\s*$/gm, " ");
+
+export const WRAPPER = record.WRAPPER;
+
+/** Is this a plausible command name at all? The last guard, and a cheap one: a
+ *  shape is a binary, optionally with one sub-verb. `} catch` is not, and
+ *  neither is `s` — the two-character floor is what keeps a `sed` fragment out.
+ *
+ *  Defined once, in `record.js`, because the write side and the read side
+ *  disagreeing about what a shape is would put rows on disk that the model then
+ *  refuses to learn from. */
+export const SHAPE_OK = record.SHAPE;
+export const GENERIC = record.GENERIC;
+
 /** The shapes of one shell command: one per segment that does work.
  *
  *  Shaped, because the argument is never the habit — `npm test`, `git commit -m
@@ -91,16 +172,33 @@ export const KEYWORD = /^(for|while|until|do|done|if|then|elif|else|fi|case|esac
  *  the second half. */
 export function commandShapes(cmd) {
   const out = [];
-  for (const seg of shellSegments(cmd)) {
-    const parts = seg.split(/\s+/);
+  for (const st of statements(stripHeredocs(cmd))) {
+    const seg = firstStage(st);
+    if (!seg) continue;
+    const parts = seg.split(/\s+/).filter(Boolean);
+    // Step past the wrappers and their own arguments: a flag, a `K=V`, or the
+    // bare number `timeout` takes. The first word that is none of those is the
+    // command, which is what the habit is about.
+    let i = 0;
+    while (i < parts.length) {
+      const w = String(parts[i]).replace(/^[("'{!]+/, "");
+      if (WRAPPER.test(path.basename(w))) { i++; continue; }
+      if (i > 0 && (/^-/.test(w) || /^\w+=/.test(w) || /^\d+(\.\d+)?[smhd]?$/.test(w))) { i++; continue; }
+      break;
+    }
     // A leading `(`, `{` or `!` is grouping; the command is what follows it.
-    const head = String(parts[0] || "").replace(/^[("'{!]+/, "").replace(/["']$/, "");
+    const head = String(parts[i] || "").replace(/^[("'{!]+/, "").replace(/["']$/, "");
     const bin = path.basename(head);
-    if (!bin || bin.startsWith("-") || NOISE.test(bin) || KEYWORD.test(bin)) continue;
+    if (!bin || bin.startsWith("-") || NOISE.test(bin) || KEYWORD.test(bin) || PLUMBING.test(bin)) continue;
     // A sub-verb is part of the shape: `git commit` and `git push` are not one habit.
-    const second = String(parts[1] || "").replace(/^["']|["']$/g, "");
+    // The closing grouping character is stripped as well as the opening one:
+    // `(git log)` shaped as `git` because `log)` failed the sub-verb test, so
+    // one habit split into `git` and `git log` depending on how it was written.
+    const second = String(parts[i + 1] || "").replace(/^["'(]+|["')]+$/g, "");
     const sub = /^[a-z][\w:-]*$/.test(second) && !second.includes("/") && !second.includes(".") ? ` ${second}` : "";
-    out.push(bin + sub);
+    const shape = bin + sub;
+    if (!SHAPE_OK.test(shape)) continue;                     // not a command name: a fragment of something else
+    out.push(shape);
   }
   return out;
 }
@@ -192,11 +290,19 @@ export async function learn({ maxEpisodes = 4000, transcripts = 0, maxTranscript
   // nothing here, and `--transcripts N` backfills it from the N newest
   // transcripts under a size cap. Opt-in, because the default pass must stay
   // cheap enough to run at session end.
-  let runs = record.runs({});
+  // Rows recorded before `PLUMBING` existed carry `head`, `tail` and `grep` as
+  // if they were commands somebody ran in order. The file is append-only and
+  // rewriting history would be worse, so the filter runs on the way OUT too:
+  // the model learns from what a shape means now, not from when it was written.
+  const drop = (r) => r.filter((x) => SHAPE_OK.test(String(x))
+    && !PLUMBING.test(String(x).split(" ")[0])
+    && !WRAPPER.test(String(x).split(" ")[0]));
+  let runs = record.runs({}).map(drop).filter((r) => r.length >= 2);
   let from = "recorded shapes";
   if (transcripts > 0) {
     const back = await backfill(transcripts, maxTranscriptMb);
-    if (back.length) { runs = runs.concat(back); from = `recorded shapes + ${back.length} transcript(s)`; }
+    const kept = back.map(drop).filter((r) => r.length >= 2);
+    if (kept.length) { runs = runs.concat(kept); from = `recorded shapes + ${kept.length} transcript(s)`; }
   }
   const shell = expert.call("sequences", { sequences: runs, min_support: MIN_SUPPORT });
 
@@ -252,6 +358,9 @@ export const commands = {
       "bb lathe                  what the model holds and what it emitted",
       "     bb lathe learn [--transcripts N]   re-learn from the recorded shapes, episodes, memory and the index",
       "     bb lathe build [--apply]  emit the automations (dry run without --apply)",
+      "     bb lathe apply [--apply] [--min-support N] [--force]   write the habits at or over the floor into scripts/, with facts behind each",
+      "     bb lathe reach            per applied script: did its habit recur, did anything run it",
+      "     bb lathe sweep [--apply]  apply, measure reach, tombstone what displaced nothing — the whole loop, once",
     ].join("\n"),
     long: [
       `  ${NAME} is not a language model and nothing here calls one. It is four count-based models`,
@@ -285,9 +394,44 @@ export const commands = {
         else out("\n  --apply writes them under .bundlebox/out/lathe/");
         return 0;
       }
+      if (sub === "apply") {
+        const m = model();
+        if (!m) { warn("no model; run `bb lathe learn`"); return 2; }
+        const r = await actuator.apply(m, { apply: !!flags.apply, minSupport: Number(flags.minSupport) || 0, force: !!flags.force });
+        if (flags.json) { emit(r); return 0; }
+        out(`  ${m.name} — ${r.considered} habit(s) at or over ${r.floor} occurrence(s)${r.apply ? "" : "  (dry run: --apply writes them)"}`);
+        for (const row of r.rows) {
+          out(`    ${row.state.padEnd(11)} ${rel(row.path).padEnd(46)} ${row.support}x  ${(row.items || []).join(" ; ").slice(0, 60)}`);
+          if (row.why) out(`                ${row.why}`);
+          if (row.facts_why) out(`                no fact-record: ${row.facts_why}`);
+        }
+        if (!r.rows.length) out(`    nothing has happened ${r.floor} times yet. \`bb lathe learn\` after a few more sessions.`);
+        else if (!r.apply) out("\n  --apply writes them into scripts/ with a `bb recom` record behind each; every one is @safe false.");
+        return 0;
+      }
+      if (sub === "reach") {
+        const r = actuator.reach({});
+        if (flags.json) { emit(r); return 0; }
+        if (!r.rows.length) { out("  nothing applied yet: `bb lathe apply --apply`"); return 0; }
+        out(`  reach over ${r.rows.length} applied script(s) — judged at ${r.reach_days} days, ${r.reach_min} recurrence(s)\n`);
+        for (const row of r.rows) out(`    ${row.verdict.padEnd(11)} ${String(row.path).padEnd(40)} ${String(row.since ?? 0).padStart(3)}x since, ${row.runs || 0} run(s)   ${row.why || ""}`);
+        out(`\n  ${r.keep} keep, ${r.young} too young to judge, ${r.losing} displaced nothing — \`bb lathe sweep --apply\` tombstones those.`);
+        return 0;
+      }
+      if (sub === "sweep") {
+        const m = model();
+        if (!m) { warn("no model; run `bb lathe learn`"); return 2; }
+        const r = await actuator.sweep(m, { apply: !!flags.apply });
+        if (flags.json) { emit(r); return 0; }
+        const wrote = r.applied.rows.filter((x) => x.state === "wrote" || x.state === "updated").length;
+        out(`  ${m.name} — ${wrote} script(s) ${r.apply ? "written" : "would be written"}, ${r.reach.keep} kept, ${r.tombstoned.length} ${r.apply ? "tombstoned" : "would be tombstoned"}`);
+        for (const t of r.tombstoned) out(`    ${t.state.padEnd(16)} ${t.path}  — ${t.why}`);
+        if (!r.apply) out("\n  dry run. --apply writes, records the facts, and moves what displaced nothing out of scripts/.");
+        return 0;
+      }
       if (sub === "status") {
         const m = model();
-        if (flags.json) { emit({ model: m, emitted: emitters.onDisk() }); return 0; }
+        if (flags.json) { emit({ model: m, emitted: emitters.onDisk(), applied: actuator.ledger().rows }); return 0; }
         if (!m) { out(`  ${NAME} — not learned yet. \`bb lathe learn\` reads episodes, signals, memory and the index (no tokens).`); return 0; }
         out(`  ${m.name} v${m.version} — learned ${m.learned_at}`);
         out(`  inputs   ${m.inputs.episodes} episodes, ${m.inputs.sessions} sessions, ${m.inputs.declarations} declarations${m.inputs.outcome_model ? `, outcome AUC ${m.inputs.outcome_model.auc}` : ", no outcome model (`bb buckmaster model --train`)"}`);
@@ -296,6 +440,9 @@ export const commands = {
         for (const p of m.sequence.shell.slice(0, 6)) out(`    ${String(p.support).padStart(4)}x  ${p.items.join(" ; ")}${p.lift ? `   lift ${p.lift}` : ""}`);
         const disk = emitters.onDisk();
         out(`  emitted  ${disk.length ? disk.map((d) => rel(d)).join(", ") : "nothing yet — `bb lathe build --apply`"}`);
+        const applied = actuator.ledger().rows;
+        const live = applied.filter((r) => r.state === "applied");
+        out(`  applied  ${live.length ? `${live.length} script(s) in scripts/, ${applied.length - live.length} tombstoned — \`bb lathe reach\`` : "nothing — `bb lathe apply --apply` writes the habits at or over the floor"}`);
         return 0;
       }
       warn(`unknown sub-verb: ${sub}\n${commands.lathe.usage}`);

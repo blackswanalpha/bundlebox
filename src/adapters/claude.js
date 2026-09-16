@@ -31,10 +31,12 @@ export const PROJECTS = path.join(os.homedir(), ".claude", "projects");
  *  directory name: `slug("C:\\Users\\me\\ws")` used to return itself, and the
  *  caller then tried to create `projects\\C:\\Users\\me\\ws` and got ENOENT.
  *
- *  UNVERIFIED on Windows: what Claude Code itself writes there has not been
- *  observed from this box. `transcriptDirs` matches against the real directory
- *  listing, so a wrong guess finds nothing — exactly what happens today — but it
- *  no longer builds a path the OS refuses. */
+ *  Still UNVERIFIED on Windows: what Claude Code itself writes there has not
+ *  been observed from this box. What changed is the consequence. A wrong guess
+ *  used to find nothing and every verb that reads a transcript reported zero,
+ *  which is indistinguishable from a workspace with no sessions; now
+ *  `transcriptDirs` falls back to asking each directory which cwd it was
+ *  written for, so the answer no longer depends on this function being right. */
 export const slug = (p) => String(p).replace(/[/\\:._]/g, "-");
 
 /** The window a turn arrived in: what the provider re-read to answer it. */
@@ -98,15 +100,61 @@ export default {
     return null;
   },
 
+  /** The `cwd` a transcript declares on its own first lines, or "".
+   *
+   *  This is the ground truth and it is platform-independent: Claude Code
+   *  writes `cwd` into the session rows, so a directory can be matched to a
+   *  workspace without anybody guessing how the directory got its name.
+   *
+   *  The name is deliberately NOT `transcriptCwd`: `ledger.transcripts` reads
+   *  that one as "filter every file by this", and a claude project directory is
+   *  already per-workspace, so applying it per file would drop every worktree
+   *  transcript — whose cwd is a subdirectory of the root and not the root.
+   *  Here it is a fallback the directory scan calls, never a filter.
+   *
+   *  It is needed on Windows. `slug("C:\\Users\\me\\ws")` is a guess at what
+   *  Claude Code writes there and was never observed from this box, so
+   *  `transcriptDirs` matched nothing and `bb session`, `bb monitor` and
+   *  `bb uptake` all reported "no transcripts" on a machine with plenty — the
+   *  one failure mode this tree exists to remove, since a zero and a
+   *  could-not-look print the same.
+   *
+   *  Only the first few lines are read: a transcript is megabytes and the cwd
+   *  is on line one. */
+  cwdOf(file) {
+    let fd;
+    try {
+      fd = fs.openSync(file, "r");
+      const buf = Buffer.alloc(64 * 1024);
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      for (const line of buf.toString("utf8", 0, n).split("\n")) {
+        if (!line.trim()) continue;
+        let o; try { o = JSON.parse(line); } catch { continue; }   // the last line of the slice is usually torn
+        const cwd = o.cwd || o.workspace?.cwd || o.message?.cwd;
+        if (typeof cwd === "string" && cwd) return cwd;
+      }
+      return "";
+    } catch { return ""; }              // an unreadable transcript names no workspace
+    finally { if (fd !== undefined) fs.closeSync(fd); }
+  },
+
   /** `<slug>` exactly, plus `<slug>-<name>` only when `<root>/<name>` is a real
    *  directory (a worktree checkout). Never a loose prefix: `-foo` and
-   *  `-foo-bar` are two different workspaces that happen to share a prefix. */
+   *  `-foo-bar` are two different workspaces that happen to share a prefix.
+   *
+   *  When the slug matches NOTHING, every project directory is opened and asked
+   *  what cwd it was written for. That is the Windows path and it is a
+   *  fallback, not the rule: on a box where the slug works it is thousands of
+   *  string comparisons against one `readdirSync`, and reading a line out of
+   *  every transcript to get the same answer would be a per-verb cost paid for
+   *  nothing. */
   transcriptDirs(root, priorRoots = []) {
     if (!isDir(PROJECTS)) return null;
     let names;
-    try { names = fs.readdirSync(PROJECTS); } catch { return null; }
+    try { names = fs.readdirSync(PROJECTS); } catch { return null; }   // null is "could not look", never "no sessions"
+    const roots = [root, ...(priorRoots || [])];
     const out = [];
-    for (const r of [root, ...(priorRoots || [])]) {
+    for (const r of roots) {
       const s = slug(r);
       if (names.includes(s)) out.push(path.join(PROJECTS, s));
       for (const n of names) {
@@ -114,6 +162,17 @@ export default {
         const rest = n.slice(s.length + 1);
         if (isDir(path.join(r, rest)) || isDir(path.join(r, rest.replace(/-/g, "/")))) out.push(path.join(PROJECTS, n));
       }
+    }
+    if (out.length) return [...new Set(out)];
+    const want = new Set(roots.map((r) => path.resolve(String(r))));
+    for (const n of names) {
+      const dir = path.join(PROJECTS, n);
+      if (!isDir(dir)) continue;
+      let files;
+      try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl")); } catch { continue; }  // another project's dir, not ours to explain
+      if (!files.length) continue;
+      const cwd = this.cwdOf(path.join(dir, files[0]));
+      if (cwd && want.has(path.resolve(cwd))) out.push(dir);
     }
     return [...new Set(out)];
   },
