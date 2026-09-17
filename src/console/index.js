@@ -1,11 +1,11 @@
-// commandcenter/index.js — one page for a workspace: where the pipeline is,
+// console/index.js — one page for a workspace: where the pipeline is,
 // what the current window has left, and what every session cost against what
 // the local path had already done for it.
 //
 // Two ways to read it and one renderer behind both:
 //
-//   bb commandcenter          serve it at 127.0.0.1 and push changes as they land
-//   bb commandcenter build    write a single HTML file with the state embedded
+//   bb console          serve it at 127.0.0.1 and push changes as they land
+//   bb console build    write a single HTML file with the state embedded
 //
 // The server binds to loopback and has no write route. It reads the same store
 // every verb reads and calls nothing: a dashboard that could change the factory
@@ -38,7 +38,7 @@ import { html } from "./page.js";
 
 const VERSION = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
 
-export const FILE = () => path.join(OUT, "commandcenter", "index.html");
+export const FILE = () => path.join(OUT, "console", "index.html");
 
 // A recompute is a full traversal of the store. These bound it: never more than
 // once per MIN_INTERVAL however fast the disk churns, and never served older
@@ -105,7 +105,7 @@ function watchStore(onChange) {
 }
 
 export function serve({ port = 0, host = "127.0.0.1", sessions = 25 } = {}) {
-  const cfg = loadCfg().commandcenter || {};
+  const cfg = loadCfg().console || {};
   const p = port || cfg.port || 7788;
   const h = host || cfg.host || "127.0.0.1";
   const cache = makeCache({ sessions });
@@ -136,7 +136,7 @@ export function serve({ port = 0, host = "127.0.0.1", sessions = 25 } = {}) {
       // a health probe that fails because a ledger is mid-write reports the
       // service down when it is up, and `bb runbook` believes it.
       if (url.pathname === "/health") return send(200, "application/json", JSON.stringify({
-        ok: true, service: "bundlebox-commandcenter", version: VERSION(), at: new Date().toISOString(),
+        ok: true, service: "bundlebox-console", version: VERSION(), at: new Date().toISOString(),
         clients: clients.size, live: watcher.ok,
         mode: watcher.ok ? "pushed on change" : `polled every ${MAX_AGE / 1000}s — this box has no recursive watcher` }));
 
@@ -201,7 +201,7 @@ async function cmd({ _, flags }) {
   if (sub === "serve") {
     const r = await serve({ port: Number(flags.port) || 0, host: String(flags.host || ""), sessions });
     if (r.rc) { warn(r.why); return r.rc; }
-    out(`  command centre on ${r.url}   (read-only, loopback, ${r.live ? "pushed as the store changes" : "refreshed on a timer — no recursive watcher on this box"})`);
+    out(`  console on ${r.url}   (read-only, loopback, ${r.live ? "pushed as the store changes" : "refreshed on a timer — no recursive watcher on this box"})`);
     out("  ctrl-c to stop");
     const stop = () => { r.close(); process.exit(0); };
     process.on("SIGINT", stop);
@@ -209,17 +209,17 @@ async function cmd({ _, flags }) {
     await new Promise(() => {});
     return 0;
   }
-  warn(`unknown commandcenter sub-verb: ${sub}. serve | build | state`);
+  warn(`unknown console sub-verb: ${sub}. serve | build | state`);
   return 2;
 }
 
 export const commands = {
-  commandcenter: {
+  console: {
     help: "one page for this workspace: the pipeline, the window, every session and what it saved",
-    usage: "bb commandcenter [serve] [--port 7788] | build [--file out.html] | state [--json]",
+    usage: "bb console [serve] [--port 7788] | build [--file out.html] | state [--json]",
     long: [
-      "  bb commandcenter                 serve on 127.0.0.1:7788 and push every change as it lands",
-      "  bb commandcenter build           a single self-contained HTML file with the state embedded",
+      "  bb console                 serve on 127.0.0.1:7788 and push every change as it lands",
+      "  bb console build           a single self-contained HTML file with the state embedded",
       "",
       "Routes: /  /health  /api/state  /api/stream  /api/bench",
       "Read-only, loopback, no write route. Nothing on the page calls a model.",

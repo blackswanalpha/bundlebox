@@ -110,7 +110,7 @@ bb genesis pack                                       # one small brief per surf
 bb genesis send calendar --run --spend                # the only step that costs anything
 bb cookbook check && bb cookbook run                  # the kernel executes what came back
 bb mainboard gaps                                     # the first stage that does not hold, and its fix
-bb commandcenter                                      # one page: the pipeline, the window, every session
+bb console                                            # one page: the pipeline, the window, every session
 ```
 
 Every verb is a dry run until `--apply`. Only `run` and `bridge send` can spend.
@@ -207,7 +207,7 @@ explicitly named file is pinned first rather than scored.
 | `uptake` | installed is not used: which of the wired surfaces — the MCP tools, `bb` itself, `pinpoint`, the reference tables — sessions reached for, against the moments each one was for, with every miss and what the session did instead. A surface that arrives in the system prompt is reported as not observable, never as 0% | 0 |
 | `frames` | a dataframe over the factory's own data with evals as JSON files a person can argue with | 0 |
 | `auditor` | the bar declared BEFORE the work — scope, standards, governance, assurance, derived from the tree's own signals — then `gate` checks it after, where `unproven` never reads as green. Dated per-area reviews are ingested as findings and checked for drift | 0 |
-| `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
+| `monitor`, `console` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
 | `pipeline`, `buckmaster`, `bridge`, `scripts` | gears with gates and fingerprinted skips; episodes, signals, rules, model, memory, outcomes; the one packed doorway to an agent; tagged scripts | 0 (bridge spends with `--run --spend`) |
 | `snapgen skeleton`, `blast`, `callers` | a file's declarations without its bodies (13x less to read on this tree); what a diff can reach through import edges and what reading it costs; who imports a symbol, reported apart from who merely names it | 0 |
 | `bench swebench` | the same two arms on public SWE-bench Verified instances: does the packed window contain the files the maintainer's own patch touched, and what did it cost. Localisation and context, never a resolve rate | 0 |
@@ -260,10 +260,10 @@ had to be cut to fit — each is stated with its reason rather than filled in by
 guessing, and scored so two briefs can be compared. A question costs one turn;
 a wrong assumption costs the review that catches it.
 
-## The command centre
+## The console
 
-`bb commandcenter` serves one read-only page for the workspace on
-`127.0.0.1:7788`, and `bb commandcenter build` writes the same page as a single
+`bb console` serves one read-only page for the workspace on
+`127.0.0.1:7788`, and `bb console build` writes the same page as a single
 file with the state embedded. It binds to loopback, has no write route, and
 nothing on it calls a model.
 
@@ -289,7 +289,7 @@ look like numbers.
 
 ```
 bin/bb.js            the entrypoint
-src/                 Node, ESM, zero dependencies — every verb, the adapters, the store, the command centre
+src/                 Node, ESM, zero dependencies — every verb, the adapters, the store, the console
 skills/              the skills bb wire installs: bb-finish, antislop
 kernel/              Rust — bbk: walk, fingerprint, estimate, dupes, symbols, anchor, gate, worktree,
                      and the scenario runner, the load simulator and the health probe

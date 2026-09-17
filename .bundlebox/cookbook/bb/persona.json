@@ -11,7 +11,7 @@
   "actors": {},
   "setup": [
     {
-      "name": "the command centre answers before anything claims to have tested it",
+      "name": "the console answers before anything claims to have tested it",
       "do": "GET /health",
       "expect": {
         "status": 200

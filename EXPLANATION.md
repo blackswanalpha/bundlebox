@@ -96,7 +96,7 @@ pay to answer:
 | `bb failsafe` | what is failing now, the cause this workspace already paid to learn, the op that closes it — and what every source was blind to |
 | `bb auditor` | the bar before the work — scope, standards, governance, assurance, derived from what the tree already says about itself — and the gate that checks it after, where a standard nobody looked at is reported `unproven` and never `met`. Its per-area reviews are dated, never edited, ingested as findings and checked for drift |
 | `bb monitor` | what the current five-hour block has left, and the guard asked immediately before anything spends |
-| `bb commandcenter` | one read-only page: the pipeline, the window, every session with its own title and what the local path displaced for it |
+| `bb console` | one read-only page: the pipeline, the window, every session with its own title and what the local path displaced for it |
 
 ## 4. Where the tokens go, and where they come back
 

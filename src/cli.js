@@ -40,7 +40,7 @@ export const MODULES = [
   ["failsafe", "./failsafe/index.js"],
   ["auditor", "./auditor/index.js"],
   ["monitor", "./monitor/index.js"],
-  ["commandcenter", "./commandcenter/index.js"],
+  ["console", "./console/index.js"],
   ["oversight", "./oversight/index.js"],
   ["designlabs", "./designlabs/index.js"],
   ["pipeline", "./pipeline/index.js"],
@@ -56,7 +56,7 @@ export const MODULES = [
   ["kernel", "./kernel-cmd.js"],
 ];
 
-export const ALIASES = { gc: "janitor", memory: "janitor", blackice: "auditor", audit: "auditor", scenarios: "cookbook", corpus: "cookbook", board: "mainboard", mb: "mainboard", frames: "frames", dataframes: "frames", cc: "commandcenter", usage: "monitor", sg: "pipeline", switchgear: "pipeline", learn: "buckmaster", bm: "buckmaster", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
+export const ALIASES = { gc: "janitor", memory: "janitor", blackice: "auditor", audit: "auditor", scenarios: "cookbook", corpus: "cookbook", board: "mainboard", mb: "mainboard", frames: "frames", dataframes: "frames", cc: "console", usage: "monitor", sg: "pipeline", switchgear: "pipeline", learn: "buckmaster", bm: "buckmaster", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
 
 const version = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
 
@@ -96,7 +96,7 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "commandcenter", "pipeline", "scripts", "sieve"]);
+  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
@@ -104,7 +104,7 @@ const CHAPTERS = [
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
-  ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "commandcenter"]],
+  ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
 ];
 

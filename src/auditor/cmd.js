@@ -4,7 +4,7 @@
 // Split from `index.js` because a command surface and a domain model change for
 // different reasons and at different rates. `index.js` answers "what is an area,
 // what is its charter, does it meet the bar". This file answers "what does
-// `bb auditor gate commandcenter` put on a terminal". Nothing here decides
+// `bb auditor gate console` put on a terminal". Nothing here decides
 // anything; it reads the model and formats it.
 import fs from "node:fs";
 import path from "node:path";

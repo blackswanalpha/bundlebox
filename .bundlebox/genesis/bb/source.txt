@@ -89,7 +89,7 @@ bb genesis pack                                       # one small brief per surf
 bb genesis send calendar --run --spend                # the only step that costs anything
 bb cookbook check && bb cookbook run                  # the kernel executes what came back
 bb mainboard gaps                                     # the first stage that does not hold, and its fix
-bb commandcenter                                      # one page: the pipeline, the window, every session
+bb console                                            # one page: the pipeline, the window, every session
 ```
 
 Every verb is a dry run until `--apply`. Only `run` and `bridge send` can spend.
@@ -131,7 +131,7 @@ MCP server entry. `bb unwire` removes only its own blocks.
 | `cookbook`, `simulate` | a persona's week against the running system, executed by the kernel; the same request at rising concurrency against a floor-relative budget | 0 |
 | `mainboard`, `runbook`, `failsafe` | six views over one ledger and which pipeline stage does not hold; services, log signatures by offset; what is failing, why, and the op | 0 |
 | `frames`, `blackice` | a dataframe over the factory's own data with evals as JSON; per-area dated audits, ingested as findings and checked for drift | 0 |
-| `monitor`, `commandcenter` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
+| `monitor`, `console` | the five-hour block, the burn rate and the guard in front of every spend; one read-only page for the workspace | 0 |
 | `pipeline`, `buckmaster`, `bridge`, `scripts` | gears with gates and fingerprinted skips; episodes, signals, rules, model, memory, outcomes; the one packed doorway to an agent; tagged scripts | 0 (bridge spends with `--run --spend`) |
 | `wire`, `mcp`, `hook` | install into agents; serve over MCP; the hook handlers | 0 |
 | `init`, `doctor`, `selftest`, `update`, `kernel`, `cron` | setup; what this box can run; silent-failure checks; the updater; the kernel; the unattended worker | 0 |
@@ -182,10 +182,10 @@ had to be cut to fit — each is stated with its reason rather than filled in by
 guessing, and scored so two briefs can be compared. A question costs one turn;
 a wrong assumption costs the review that catches it.
 
-## The command centre
+## The console
 
-`bb commandcenter` serves one read-only page for the workspace on
-`127.0.0.1:7788`, and `bb commandcenter build` writes the same page as a single
+`bb console` serves one read-only page for the workspace on
+`127.0.0.1:7788`, and `bb console build` writes the same page as a single
 file with the state embedded. It binds to loopback, has no write route, and
 nothing on it calls a model.
 
@@ -200,7 +200,7 @@ nothing on it calls a model.
 
 ```
 bin/bb.js            the entrypoint
-src/                 Node, ESM, zero dependencies — every verb, the adapters, the store, the command centre
+src/                 Node, ESM, zero dependencies — every verb, the adapters, the store, the console
 kernel/              Rust — bbk: walk, fingerprint, estimate, dupes, symbols, anchor, gate, worktree,
                      and the scenario runner, the load simulator and the health probe
 expert/              Python (stdlib) — rule engine, triage, confidence, signals, rules, graph, model, memory,

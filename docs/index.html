@@ -210,7 +210,7 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
     <tr><th>Runtime</th><th>Owns</th><th>Why there</th></tr>
     <tr><td><strong>Rust</strong><br><code>bbk</code></td><td>Tree walks, fingerprints, token estimates, duplicate windows, symbol indexes, acceptance gates with real timeouts, worktrees — and now scenario execution, load simulation and health probing.</td><td>A corpus is hundreds of sockets and a simulation is thousands. Threads, one connection per worker, one shared pacer. A scripting runtime spends the wall clock on its own scheduler.</td></tr>
     <tr><td><strong>Python</strong><br><code>bundlebox_expert</code></td><td>The forward-chaining rule engine, triage, confidence shrinkage, transcript signals, the process model, memory — and now the world derivation, coverage planning, scenario selection and board verdicts.</td><td>Expert-system and ML work is readable and testable here and nowhere else. Standard library only.</td></tr>
-    <tr><td><strong>Node</strong></td><td>Every verb, the adapters, the store, the command centre.</td><td>One <code>npm i -g</code>, no build step, no <code>node_modules</code>.</td></tr>
+    <tr><td><strong>Node</strong></td><td>Every verb, the adapters, the store, the console.</td><td>One <code>npm i -g</code>, no build step, no <code>node_modules</code>.</td></tr>
   </table>
   <p>Both optional runtimes degrade cleanly. Without the kernel the JavaScript engine runs, and it is also what runs when the base is <code>https</code> or the corpus uses a pattern outside the kernel's documented subset — the dispatcher says which engine ran and why, because a board that does not name its engine is a board whose numbers cannot be compared with the last one. Without python3 the learning verbs say so and the zero-token path is unaffected. Where two runtimes implement the same fact, a test pins them to identical answers: which runtime happens to be installed must not change a number.</p>
 </div></section>
@@ -244,8 +244,8 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
     <tr><td><strong>assurance</strong></td><td>What counts as proof. A finding with no evidence a reader can open is refused at ingest.</td></tr>
   </table>
   <p>Selection is derived, not declared. The auditor reads signals the tree already emits — does it move money, does it hold records about people, does it bind a socket, does it cross a process boundary — and returns the standards those signals imply, each carrying the signal that pulled it in. A selection you disagree with is arguable rather than mysterious.</p>
-<pre><code>$ bb auditor standards commandcenter
-  17 of 29 standard(s) in force for commandcenter — level B (hazardous)
+<pre><code>$ bb auditor standards console
+  17 of 29 standard(s) in force for console — level B (hazardous)
   id      domain  adal  the bar                                            because
   SEC-1   SEC     B     No secret reaches version control                  every tree gets these
   REL-1   REL     B     Every external call has a timeout and a bound       it calls out over the network
@@ -255,7 +255,7 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
   <p>The level is <strong>ADAL</strong> — A catastrophic, B hazardous, C major — and it is set by the consequence of a defect in that area, not by the highest bar among standards that apply everywhere. It changes verification depth and who signs. It never turns a standard off.</p>
   <h3>Then it is checked, and unproven is not green</h3>
   <p><code>bb auditor gate &lt;area&gt;</code> re-reads an area against its own charter and returns one of three states per standard. <code>met</code> means something on disk supports it. <code>failed</code> means something on disk contradicts it. <code>unproven</code> means nobody looked — and it never collapses into <code>met</code>, because a standard nobody checked reported as passing is the exact failure this whole tree exists to remove.</p>
-<pre><code>$ bb auditor gate commandcenter
+<pre><code>$ bb auditor gate console
   SEC-1   met       secret-scan ran within 24h and found nothing here
   REL-4   unproven  no detector computes this and no current review cites it
   MNT-1   failed    1 open finding(s) from god-file
@@ -301,8 +301,8 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
   <p>Two clocks run at once and the earlier one decides: the block expires on the wall clock whatever the rate, and the budget runs out at this rate whatever the clock. Reporting only one of them is how a window ends early.</p>
   <p>The limit defaults to this account's own 90th-percentile block over the last eight days rather than a published figure, because a published figure is wrong for anybody on a different plan. Every number carries where it came from: <code>measured</code>, <code>p90</code>, <code>plan</code>, or <code>unknown</code> — and <code>unknown</code> is printed rather than replaced with a zero.</p>
   <p>This is not only a display. <code>bb monitor guard</code> is asked immediately before the one thing in this factory that costs anything, and it refuses to open an agent when the block is nearly spent. A call opened with twenty minutes left is cut off half-written: it spends the tokens and produces nothing to accept. Exit codes make it usable from a hook or a cron line without parsing — <code>0</code> ok, <code>10</code> near, <code>11</code> reached, <code>20</code> indeterminate.</p>
-  <h3>The command centre</h3>
-  <p><code>bb commandcenter</code> serves one read-only page on loopback: where the pipeline is, what the window has left, and every session with its own title, what it used, and how many agent turns the local path had already displaced for it. <code>bb commandcenter build</code> writes the same page as a single self-contained file that opens without a server.</p>
+  <h3>The console</h3>
+  <p><code>bb console</code> serves one read-only page on loopback: where the pipeline is, what the window has left, and every session with its own title, what it used, and how many agent turns the local path had already displaced for it. <code>bb console build</code> writes the same page as a single self-contained file that opens without a server.</p>
   <p>It <strong>pushes</strong> rather than polls. The store is files, so the filesystem already knows when something changed: <code>/api/stream</code> watches it, recomputes the state once per change however many tabs are open, and sends it. A timer was wrong in both directions — a run that finished was invisible for nine seconds, and an idle workspace recomputed everything six times a minute per tab.</p>
   <p>The header always says which state the connection is in: <code>live</code>, <code>polling</code>, <code>reconnecting</code>, or <code>static</code>. A dashboard that cannot tell you it has lost the server is worse than one that is plainly offline, because the stale numbers still look like numbers.</p>
   <p>There is no write route, and that is checked rather than asserted: the page's one derived cache is read without being written back, and the query parameter that used to trigger a fold of every transcript over HTTP is gone.</p>
@@ -362,7 +362,7 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
     <tr><td><code>auditor</code></td><td>The bar before the work — scope, standards, governance, assurance — and the gate that checks it after</td><td>0</td></tr>
     <tr><td><code>frames</code></td><td>A dataframe over the factory's own data, and the evals that read it</td><td>0</td></tr>
     <tr><td><code>failsafe</code></td><td>What is failing, why, and the operation that closes it</td><td>0</td></tr>
-    <tr><td><code>monitor</code>, <code>commandcenter</code></td><td>What the block has left; one page for the whole workspace</td><td>0</td></tr>
+    <tr><td><code>monitor</code>, <code>console</code></td><td>What the block has left; one page for the whole workspace</td><td>0</td></tr>
     <tr><td><code>scan</code>, <code>findings</code>, <code>explain</code>, <code>fix</code></td><td>Sixteen detectors with evidence and expected-value triage; local actuators that write a patch before a file</td><td>0</td></tr>
     <tr><td><code>compile</code>, <code>route</code>, <code>context</code>, <code>gates</code></td><td>Units packed to a window with quoted regions; lanes with conflicts as affinity; does this scope fit</td><td>0</td></tr>
     <tr><td><code>snapgen</code>, <code>pinpoint</code>, <code>oversight</code></td><td>Fingerprinted reference tables; one problem to one budgeted brief; god files, bloat, duplication</td><td>0</td></tr>

@@ -70,14 +70,14 @@ jobs:
         run: node bin/bb.js scan --only doc-drift
       # The corpus over `bb` itself. `check` validates every scenario with no
       # server and no requests, so it runs on all three platforms; the HTTP half
-      # needs the command centre up and runs on Linux only.
+      # needs the console up and runs on Linux only.
       - run: node bin/bb.js cookbook check
         shell: bash
-      - name: the bb corpus against a running command centre
+      - name: the bb corpus against a running console
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          node bin/bb.js commandcenter serve --port 7788 &
+          node bin/bb.js console serve --port 7788 &
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:7788/health >/dev/null && break; sleep 1; done
           node bin/bb.js cookbook run --persona bb --base http://127.0.0.1:7788
           node bin/bb.js simulate run smoke --base http://127.0.0.1:7788

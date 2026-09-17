@@ -142,7 +142,7 @@ export const GEARS = [
     stages: [
       { verb: "tokens", args: ["ledger"], description: "fold every transcript into the ledger" },
       { verb: "monitor", args: ["status"], description: "the current block, the burn rate, and which clock runs out first" },
-      { verb: "commandcenter", args: ["build"], description: "the page, with the state embedded" },
+      { verb: "console", args: ["build"], description: "the page, with the state embedded" },
     ],
   }),
   gear({
@@ -159,7 +159,7 @@ export const GEARS = [
     stages: [],
     // `watch` last, and it used to be missing entirely: the cron tick folded the
     // ledger and rebuilt nothing, so the one page this workspace has showed the
-    // state of whenever somebody last ran `bb commandcenter build` by hand.
+    // state of whenever somebody last ran `bb console build` by hand.
     chain: ["intake", "orient", "measure", "buckmaster", "watch"],
   }),
   gear({

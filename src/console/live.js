@@ -1,4 +1,4 @@
-// commandcenter/live.js — the connection, and the page's honesty about it.
+// console/live.js — the connection, and the page's honesty about it.
 //
 // The page used to refetch on a 10s timer and swallow the error. That has one
 // failure mode and it is the worst one available to a dashboard: when the server

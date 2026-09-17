@@ -39,7 +39,7 @@ import { STANDARDS, ADAL } from "./menu.js";
 // ── selection ───────────────────────────────────────────────────────────────
 
 /** Content markers. Paths tell you most of what an area is, but not all of it:
- *  a module called `commandcenter` binds a socket and a module called `server`
+ *  a module called `console` binds a socket and a module called `server`
  *  may only hold types. PROBE_FILES caps the read so the whole-tree case stays
  *  cheap; per-area it reads everything, which is a few dozen files.
  *
