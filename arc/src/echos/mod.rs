@@ -30,11 +30,13 @@
 //!      with rather than believed.
 use crate::json::Json;
 
+mod batching;
 mod converge;
 mod diminishing;
 mod drift;
 mod oscillate;
 mod spin;
+mod stray;
 
 /// One event, as the JS side hands it over. Flat on purpose: this is a stream
 /// of tens of thousands of rows and a nested shape would cost a parse per row
@@ -54,6 +56,9 @@ pub struct Event {
     pub hash: String,
     /// Window or output tokens, for `kind == "turn"`.
     pub tokens: f64,
+    /// Tool calls this turn made, for `kind == "turn"`. Every call, not only the
+    /// ones that produced an event: a Grep is a round trip exactly as a Read is.
+    pub tools: f64,
     /// The located scope, for `kind == "brief"`: which files the work is about.
     pub scope: Vec<String>,
     /// Does this command's answer depend on something outside this tree?
@@ -76,6 +81,7 @@ impl Event {
             file: v.string("file", ""),
             hash: v.string("hash", ""),
             tokens: v.num("tokens", 0.0),
+            tools: v.num("tools", 0.0),
             scope: v.str_list("scope"),
             polls: v.get("polls").and_then(|x| x.as_bool()).unwrap_or(false),
         }
@@ -92,6 +98,18 @@ pub struct Thresholds {
     pub diminishing_ratio: f64,
     pub converge_similarity: f64,
     pub converge_runs: usize,
+    /// Share of edited files outside the located scope before `stray` reports.
+    pub stray_share: f64,
+    /// Edits to a named file a brief needs before its window is scored at all.
+    pub stray_edits: usize,
+    /// Scored windows needed before an aim is a measurement, not one odd task.
+    pub stray_briefs: usize,
+    /// Calls per turn at or under which a session is reported as serial.
+    pub batching_ratio: f64,
+    /// Calls a session needs before its ratio is a habit and not its shape.
+    pub batching_calls: usize,
+    /// Sessions over the call floor before a pooled ratio is a habit.
+    pub batching_sessions: usize,
 }
 
 impl Thresholds {
@@ -103,6 +121,12 @@ impl Thresholds {
             diminishing_ratio: v.num("diminishing_ratio", 1.6).max(1.0),
             converge_similarity: v.num("converge_similarity", 0.95).clamp(0.0, 1.0),
             converge_runs: v.num("converge_runs", 3.0).max(2.0) as usize,
+            stray_share: v.num("stray_share", 0.5).clamp(0.0, 1.0),
+            stray_edits: v.num("stray_edits", 4.0).max(1.0) as usize,
+            stray_briefs: v.num("stray_briefs", 2.0).max(1.0) as usize,
+            batching_ratio: v.num("batching_ratio", 1.5).max(1.0),
+            batching_calls: v.num("batching_calls", 20.0).max(1.0) as usize,
+            batching_sessions: v.num("batching_sessions", 3.0).max(1.0) as usize,
         }
     }
     fn to_json(&self) -> Json {
@@ -113,6 +137,12 @@ impl Thresholds {
         o.set("diminishing_ratio", self.diminishing_ratio.into());
         o.set("converge_similarity", self.converge_similarity.into());
         o.set("converge_runs", (self.converge_runs as f64).into());
+        o.set("stray_share", self.stray_share.into());
+        o.set("stray_edits", (self.stray_edits as f64).into());
+        o.set("stray_briefs", (self.stray_briefs as f64).into());
+        o.set("batching_ratio", self.batching_ratio.into());
+        o.set("batching_calls", (self.batching_calls as f64).into());
+        o.set("batching_sessions", (self.batching_sessions as f64).into());
         o
     }
 }
@@ -197,6 +227,8 @@ pub const REGISTRY: &[(&str, Echo)] = &[
     ("drift", drift::run),
     ("diminishing", diminishing::run),
     ("converge", converge::run),
+    ("stray", stray::run),
+    ("batching", batching::run),
 ];
 
 pub fn names() -> Vec<&'static str> { REGISTRY.iter().map(|(n, _)| *n).collect() }

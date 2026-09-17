@@ -39,7 +39,11 @@ export const commands = {
         return [r.name, r.error ? "ERROR" : String(mine.length), r.error ? r.error.slice(0, 60) : worst(mine) || "-", r.ms];
       });
       out(table(rows, { header: ["detector", "open", "worst", "ms"] }));
-      out(`  ${open.length} open, ${fresh.length} new, ${resolved.length} resolved, ${promoted.length} promotable — ${Date.now() - t0} ms`);
+      // The split matters more than the total: `acted_on` is the only one that
+      // means work happened, and the only label anything downstream can learn from.
+      const by = (k) => resolved.filter((f) => (f.closed_by || "unknown") === k).length;
+      const split = resolved.length ? ` (${["acted_on", "vanished", "unchanged", "unknown"].filter(by).map((k) => `${by(k)} ${k.replace("_", " ")}`).join(", ")})` : "";
+      out(`  ${open.length} open, ${fresh.length} new, ${resolved.length} resolved${split}, ${promoted.length} promotable — ${Date.now() - t0} ms`);
       return 0;
     },
   },

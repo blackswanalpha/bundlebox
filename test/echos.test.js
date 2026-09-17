@@ -30,8 +30,9 @@ fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "fixtur
 const fallback = await import("../src/echos/fallback.js");
 const record = await import("../src/lathe/record.js");
 
-const TH = { spin_repeats: 4, oscillate_flips: 3, drift_turns: 12, diminishing_ratio: 1.6, converge_similarity: 0.95, converge_runs: 3 };
-const ev = (o) => ({ at: 0, session: "", kind: "", shape: "", file: "", hash: "", tokens: 0, scope: [], polls: false, ...o });
+const TH = { spin_repeats: 4, oscillate_flips: 3, drift_turns: 12, diminishing_ratio: 1.6, converge_similarity: 0.95, converge_runs: 3,
+  stray_share: 0.5, stray_edits: 4, stray_briefs: 2, batching_ratio: 1.5, batching_calls: 20, batching_sessions: 3 };
+const ev = (o) => ({ at: 0, session: "", kind: "", shape: "", file: "", hash: "", tokens: 0, tools: 0, scope: [], polls: false, ...o });
 const byId = (r, id) => r.echos.filter((e) => e.id === id);
 const verdict = (r, id) => byId(r, id).map((e) => e.verdict);
 
@@ -270,8 +271,146 @@ test("every threshold is an input, and the result prints the ones that decided i
   assert.equal(r.thresholds.spin_repeats, 2);
 });
 
+// ── stray ───────────────────────────────────────────────────────────────────
+// `converge` can settle on the wrong files and report convergence with total
+// confidence. These pin the question it cannot ask: was the located scope where
+// the work actually happened?
+
+const brief = (at, session, scope) => ev({ at, session, kind: "brief", scope });
+const edit = (at, session, file) => ev({ at, session, kind: "edit", file, hash: `${session}${at}` });
+
+test("stray is unknown until enough briefs were followed by enough named edits", () => {
+  const events = [brief(1, "s", ["a.js"]), edit(2, "s", "a.js"), edit(3, "s", "b.js")];
+  const r = fallback.run({ events, thresholds: TH, only: ["stray"] });
+  assert.deepEqual(verdict(r, "stray"), ["unknown"]);
+  assert.match(byId(r, "stray")[0].detail, /2 are needed/);
+});
+
+test("stray is ok when the work lands inside the scope that was handed over", () => {
+  const events = [
+    brief(1, "s", ["a.js", "b.js"]),
+    ...["a.js", "b.js", "a.js", "c.js"].map((f, i) => edit(2 + i, "s", f)),
+    brief(10, "s", ["d.js"]),
+    ...["d.js", "d.js", "d.js", "e.js"].map((f, i) => edit(11 + i, "s", f)),
+  ];
+  const r = fallback.run({ events, thresholds: TH, only: ["stray"] });
+  assert.deepEqual(verdict(r, "stray"), ["ok"]);
+  assert.match(byId(r, "stray")[0].detail, /2 of 8/);
+});
+
+test("stray reports the brief whose scope missed the work, and names the files", () => {
+  const events = [
+    brief(1, "s", ["a.js"]),
+    ...["a.js", "x.js", "y.js", "z.js"].map((f, i) => edit(2 + i, "s", f)),
+    brief(10, "s", ["b.js"]),
+    ...["q.js", "r.js", "s.js", "t.js"].map((f, i) => edit(11 + i, "s", f)),
+  ];
+  const r = fallback.run({ events, thresholds: TH, only: ["stray"] });
+  const hit = byId(r, "stray")[0];
+  assert.equal(hit.verdict, "hit");
+  assert.equal(hit.support, 2);
+  // The second brief missed all four; the first missed three.
+  assert.match(hit.detail, /q\.js, r\.js, s\.js, t\.js/);
+  assert.ok(hit.evidence.includes("in_scope=1"));
+  assert.ok(hit.evidence.includes("strayed=7"));
+});
+
+test("a shell write carries no path and is counted on neither side", () => {
+  // Four named edits and four pathless ones. If the pathless writes counted as
+  // strayed the share would be 0.75 and this would report a hit about writes
+  // the box cannot name.
+  const events = [
+    brief(1, "s", ["a.js"]),
+    ...["a.js", "a.js", "a.js", "b.js"].map((f, i) => edit(2 + i, "s", f)),
+    ...[6, 7, 8, 9].map((at) => ev({ at, session: "s", kind: "edit", file: "", hash: "" })),
+    brief(20, "s", ["c.js"]),
+    ...["c.js", "c.js", "c.js", "d.js"].map((f, i) => edit(21 + i, "s", f)),
+  ];
+  const r = fallback.run({ events, thresholds: TH, only: ["stray"] });
+  const e = byId(r, "stray")[0];
+  assert.equal(e.verdict, "ok");
+  assert.match(e.detail, /2 of 8/);
+});
+
+test("edits before the first brief have nothing to have strayed from", () => {
+  const events = [
+    ...["early1.js", "early2.js", "early3.js"].map((f, i) => edit(1 + i, "s", f)),
+    brief(10, "s", ["a.js"]),
+    ...["a.js", "a.js", "a.js", "a.js"].map((f, i) => edit(11 + i, "s", f)),
+    brief(20, "s", ["b.js"]),
+    ...["b.js", "b.js", "b.js", "b.js"].map((f, i) => edit(21 + i, "s", f)),
+  ];
+  const r = fallback.run({ events, thresholds: TH, only: ["stray"] });
+  const e = byId(r, "stray")[0];
+  assert.equal(e.verdict, "ok");
+  assert.match(e.detail, /0 of 8/);
+});
+
+// ── batching ───────────────────────────────────────────────────────────────
+// The attempts-per-round term. What a turn costs is the window, not the call.
+
+const turnsWith = (n, session, tools) => Array.from({ length: n }, (_, i) => ev({ at: i + 1, session, kind: "turn", tokens: 100, tools }));
+
+test("batching: one call per turn, pooled over enough sessions, is ONE hit", () => {
+  const events = ["a", "b", "c"].flatMap((sx) => turnsWith(24, sx, 1));
+  const r = fallback.run({ events, thresholds: TH, only: ["batching"] });
+  const hits = byId(r, "batching");
+  assert.equal(hits.length, 1, "a habit is one finding, not one per session");
+  assert.equal(hits[0].verdict, "hit");
+  assert.equal(hits[0].support, 72);
+  assert.ok(hits[0].evidence.includes("sessions=3"));
+  assert.ok(hits[0].evidence.includes("ratio=1.00"));
+});
+
+test("batching: a workspace that batches is ok, and says what it pooled", () => {
+  const events = ["a", "b", "c"].flatMap((sx) => turnsWith(12, sx, 3));
+  const r = fallback.run({ events, thresholds: TH, only: ["batching"] });
+  assert.deepEqual(verdict(r, "batching"), ["ok"]);
+  assert.match(byId(r, "batching")[0].detail, /108 tool call\(s\) over 36 turn\(s\) across 3 session\(s\)/);
+});
+
+test("batching: below the session floor there is no habit to report", () => {
+  const r = fallback.run({ events: turnsWith(24, "s", 1), thresholds: TH, only: ["batching"] });
+  assert.deepEqual(verdict(r, "batching"), ["unknown"]);
+  assert.match(byId(r, "batching")[0].detail, /3 are needed/);
+});
+
+test("batching: a turn that called no tool is thinking, not a failure to batch", () => {
+  // 20 calls over 20 calling turns is 1.0. The 40 silent turns must not drag it
+  // to 0.33 — that would be a larger claim, about a session that answered a lot.
+  const events = ["a", "b", "c"].flatMap((sx) => [
+    ...turnsWith(20, sx, 1),
+    ...turnsWith(40, sx, 0).map((e, i) => ({ ...e, at: 100 + i })),
+  ]);
+  const e = byId(fallback.run({ events, thresholds: TH, only: ["batching"] }), "batching")[0];
+  assert.equal(e.verdict, "hit");
+  assert.ok(e.evidence.includes("turns=60"));
+  assert.ok(e.evidence.includes("ratio=1.00"));
+});
+
+test("batching: the worst session is named, and it is the lowest ratio", () => {
+  const events = [
+    ...turnsWith(30, "batches", 3),        // 90 calls / 30 turns = 3.00
+    ...turnsWith(24, "serial", 1),         // 24 / 24 = 1.00
+    ...turnsWith(20, "middling", 2),       // 40 / 20 = 2.00
+  ];
+  const r = fallback.run({ events, thresholds: { ...TH, batching_ratio: 3 }, only: ["batching"] });
+  const e = byId(r, "batching")[0];
+  assert.equal(e.verdict, "hit");
+  assert.equal(e.session, "serial");
+  assert.ok(e.evidence.includes("worst=1.00"));
+});
+
+test("batching: every threshold that decided it is printed back", () => {
+  const events = ["a", "b", "c"].flatMap((sx) => turnsWith(24, sx, 1));
+  const r = fallback.run({ events, thresholds: { ...TH, batching_ratio: 2, batching_calls: 5 }, only: ["batching"] });
+  assert.equal(r.thresholds.batching_ratio, 2);
+  assert.equal(r.thresholds.batching_calls, 5);
+  assert.ok(byId(r, "batching")[0].evidence.includes("threshold=2"));
+});
+
 test("arc and the fallback agree, event for event", { skip: ARC.path ? false : ARC.why }, () => {
-  // One stream carrying every shape all five echos look for, so agreement here
+  // One stream carrying every shape all seven echos look for, so agreement here
   // is agreement about all of them and not about an empty answer.
   const events = [
     ...[1, 2, 3, 4, 5].map((at) => ev({ at, session: "spin", kind: "shape", shape: "npm test" })),
@@ -285,6 +424,15 @@ test("arc and the fallback agree, event for event", { skip: ARC.path ? false : A
     // A polling command, so `spin`'s `polls` rule is exercised on both sides.
     ...[1, 2, 3, 4, 5].map((at) => ev({ at, session: "poll", kind: "shape", shape: "gh pr", polls: true })),
     ...[70, 71, 72, 73].map((at) => ev({ at, session: "conv", kind: "brief", scope: ["x.js", "y.js"] })),
+    // Two briefs, each followed by edits that mostly miss, so `stray` reports a
+    // hit on both sides rather than agreeing about an empty answer.
+    ev({ at: 80, session: "aim", kind: "brief", scope: ["in.js"] }),
+    ...["in.js", "off1.js", "off2.js", "off3.js"].map((file, i) => ev({ at: 81 + i, session: "aim", kind: "edit", file, hash: `h${i}` })),
+    ev({ at: 90, session: "aim", kind: "brief", scope: ["in.js", "also.js"] }),
+    ...["off4.js", "off5.js", "also.js", "off6.js"].map((file, i) => ev({ at: 91 + i, session: "aim", kind: "edit", file, hash: `g${i}` })),
+    // Three serial sessions, so `batching` clears its session floor and hits on
+    // both sides rather than agreeing about an `unknown`.
+    ...["ser1", "ser2", "ser3"].flatMap((sx) => Array.from({ length: 24 }, (_, i) => ev({ at: 200 + i, session: sx, kind: "turn", tokens: 100, tools: 1 }))),
   ];
   const payload = { events, thresholds: TH, only: [] };
   const rust = viaArc(payload);

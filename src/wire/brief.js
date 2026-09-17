@@ -88,6 +88,58 @@ export function record(b, { sessionId = "", briefPath = "" } = {}) {
   };
 }
 
+// ── the log ─────────────────────────────────────────────────────────────────
+//
+// The record above is ONE per session, because the guards look it up by session
+// id and a second one under the same key answers nothing. That makes the active
+// record the wrong thing to learn from: a session that locates four tasks keeps
+// only the fourth, and the three it overwrote are the ones worth reading — a
+// scope that had to be located again is a scope that was wrong.
+//
+// So: one line per brief, appended, never overwritten. It carries what the
+// scope WAS and nothing the guards need, because it is read once by `bb echos`
+// and never on a tool call. Appended from `activate` so the three call sites
+// cannot each remember differently.
+export const LOG = () => path.join(DIR(), "log.jsonl");
+const MAX_LOG = 4000;
+
+/** The logged briefs, oldest first. A torn line is one brief, not the file. */
+export function logged({ limit = MAX_LOG } = {}) {
+  let text;
+  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return []; }
+  const out = [];
+  for (const l of text.split("\n").filter(Boolean).slice(-limit)) {
+    try { const r = JSON.parse(l); if (r && Array.isArray(r.scope)) out.push(r); } catch { /* one brief */ }
+  }
+  return out;
+}
+
+/** Drop the oldest half past the cap, from the same call that appends. */
+export function rotateLog({ max = MAX_LOG } = {}) {
+  let text;
+  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return 0; }
+  const lines = text.split("\n").filter(Boolean);
+  if (lines.length <= max) return 0;
+  const keep = lines.slice(Math.floor(lines.length / 2));
+  try { fs.writeFileSync(LOG(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }
+}
+
+/** Never throws and never blocks activation: a brief that failed to log is a
+ *  sample lost, and refusing to activate over it would cost the session the
+ *  brief itself. */
+export function log(rec) {
+  try {
+    if (!(rec.scope || []).length) return false;   // nothing to score an aim against
+    fs.mkdirSync(DIR(), { recursive: true });
+    fs.appendFileSync(LOG(), JSON.stringify({
+      at: rec.at, session_id: rec.session_id, problem: rec.problem, path: rec.path,
+      verdict: rec.verdict, projected: rec.projected, scope: rec.scope, cut: rec.cut,
+    }) + "\n");
+    rotateLog({});
+    return true;
+  } catch { return false; }
+}
+
 export function activate(rec) {
   try {
     ensureDirs();
@@ -95,6 +147,7 @@ export function activate(rec) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p + ".tmp" + process.pid, JSON.stringify(rec));
     fs.renameSync(p + ".tmp" + process.pid, p);
+    log(rec);
     return true;
   } catch { return false; }
 }

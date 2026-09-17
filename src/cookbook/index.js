@@ -9,6 +9,7 @@
 //
 //   bb cookbook check     the corpus asserts something              free
 //   bb cookbook select    which scenarios are worth running now     free, learned
+//   bb cookbook calibrate the selector, replayed against stored boards   free
 //   bb cookbook run       the kernel runs them                      free, seconds
 //   bb cookbook board     what the last run found                   free
 //                         red steps are findings, so `bb compile` packs them,
@@ -20,7 +21,7 @@ import * as store from "../core/store.js";
 import * as expert from "../core/expert.js";
 import * as episodes from "../buckmaster/episodes.js";
 import { VAR, OUT, ROOT, rel } from "../core/paths.js";
-import { readJson, writeJson, load as loadCfg } from "../core/config.js";
+import { readJson, writeJson, load as loadCfg, calibrationPath } from "../core/config.js";
 import { out, warn, emit, hr } from "../core/log.js";
 import { now, stamp, human, pad, table } from "../core/util.js";
 import { text as estimateText } from "../tokens/estimate.js";
@@ -125,14 +126,49 @@ export async function runCorpus(id, opts = {}) {
 
 /** Which scenarios are worth running now. Free, and it is the half that makes
  *  running a big corpus every time unnecessary. */
-export function select(id, { budget = 0 } = {}) {
+/** The fitted ranking weights, or null when nothing has been calibrated here.
+ *  Shipped defaults live in `scenarios.py`; a fit lives beside every other
+ *  per-repo factor in calibration.json, so `bb doctor` shows both in one place
+ *  and a workspace that has never calibrated runs on the shipped numbers. */
+export function fittedWeights() {
+  const c = readJson(calibrationPath(), {}) || {};
+  const w = c.cookbook_select?.weights;
+  return w && typeof w === "object" ? w : null;
+}
+
+export function select(id, { budget = 0, weights = fittedWeights() } = {}) {
   const c = corpus.load(id);
   if (!c) return null;
   const r = expert.call("scenario-select", {
     scenarios: c.scenarios.map((s) => ({ id: s.id, surface: s.surface, severity: s.severity, steps: s.steps || [] })),
-    boards: boards(id), budget_steps: Number(budget) || 0, now: now(),
+    boards: boards(id), budget_steps: Number(budget) || 0, now: now(), weights: weights || undefined,
   });
   return r;
+}
+
+/** The experiment: replay every stored board against 108 candidate weight
+ *  vectors and keep the one that finds the most red per step spent. Costs a
+ *  read and a few milliseconds of Python — no request, no model, nothing run.
+ *  The shipped vector is candidate zero, so this cannot return worse than now. */
+export function calibrate(id, { budget = 0, costPenalty = 0 } = {}) {
+  const c = corpus.load(id);
+  if (!c) return null;
+  return expert.call("scenario-calibrate", {
+    scenarios: c.scenarios.map((s) => ({ id: s.id, surface: s.surface, severity: s.severity, steps: s.steps || [] })),
+    boards: boards(id), budget_steps: Number(budget) || 0,
+    ...(costPenalty ? { cost_penalty: Number(costPenalty) } : {}),
+  });
+}
+
+/** Write a fit. Keyed by corpus: two corpora have two histories and one set of
+ *  weights fitted on the wrong one is worse than the shipped default. */
+export function applyWeights(id, fit) {
+  const p = calibrationPath();
+  const cal = readJson(p, {}) || {};
+  cal.cookbook_select = { weights: fit.weights, corpus: id, boards: fit.scored,
+    score_before: fit.score_before, score_after: fit.score_after, calibrated_at: now() };
+  writeJson(p, cal);
+  return p;
 }
 
 export function verdicts(id) {
@@ -242,6 +278,29 @@ async function cookbookCmd({ _, flags }) {
     return 0;
   }
 
+  if (sub === "calibrate") {
+    const id = which(flags);
+    const r = calibrate(id, { budget: Number(flags.budget) || 0, costPenalty: Number(flags.cost) || 0 });
+    if (!r) { warn(`no corpus \`${id}\`, or python3 is not on this box (bb doctor)`); return 2; }
+    if (flags.json) { emit(r); return r.ok ? 0 : 1; }
+    const shape = (w) => `p_red ${w.p_red} / flip ${w.flip} / staleness ${w.staleness} / cost ${w.cost}`;
+    if (!r.ok) {
+      out(`  ${id} — not calibrated: ${r.why}`);
+      out(`  running on the shipped weights: ${shape(r.weights)}`);
+      return 1;
+    }
+    out(`  ${id} — ${r.basis}`, "");
+    out(table(r.per_board.map((b) => [b.at || "?", b.red, b.caught, `${b.selected}/${b.of}`, `${b.steps}/${b.steps_total}`, b.recall, b.score]),
+      { header: ["board", "red", "caught", "picked", "steps", "recall", "score"] }).split("\n").map((l) => "  " + l).join("\n"));
+    out("");
+    out(`  shipped  ${shape(r.shipped)}   score ${r.score_before}`);
+    out(`  fitted   ${shape(r.weights)}   score ${r.score_after}`);
+    if (!r.changed) { out(`\n  the shipped weights already win on these ${r.scored} board(s); nothing to apply`); return 0; }
+    if (flags.apply) { out(`\n  written to ${rel(applyWeights(id, r))}`); return 0; }
+    out(`\n  ${r.candidates} vectors tried. \`bb cookbook calibrate --apply\` writes the fitted set; until then select runs on the shipped one.`);
+    return 0;
+  }
+
   if (sub === "board") {
     const id = which(flags);
     const b = latest(id);
@@ -303,18 +362,19 @@ async function cookbookCmd({ _, flags }) {
     return (r.board.totals.failed + r.board.totals.error) ? 1 : 0;
   }
 
-  warn(`unknown cookbook sub-verb: ${sub}. list | check | select | run | board | init`);
+  warn(`unknown cookbook sub-verb: ${sub}. list | check | select | calibrate | run | board | init`);
   return 2;
 }
 
 export const commands = {
   cookbook: {
     help: "run a scenario corpus against the running system; red steps become findings (0 model tokens)",
-    usage: "bb cookbook [list|check|select|run|board|init] [--persona id] [--base url] [--rpm n] [--only surface] [--budget steps] [--engine kernel|js] [--plan] [--json]",
+    usage: "bb cookbook [list|check|select|calibrate|run|board|init] [--persona id] [--base url] [--rpm n] [--only surface] [--budget steps] [--engine kernel|js] [--plan] [--apply] [--json]",
     long: [
       "A detector asks what the files say. A corpus asks what the running system does.",
       "",
       "  bb cookbook check                every corpus validates — no server, no requests",
+      "  bb cookbook calibrate            replay the stored boards, fit the selector\'s weights (--apply to keep them)",
       "  bb cookbook select --budget 60   which scenarios are worth running now, and why",
       "  bb cookbook run --base http://127.0.0.1:4400",
       "  bb cookbook board --rules        the last board, and the rules it fired",

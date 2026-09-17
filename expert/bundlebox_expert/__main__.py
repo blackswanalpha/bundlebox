@@ -53,13 +53,22 @@ def main(argv: list) -> int:
     elif verb == "coverage-plan":
         out = coverage.plan(inp.get("world") or {}, inp.get("corpus") or {}, int(inp.get("limit", 40)))
     elif verb == "scenario-select":
-        out = scenarios.select(inp.get("scenarios") or [], inp.get("boards") or [], int(inp.get("budget_steps", 0)), inp.get("now") or now_iso)
+        out = scenarios.select(inp.get("scenarios") or [], inp.get("boards") or [], int(inp.get("budget_steps", 0)),
+                               inp.get("now") or now_iso, inp.get("weights"))
+    elif verb == "scenario-replay":
+        out = scenarios.replay(inp.get("scenarios") or [], inp.get("boards") or [], inp.get("board") or {},
+                               inp.get("weights"), int(inp.get("budget_steps", 0)),
+                               float(inp.get("cost_penalty", scenarios.REPLAY_COST)))
+    elif verb == "scenario-calibrate":
+        out = scenarios.calibrate(inp.get("scenarios") or [], inp.get("boards") or [], int(inp.get("budget_steps", 0)),
+                                  float(inp.get("cost_penalty", scenarios.REPLAY_COST)),
+                                  int(inp.get("min_boards", scenarios.MIN_BOARDS)))
     elif verb == "board-verdicts":
         out = scenarios.verdicts(inp.get("board") or {}, inp.get("thresholds"), inp.get("previous"))
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "board-verdicts"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts"]}))
         return 2
     print(json.dumps(out))
     return 0

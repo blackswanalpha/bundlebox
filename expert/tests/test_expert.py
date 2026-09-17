@@ -9,7 +9,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-from bundlebox_expert import confidence, coverage, memory, model, rules, signals, throttle, triage, world  # noqa: E402
+from bundlebox_expert import confidence, coverage, memory, model, rules, scenarios, signals, throttle, triage, world  # noqa: E402
 
 
 class Expert(unittest.TestCase):
@@ -189,6 +189,71 @@ class World(unittest.TestCase):
         self.assertEqual(world._clean_cmd("cd your-repo"), "")
         self.assertEqual(world._clean_cmd("and the scenario runner, the load simulator"), "")
         self.assertEqual(world._clean_cmd("bb scan --json"), "bb scan --json")
+
+
+def _world(n_boards, red_ids, n=6):
+    """A corpus of `n` scenarios and `n_boards` boards in which `red_ids` are the
+    ones that ever go red. Board k is stamped k days apart so staleness moves."""
+    scen = [{"id": "s%d" % i, "surface": "x", "severity": "high", "steps": [{}] * (i + 1)} for i in range(n)]
+    boards = []
+    for k in range(n_boards):
+        boards.append({"at": "2026-09-%02dT00:00:00" % (k + 1), "scenarios": [
+            {"id": s["id"], "state": "failed" if s["id"] in red_ids else "passed"} for s in scen]})
+    return scen, boards
+
+
+class Replay(unittest.TestCase):
+    def test_a_board_with_nothing_red_is_not_scored_rather_than_scored_zero(self):
+        # Scoring a green board as 0 would drag every candidate's mean toward
+        # whichever vector spends least, which is the vector that runs nothing.
+        scen, boards = _world(3, red_ids=set())
+        r = scenarios.replay(scen, boards[:1], boards[1])
+        self.assertFalse(r["scored"])
+        self.assertIsNone(r["score"])
+
+    def test_replay_scores_the_set_and_never_executes_anything(self):
+        scen, boards = _world(3, red_ids={"s0"})
+        r = scenarios.replay(scen, boards[:2], boards[2], budget_steps=0)
+        self.assertTrue(r["scored"])
+        self.assertEqual(r["red"], 1)
+        self.assertEqual(r["caught"], 1)          # no budget: everything is picked
+        self.assertEqual(r["recall"], 1.0)
+        self.assertEqual(r["steps"], r["steps_total"])
+
+    def test_a_budget_that_cannot_hold_the_corpus_trades_recall_for_steps(self):
+        scen, boards = _world(4, red_ids={"s5"}, n=6)
+        wide = scenarios.replay(scen, boards[:3], boards[3], budget_steps=0)
+        tight = scenarios.replay(scen, boards[:3], boards[3], budget_steps=3)
+        self.assertLess(tight["steps"], wide["steps"])
+        self.assertLessEqual(tight["recall"], wide["recall"])
+
+
+class Calibrate(unittest.TestCase):
+    def test_too_little_history_returns_the_shipped_weights_and_says_why(self):
+        scen, boards = _world(3, red_ids={"s0"})
+        r = scenarios.calibrate(scen, boards)
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["weights"], scenarios.WEIGHTS)
+        self.assertIn("need", r)
+
+    def test_the_fit_is_never_worse_than_the_shipped_vector(self):
+        # The shipped weights are candidate zero and the search takes the max,
+        # so this is structural. It is asserted because a refactor that drops
+        # candidate zero would silently make `--apply` a downgrade.
+        scen, boards = _world(8, red_ids={"s0", "s4"})
+        r = scenarios.calibrate(scen, boards, budget_steps=4)
+        self.assertTrue(r["ok"], r.get("why"))
+        self.assertGreaterEqual(r["score_after"], r["score_before"])
+        self.assertEqual(r["shipped"], scenarios.WEIGHTS)
+
+    def test_every_score_is_out_of_sample(self):
+        # Board i is scored by a policy that saw boards[:i] only. If the fit
+        # ever reads the board it is scored on, a vector that memorises the
+        # history wins and the number stops predicting anything.
+        scen, boards = _world(8, red_ids={"s1"})
+        r = scenarios.calibrate(scen, boards, budget_steps=4)
+        self.assertEqual(len(r["per_board"]), r["scored"])
+        self.assertEqual([b["at"] for b in r["per_board"]], [b["at"] for b in boards[1:]])
 
 
 if __name__ == "__main__":

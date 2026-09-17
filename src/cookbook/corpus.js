@@ -11,14 +11,16 @@
 // `check()` is the whole difference between green-because-everything-held and
 // green-because-nothing-was-checked, and it needs no server: it refuses a
 // scenario in which nothing asserts, an unknown surface, an expectation key
-// nothing implements, a duplicate id and an `as` that names nobody. A typo in
-// `as` would otherwise fall back to the persona silently, and a tenancy-leak
-// scenario that ran entirely as ONE user is green for the worst possible reason.
+// nothing implements, a duplicate id, an `as` that names nobody and a
+// `{{token}}` nothing in scope defines. A typo in `as` would otherwise fall
+// back to the persona silently, and a tenancy-leak scenario that ran entirely
+// as ONE user is green for the worst possible reason.
 import fs from "node:fs";
 import path from "node:path";
 import { BB_DIR, rel } from "../core/paths.js";
 import { readJson, writeJson } from "../core/config.js";
 import { KEYS } from "./expect.js";
+import { builtin, refs } from "./tokens.js";
 import { unsupportedPatterns } from "./engine.js";
 
 export const DIR = () => path.join(BB_DIR, "cookbook");
@@ -73,6 +75,17 @@ export function list() {
 
 const ASSERTING = (st) => Boolean(st.static || st.run || (st.expect && Object.keys(st.expect).some((k) => KEYS.includes(k))));
 
+/** Where a step's tokens have to resolve. The fields are the ones the engine
+ *  substitutes with `missing` COLLECTED; `save` values are left out because it
+ *  substitutes those with `missing` discarded, so a token nothing defines there
+ *  is a path that matches nothing rather than a step error — and refusing it
+ *  here would make the gate stricter than the run it stands in front of. */
+const stepRefs = (st) => [
+  ...refs(st.do || ""), ...refs(st.run || ""), ...refs(st.static || {}),
+  ...refs(st.body === undefined ? "" : st.body), ...refs(st.expect || {}), ...refs(st.headers || {}),
+];
+const saves = (st) => (st.save && typeof st.save === "object" ? Object.keys(st.save) : []);
+
 /** Problems with the corpus itself. No server, no requests. */
 export function check(c) {
   const errors = [], warnings = [];
@@ -81,8 +94,30 @@ export function check(c) {
   const actorIds = new Set(Object.keys(c.persona.actors || {}));
   for (const b of c.bad) errors.push(`${b.file}: ${b.why}`);
   if (!c.surfaces.length) warnings.push("surfaces.json is empty: the board has no order and `--only` cannot select");
+  // An unresolved token is a step ERROR at run time, never a literal, so a typo
+  // is a red step about nothing and costs a session to un-diagnose. Nothing but
+  // the corpus is needed to know it here: the scope is the persona's vars,
+  // `base` (always injected), whatever `setup` saved, and whatever an EARLIER
+  // step in the SAME scenario saved — the engine hands each scenario its own
+  // copy of the setup's vars and nothing crosses between two scenarios.
+  const unresolved = (names, at, scope) => {
+    for (const n of new Set(names)) if (!scope.has(n) && !builtin(n))
+      errors.push(`${at}: \`{{${n}}}\` resolves to nothing — not a persona var, not saved by an earlier step, not a built-in`);
+  };
+  const shared = new Set([...Object.keys(c.persona.vars || {}), "base"]);
+  (c.persona.setup || []).forEach((st, i) => {
+    unresolved(stepRefs(st), `setup step ${i + 1} (${st.name || "unnamed"})`, shared);
+    for (const k of saves(st)) shared.add(k);
+  });
+  // Persona and actor headers are substituted with the SCENARIO's vars, so an
+  // `Authorization: Bearer {{session}}` that the setup saved is legal in them.
+  unresolved(refs(c.persona.headers || {}), "persona.json headers", shared);
+  for (const [aid, a] of Object.entries(c.persona.actors || {}))
+    unresolved(refs((a || {}).headers || {}), `persona.json actors.${aid}.headers`, shared);
+
   for (const sc of c.scenarios) {
     const where = sc._file || sc.id || "?";
+    const scope = new Set(shared);
     if (!sc.id) { errors.push(`${where}: no id`); continue; }
     if (seen.has(sc.id)) errors.push(`${where}: duplicate id \`${sc.id}\`, already used by ${seen.get(sc.id)}`);
     seen.set(sc.id, where);
@@ -101,6 +136,8 @@ export function check(c) {
       for (const k of Object.keys(st.expect || {})) if (!KEYS.includes(k)) errors.push(`${at}: expectation \`${k}\` is not implemented — nothing would check it`);
       if (st.as && !actorIds.has(st.as)) errors.push(`${at}: \`as: ${st.as}\` names nobody in persona.actors`);
       if (st.save && typeof st.save !== "object") errors.push(`${at}: \`save\` must be an object of {name: path}`);
+      unresolved(stepRefs(st), at, scope);
+      for (const k of saves(st)) scope.add(k);
     });
   }
   const bad = unsupportedPatterns(spec(c, {}));
