@@ -9,7 +9,7 @@ import fs from "node:fs";
 import { load } from "../core/config.js";
 import { git } from "../core/exec.js";
 import { readText, walk } from "../core/fs.js";
-import { warn } from "../core/log.js";
+import { out, warn, emit } from "../core/log.js";
 import { ROOT, abs } from "../core/paths.js";
 import { human, sha1 } from "../core/util.js";
 import * as estimate from "../tokens/estimate.js";
@@ -187,3 +187,67 @@ export function explain(f, cfg = load()) {
   if (t.promote) lines.push(`  model ${t.model}, kind ${t.kind}, priority ${t.priority}`);
   return lines.join("\n");
 }
+
+// ── bb triage ───────────────────────────────────────────────────────────────
+//
+// Two verbs over one idea: a closed finding says whether promoting it would
+// have been right, so the promotion rule is a policy with a recorded outcome.
+//
+//   backfill    label the closures git can still prove
+//   calibrate   hill-climb the policy over the labelled ones
+//
+// Both cost a read and some arithmetic. `backfill` shells out to git, once per
+// finding, and that is the only reason it is a verb somebody runs rather than
+// something a scan does on its own.
+export const commands = {
+  triage: {
+    help: "label what closed findings cost, and fit the promotion rule to them (0 model tokens)",
+    usage: "bb triage [backfill|calibrate] [--apply] [--json]",
+    examples: [
+      "  bb triage backfill               label the closures git can still prove",
+      "  bb triage calibrate              what promote_at and the EV floor should be",
+    ],
+    async run({ _, flags }) {
+      const store = await import("../core/store.js");
+      const expert = await import("../core/expert.js");
+      const sub = _[0] || "calibrate";
+
+      if (sub === "backfill") {
+        const c = store.backfillClosures();
+        if (flags.json) { emit(c); return 0; }
+        out(`  ${c.acted_on} acted on, ${c.vanished} vanished, ${c.unchanged} unchanged — ${c.already} already labelled`);
+        out(`  ${c.left_unknown} left unknown: git sees commits and this workspace edits for hours before it makes one.`);
+        return 0;
+      }
+      if (sub !== "calibrate") { warn(`unknown triage sub-verb: ${sub}. backfill | calibrate`); return 2; }
+
+      const cfg = load();
+      const r = expert.call("triage-calibrate", {
+        findings: store.get("findings", []), cfg,
+        ...(flags.cost ? { cost_penalty: Number(flags.cost) } : {}),
+      });
+      if (!r) { warn(`python3 is required to fit the promotion rule (${expert.lastError}). bb doctor`); return 2; }
+      if (flags.json) { emit(r); return r.ok ? 0 : 1; }
+      const shape = (p) => `promote_at ${p.promote_at} / ev_mult ${p.ev_mult}`;
+      if (!r.ok) {
+        out(`  not calibrated: ${r.why}`);
+        out(`  running on the shipped rule: ${shape(r.policy)}`);
+        out(`  \`bb triage backfill\` labels what git can still prove.`);
+        return 1;
+      }
+      out(`  ${r.basis}`, "");
+      for (const [name, k] of [["shipped", "before"], ["fitted", "after"]]) {
+        const x = r[k];
+        out(`  ${name.padEnd(8)} ${shape(name === "shipped" ? r.shipped : r.policy).padEnd(34)} promoted ${x.promoted}, caught ${x.caught} of ${x.acted_on}, recall ${x.recall}, waste ${x.waste_share}  score ${k === "before" ? r.score_before : r.score_after}`);
+      }
+      if (!r.changed) { out(`\n  the shipped rule already wins over ${r.explored} policy(s) explored; nothing to apply`); return 0; }
+      if (flags.apply) {
+        const p = store.applyTriagePolicy(r.policy, { acted_on: r.acted_on, score_before: r.score_before, score_after: r.score_after });
+        out(`\n  written to ${p}`);
+        return 0;
+      }
+      out(`\n  ${r.explored} policy(s) explored in ${r.steps} step(s). \`bb triage calibrate --apply\` keeps it.`);
+      return 0;
+    },
+  },
+};
