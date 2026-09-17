@@ -20,6 +20,9 @@
 //   diminishing  the late half of a session costing more per change than the early
 //   converge     the located scope has stopped moving — the STOP condition, and
 //                the one this loop never had
+//   stray        the work landed outside the located scope — the locator was
+//                wrong, and until now nothing wrote that down
+//   batching     one tool call per turn, which is one round trip per fact
 //
 // Wired rather than offered. `echos.on_session_end` runs them while the
 // session's own rows are fresh, the `echos` pipeline stage reports them, and
@@ -36,10 +39,11 @@ import * as store from "../core/store.js";
 import * as ledger from "../tokens/ledger.js";
 import * as record from "../lathe/record.js";
 import { BIN } from "../arc/index.js";
+import * as wire from "../wire/brief.js";
 
 export const DIR = () => path.join(OUT, "echos");
 export const LATEST = () => path.join(DIR(), "latest.json");
-export const IDS = ["spin", "oscillate", "drift", "diminishing", "converge"];
+export const IDS = ["spin", "oscillate", "drift", "diminishing", "converge", "stray", "batching"];
 
 const ms = (ts) => { const t = Date.parse(ts || ""); return Number.isFinite(t) ? t : 0; };
 const hash = (s) => sha1(String(s)).slice(0, 16);
@@ -151,11 +155,15 @@ export function transcriptEvents({ limit = 0 } = {}) {
     for (const t of tr.turns) {
       const at = ms(t.ts);
       const window = (Number(t.input) || 0) + (Number(t.cacheWrite) || 0) + (Number(t.cacheRead) || 0);
-      out.push({ at, session, kind: "turn", tokens: window || (Number(t.output) || 0) });
+      // `tools` is the whole turn's call count, not the calls that produced an
+      // event below: a Grep, a Glob or an MCP call is a round trip exactly as a
+      // Read is, and counting only the ones this stream models would measure the
+      // model of the work instead of the work.
+      out.push({ at, session, kind: "turn", tokens: window || (Number(t.output) || 0), tools: (t.toolUses || []).length });
       for (const u of t.toolUses || []) {
         const name = String(u.name || "");
         const file = String(u.input?.file_path || u.input?.path || "");
-        if (/^(Read|NotebookRead)$/.test(name)) { out.push({ at, session, kind: "read", file }); continue; }
+        if (/^(Read|NotebookRead)$/.test(name)) { out.push({ at, session, kind: "read", file: rel(file) }); continue; }
         // A write through the shell is a write. No hash and no path: a redirect
         // or a `sed -i` does not hand this box the text it installed, so the
         // event carries the fact that something changed and nothing more.
@@ -171,7 +179,10 @@ export function transcriptEvents({ limit = 0 } = {}) {
         const edits = Array.isArray(u.input?.edits) ? u.input.edits : null;
         const texts = edits ? edits.map((x) => x && x.new_string).filter((x) => typeof x === "string")
           : [u.input?.content, u.input?.new_string, u.input?.new_source].filter((x) => typeof x === "string");
-        for (const text of texts) out.push({ at, session, kind: "edit", file, hash: hash(text) });
+        // Repo-relative, because a brief's scope is and `stray` compares the
+        // two. A tool hands over an absolute path; the same file under two
+        // spellings is two files to every rule that keys on one.
+        for (const text of texts) out.push({ at, session, kind: "edit", file: rel(file), hash: hash(text) });
       }
     }
   }
@@ -182,18 +193,34 @@ export function transcriptEvents({ limit = 0 } = {}) {
  *
  *  `converge` is the only echo that reads across sessions, and this is why: a
  *  brief is written once per task prompt, so the sequence that matters belongs
- *  to the workspace and not to any one session. */
+ *  to the workspace and not to any one session.
+ *
+ *  Two sources, and the order matters. `wire/brief.js` keeps ONE active record
+ *  per session for the guards to query, so a session that located four tasks
+ *  left three of them nowhere — and a scope that had to be located again is the
+ *  one worth scoring. The log holds every brief; the per-session records are
+ *  read only for sessions the log never saw, which is every session from before
+ *  it existed. Counting both for one session would count one brief twice. */
 export function briefEvents() {
-  const dir = path.join(VAR, "brief");
   const out = [];
+  const seen = new Set();
+  for (const rec of wire.logged({})) {
+    const scope = (rec.scope || []).map(String).filter(Boolean);
+    if (!scope.length) continue;
+    const session = String(rec.session_id || "");
+    seen.add(session);
+    out.push({ at: ms(rec.at), session, kind: "brief", scope });
+  }
+  const dir = path.join(VAR, "brief");
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => n.endsWith(".json")); } catch { return out; }  // no brief has been recorded here yet
   for (const n of names) {
     let rec;
     try { rec = JSON.parse(fs.readFileSync(path.join(dir, n), "utf8")); } catch { continue; }   // a half-written record is one brief
-    const scope = (rec.scope || rec.files || []).map(String).filter(Boolean);
-    if (!scope.length) continue;
-    out.push({ at: ms(rec.at || rec.recorded), session: String(rec.session_id || n.replace(/\.json$/, "")), kind: "brief", scope });
+    const scope = (rec.scope || []).map(String).filter(Boolean);
+    const session = String(rec.session_id || n.replace(/[.]json$/, ""));
+    if (!scope.length || seen.has(session)) continue;
+    out.push({ at: ms(rec.at || rec.recorded), session, kind: "brief", scope });
   }
   return out;
 }
@@ -219,6 +246,12 @@ export function thresholds(cfg = load()) {
     diminishing_ratio: Number(e.diminishing_ratio) || 1.6,
     converge_similarity: Number(e.converge_similarity) || 0.95,
     converge_runs: Number(e.converge_runs) || 3,
+    stray_share: e.stray_share == null ? 0.5 : Number(e.stray_share),
+    stray_edits: Number(e.stray_edits) || 4,
+    stray_briefs: Number(e.stray_briefs) || 2,
+    batching_ratio: Number(e.batching_ratio) || 1.5,
+    batching_calls: Number(e.batching_calls) || 20,
+    batching_sessions: Number(e.batching_sessions) || 3,
   };
 }
 

@@ -1,4 +1,4 @@
-// echos/fallback.js — the same five echos, in JavaScript, for a box with no
+// echos/fallback.js — the same seven echos, in JavaScript, for a box with no
 // compiled `arc`.
 //
 // This is a deliberate second implementation and it mirrors `arc/src/echos/`
@@ -9,7 +9,7 @@
 //
 // The contract both sides implement is the payload and the result shape:
 //
-//   in   { events: [{at, session, kind, shape, file, hash, tokens, scope}],
+//   in   { events: [{at, session, kind, shape, file, hash, tokens, tools, scope}],  file is repo-relative
 //          thresholds: {...}, only: [id...] }
 //   out  { echos: [{id, verdict, session, support, severity, detail, evidence}],
 //          events, sessions, thresholds, registry, hits, ms }
@@ -17,7 +17,7 @@
 // `test/echos.test.js` runs both over one stream and asserts they agree, which
 // is the only thing that keeps two implementations equal.
 
-const IDS = ["spin", "oscillate", "drift", "diminishing", "converge"];
+const IDS = ["spin", "oscillate", "drift", "diminishing", "converge", "stray", "batching"];
 
 /** Mirrors `human` in arc/src/echos/mod.rs: 33374161 in a sentence is a number
  *  nobody checks, 33.4M is one they can. */
@@ -214,7 +214,104 @@ function converge(grouped, th) {
     evidence: [`briefs=${briefs.length}`, `streak=${best}`, `threshold=${th.converge_similarity}`, `runs_needed=${th.converge_runs}`, `scope=${e.scope.join(",")}`] }];
 }
 
-const REGISTRY = { spin, oscillate, drift, diminishing, converge };
+/** Mirrors `windows` in arc/src/echos/stray.rs. One window per brief: the edits
+ *  that followed it, up to the next brief. Per brief and not per session
+ *  because a session locates several tasks and scoring them together would let
+ *  a well-located task pay for a badly-located one. */
+function strayWindows(grouped) {
+  const out = [];
+  for (const [session, events] of grouped) {
+    let cur = null;
+    for (const e of events) {
+      if (e.kind === "brief" && (e.scope || []).length) {
+        if (cur) out.push(cur);
+        cur = { session, scope: e.scope, inn: 0, out: 0, strayed: [] };
+        continue;
+      }
+      // Before the first brief there is nothing to have strayed FROM.
+      if (!cur || e.kind !== "edit" || !e.file) continue;
+      if (cur.scope.includes(e.file)) cur.inn += 1;
+      else { cur.out += 1; if (!cur.strayed.includes(e.file)) cur.strayed.push(e.file); }
+    }
+    if (cur) out.push(cur);
+  }
+  return out;
+}
+
+function stray(grouped, th) {
+  const wins = strayWindows(grouped);
+  const scored = wins.filter((w) => w.inn + w.out >= th.stray_edits);
+  if (scored.length < th.stray_briefs) {
+    return [unknown("stray", `${scored.length} brief(s) followed by ${th.stray_edits} or more edits to a named file; ${th.stray_briefs} are needed before a locator's aim is a measurement rather than one odd task. A shell write carries no path and is counted on neither side.`)];
+  }
+  const inn = scored.reduce((a, w) => a + w.inn, 0);
+  const off = scored.reduce((a, w) => a + w.out, 0);
+  const share = off / (inn + off);
+  if (share < th.stray_share) {
+    return [ok("stray", `the locator is landing: ${off} of ${inn + off} edited file(s) across ${scored.length} brief(s) fell outside the scope that was handed over (${share.toFixed(2)}, under ${th.stray_share}).`)];
+  }
+  // The worst window, first one on a tie, so both implementations name the same
+  // brief for the same stream.
+  let worst = scored[0];
+  for (const w of scored) if (w.out > worst.out) worst = w;
+  const files = worst.strayed.slice(0, 8);
+  return [{ id: "stray", verdict: "hit", session: worst.session, support: scored.length, severity: "medium",
+    detail: `${off} of ${inn + off} edits across ${scored.length} brief(s) went to files the brief never named (${share.toFixed(2)}, at or over ${th.stray_share}). The located scope is not where the work is, so every session it is handed to pays to find that out again. Worst brief located ${worst.scope.length} file(s) and the work touched ${files.join(", ")}${worst.strayed.length > files.length ? `, +${worst.strayed.length - files.length} more` : ""}.`,
+    evidence: [`briefs=${scored.length}`, `in_scope=${inn}`, `strayed=${off}`, `share=${share.toFixed(3)}`,
+      `threshold=${th.stray_share}`, `min_edits=${th.stray_edits}`, `worst_scope=${worst.scope.join(",")}`, `worst_strayed=${worst.strayed.join(",")}`] }];
+}
+
+/** Mirrors arc/src/echos/batching.rs.
+ *
+ *  Attempts per decision round, which is the one term of the Dream-RSI replay
+ *  objective this box had a name for and no count of: `bb uptake` calls it
+ *  "serial-turns-want-batching — one tool per turn is one round trip per fact"
+ *  and then nothing measured it.
+ *
+ *  Pooled across sessions and reported ONCE, because it is a habit and not an
+ *  incident. The first version filed one finding per session and on this
+ *  workspace that was 22 of 22 — a list in which every row says the same thing
+ *  is a list nobody reads, and `diminishing` only avoids it by judging each
+ *  session against the workspace median rather than an absolute bar.
+ *
+ *  Two things keep it from overclaiming. A turn that called no tool is thinking
+ *  or answering and is in neither the numerator nor the denominator. And the
+ *  ratio a session CAN reach is bounded by how much of its work is independent
+ *  — a read whose path comes out of the previous result cannot move earlier —
+ *  so a low one is evidence to look at, never proof of waste. */
+function batching(grouped, th) {
+  const per = [];
+  for (const [session, events] of grouped) {
+    let turns = 0, calls = 0;
+    for (const e of events) {
+      if (e.kind !== "turn") continue;
+      const n = Number(e.tools) || 0;
+      if (n <= 0) continue;
+      turns += 1;
+      calls += n;
+    }
+    if (calls >= th.batching_calls) per.push({ session, turns, calls, ratio: calls / turns });
+  }
+  if (per.length < th.batching_sessions) {
+    return [unknown("batching", `${per.length} session(s) have made ${th.batching_calls} or more tool calls with a recorded turn count; ${th.batching_sessions} are needed before a ratio is a habit rather than one session's shape`)];
+  }
+  const calls = per.reduce((a, x) => a + x.calls, 0);
+  const turns = per.reduce((a, x) => a + x.turns, 0);
+  const pooled = calls / turns;
+  if (pooled > th.batching_ratio) {
+    return [ok("batching", `${calls} tool call(s) over ${turns} turn(s) across ${per.length} session(s) — ${pooled.toFixed(2)} per turn, over ${th.batching_ratio}`)];
+  }
+  // Lowest ratio, then most calls, then first seen: both implementations have
+  // to name the same session for the same stream.
+  let worst = per[0];
+  for (const x of per) if (x.ratio < worst.ratio || (x.ratio === worst.ratio && x.calls > worst.calls)) worst = x;
+  return [{ id: "batching", verdict: "hit", session: worst.session, support: calls, severity: "low",
+    detail: `${calls} tool call(s) over ${turns} turn(s) that made one, across ${per.length} session(s) — ${pooled.toFixed(2)} per turn, at or under ${th.batching_ratio}. Every turn is a round trip: the window is re-sent and re-read before the next fact arrives, so two independent calls cost one turn together and two apart. Worst session ${worst.calls} call(s) over ${worst.turns} turn(s) at ${worst.ratio.toFixed(2)}.`,
+    evidence: [`calls=${calls}`, `turns=${turns}`, `ratio=${pooled.toFixed(2)}`, `sessions=${per.length}`,
+      `worst=${worst.ratio.toFixed(2)}`, `threshold=${th.batching_ratio}`, `min_calls=${th.batching_calls}`] }];
+}
+
+const REGISTRY = { spin, oscillate, drift, diminishing, converge, stray, batching };
 
 export function run({ events = [], thresholds = {}, only = [] } = {}) {
   const t0 = Date.now();
@@ -225,6 +322,12 @@ export function run({ events = [], thresholds = {}, only = [] } = {}) {
     diminishing_ratio: Math.max(1, Number(thresholds.diminishing_ratio) || 1.6),
     converge_similarity: Math.min(1, Math.max(0, Number(thresholds.converge_similarity) || 0.95)),
     converge_runs: Math.max(2, Number(thresholds.converge_runs) || 3),
+    stray_share: Math.min(1, Math.max(0, thresholds.stray_share == null ? 0.5 : Number(thresholds.stray_share))),
+    stray_edits: Math.max(1, Number(thresholds.stray_edits) || 4),
+    stray_briefs: Math.max(1, Number(thresholds.stray_briefs) || 2),
+    batching_ratio: Math.max(1, Number(thresholds.batching_ratio) || 1.5),
+    batching_calls: Math.max(1, Number(thresholds.batching_calls) || 20),
+    batching_sessions: Math.max(1, Number(thresholds.batching_sessions) || 3),
   };
   const grouped = bySession(events);
   const echos = [];
