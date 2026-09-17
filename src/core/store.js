@@ -4,7 +4,7 @@
 // worker reads what is on disk or it does not run.
 import fs from "node:fs";
 import path from "node:path";
-import { VAR, ensureDirs } from "./paths.js";
+import { VAR, ROOT, ensureDirs } from "./paths.js";
 import { readJson, writeJson } from "./config.js";
 import { now, sha1 } from "./util.js";
 
@@ -81,16 +81,77 @@ export function rows(name, { limit = 0 } = {}) {
   return limit ? out.slice(-limit) : out;
 }
 
+/** Rows kept in findings.json. Past this the oldest CLOSED rows go — resolved
+ *  and fixed findings are history, and the open ones are the work list.
+ *
+ *  A bound and not a policy of keeping everything, for the reason `record.js`
+ *  bounds shapes.jsonl: on one workspace this document reached 165MB, in the
+ *  directory every verb writes to, and it is a single JSON value that must be
+ *  parsed WHOLE to answer `bb findings`. A rotation that keeps everything is a
+ *  file somebody eventually deletes by hand. */
+export const MAX_FINDINGS = 20000;
+
+/** Hold the document to MAX_FINDINGS, oldest history first. Order is otherwise
+ *  preserved, so a bounded write still diffs against the last one. */
+export function bound(rows, max = MAX_FINDINGS) {
+  if (rows.length <= max) return rows;
+  const when = (f) => Date.parse(f.last_seen || f.first_seen || f.at || 0) || 0;
+  const open = rows.filter((f) => f.status === "open");
+  const closed = rows.filter((f) => f.status !== "open").sort((a, b) => when(b) - when(a));
+  // Open findings are the work list and outlive any amount of history. Past the
+  // cap on those alone, the newest win: an open finding nothing has re-seen in
+  // twenty thousand rows is one the detectors stopped producing.
+  const keep = new Set((open.length >= max ? open.sort((a, b) => when(b) - when(a)).slice(0, max) : [...open, ...closed.slice(0, max - open.length)]).map((f) => f.id));
+  return rows.filter((f) => keep.has(f.id));
+}
+
+/** A cheap witness that a finding's files are as they were: size and mtime per
+ *  path, hashed, never content. Recorded while the finding is open and compared
+ *  when it closes, which is the whole difference between somebody fixing a
+ *  finding and the file it was about going away.
+ *
+ *  size+mtime rather than a hash of the bytes because this runs over every open
+ *  finding on every scan, and a read per file would move the scan into the
+ *  detectors' cost class. A touch fools it, which is exactly why `acted_on`
+ *  means "these files changed" and never "the change was a fix". */
+export function witness(f, root = ROOT) {
+  const paths = [...new Set([f.path, ...(Array.isArray(f.files) ? f.files : [])].filter(Boolean).map(String))].sort();
+  if (!paths.length) return "";
+  const parts = [];
+  let alive = 0;
+  for (const p of paths) {
+    try { const st = fs.statSync(path.join(root, p)); parts.push(`${p}:${st.size}:${Math.round(st.mtimeMs)}`); alive += 1; }
+    catch { parts.push(`${p}:gone`); }
+  }
+  return alive ? sha1(parts.join("\n")).slice(0, 12) : "gone";
+}
+
+/** Why a finding stopped being open. `resolved` on its own cannot answer it:
+ *  the detector going quiet is the same event whether the code was fixed, the
+ *  file was deleted or a threshold moved underneath it. Anything that learns
+ *  from closures needs the three kept apart, because a policy trained on
+ *  "resolved" learns that deleting the file is the most reliable fix.
+ *
+ *  `unchanged` is the one worth reading twice: the files did not move and the
+ *  detector stopped firing anyway, so what changed was the detector's own
+ *  inputs — a bar, a median, a config — and no work was done at all. */
+export const CLOSED_BY = ["acted_on", "vanished", "unchanged", "unknown"];
+function closedBy(old, fresh) {
+  if (fresh === "gone") return "vanished";
+  if (!fresh || !old.witness) return "unknown";
+  return old.witness === fresh ? "unchanged" : "acted_on";
+}
+
 /** Findings: keyed by a stable id so a re-scan updates rather than duplicates,
  *  and a finding that stopped appearing is closed rather than deleted. */
 export function findingId(f) { return sha1(`${f.detector}|${f.path || ""}|${f.key || f.title}`).slice(0, 10); }
 export function mergeFindings(fresh, { detectors }) {
-  return update("findings", (prev) => mergeInto(prev, fresh, { detectors }), []);
+  return update("findings", (prev) => mergeInto(prev, fresh, { detectors, mark: witness }), []);
 }
 
 /** The merge itself, pure so it can be tested without a filesystem and reused
  *  by anything that already holds the lock. */
-export function mergeInto(prev, fresh, { detectors }) {
+export function mergeInto(prev, fresh, { detectors, mark = () => "" }) {
   const seen = new Set();
   const out = [];
   const byId = new Map(prev.map((f) => [f.id, f]));
@@ -98,13 +159,16 @@ export function mergeInto(prev, fresh, { detectors }) {
     const id = f.id || findingId(f);
     seen.add(id);
     const old = byId.get(id);
-    out.push({ ...f, id, first_seen: old?.first_seen || now(), last_seen: now(), status: old?.status === "resolved" ? "open" : old?.status === "fixed" ? "fixed" : (old?.status || "open"), seen_count: (old?.seen_count || 0) + 1 });
+    out.push({ ...f, id, first_seen: old?.first_seen || now(), last_seen: now(), status: old?.status === "resolved" ? "open" : old?.status === "fixed" ? "fixed" : (old?.status || "open"), seen_count: (old?.seen_count || 0) + 1, witness: mark(f) });
   }
   for (const f of prev) {
     if (seen.has(f.id)) continue;
-    if (detectors.has(f.detector) && f.status === "open") out.push({ ...f, status: "resolved", resolved_at: now() });
+    if (detectors.has(f.detector) && f.status === "open") {
+      const w = mark(f);
+      out.push({ ...f, status: "resolved", resolved_at: now(), closed_by: closedBy(f, w), witness: w });
+    }
     else out.push(f);
   }
-  return out;
+  return bound(out);
 }
 export function openFindings() { return get("findings", []).filter((f) => f.status === "open"); }

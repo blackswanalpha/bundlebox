@@ -93,3 +93,51 @@ test("fix: dry run writes a patch, declines the deleted link, does not touch the
   assert.equal(f.status, "fixed"); assert.equal(f.fixed_by, "fix-doc-links");
   assert.ok(store.rows("episodes").some((e) => e.kind === "actuator"));
 });
+
+// ── why a finding closed ────────────────────────────────────────────────────
+// `resolved` is the same event whether the code was fixed, the file was deleted
+// or a bar moved underneath the detector. These pin the three apart, because a
+// policy that learns from closures and cannot tell them apart learns that
+// deleting the file is the most reliable fix there is.
+
+test("a closed finding records whether anything was actually done", async () => {
+  const store = await import("../src/core/store.js");
+  const det = new Set(["d"]);
+  const f = (id, p) => ({ id, detector: "d", path: p, title: id, status: "open" });
+  w("acted.js", "one\n");
+  w("still.js", "one\n");
+  w("goes.js", "one\n");
+
+  const open = store.mergeInto([], [f("a", "acted.js"), f("u", "still.js"), f("v", "goes.js")],
+    { detectors: det, mark: store.witness });
+  assert.ok(open.every((x) => x.witness), "an open finding carries its witness");
+
+  fs.writeFileSync(path.join(root, "acted.js"), "one\ntwo\n");   // edited
+  fs.rmSync(path.join(root, "goes.js"));                         // deleted
+  const closed = store.mergeInto(open, [], { detectors: det, mark: store.witness });
+  const by = Object.fromEntries(closed.map((x) => [x.id, x.closed_by]));
+  assert.equal(by.a, "acted_on");
+  assert.equal(by.v, "vanished");
+  assert.equal(by.u, "unchanged");   // the detector's own inputs moved, not the file
+  assert.ok(closed.every((x) => x.status === "resolved" && x.resolved_at));
+});
+
+test("a merge with no filesystem stays pure and says unknown rather than guessing", async () => {
+  const store = await import("../src/core/store.js");
+  const det = new Set(["d"]);
+  const open = store.mergeInto([], [{ id: "p", detector: "d", path: "x.js", title: "p", status: "open" }], { detectors: det });
+  const closed = store.mergeInto(open, [], { detectors: det });
+  assert.equal(closed[0].closed_by, "unknown");
+});
+
+test("a finding that comes back is open again and carries no stale closure", async () => {
+  const store = await import("../src/core/store.js");
+  const det = new Set(["d"]);
+  const row = { id: "r", detector: "d", path: "still.js", title: "r", status: "open" };
+  const closed = store.mergeInto(store.mergeInto([], [row], { detectors: det, mark: store.witness }), [],
+    { detectors: det, mark: store.witness });
+  assert.equal(closed[0].status, "resolved");
+  const again = store.mergeInto(closed, [row], { detectors: det, mark: store.witness });
+  assert.equal(again[0].status, "open");
+  assert.equal(again[0].closed_by, undefined);
+});
