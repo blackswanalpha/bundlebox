@@ -325,3 +325,57 @@ test("a search that filters a pipe is never guarded", () => {
   assert.equal(dup.permissionDecision, "deny");
   assert.match(dup.permissionDecisionReason, /already ran in this session/);
 });
+
+// ── the log ─────────────────────────────────────────────────────────────────
+// The active record is one per session, so a session that locates four tasks
+// keeps only the fourth. The log is what `bb echos` learns a locator's aim
+// from, and it has to keep the three that were overwritten.
+
+test("every activation appends a row, where the active record keeps only the last", () => {
+  const before = brief.logged({}).length;
+  const a = brief.record({ problem: "first task", scope: ["src/a.js"] }, { sessionId: "L1" });
+  const b = brief.record({ problem: "second task", scope: ["src/b.js", "src/c.js"] }, { sessionId: "L1" });
+  brief.activate(a);
+  brief.activate(b);
+  const rows = brief.logged({});
+  assert.equal(rows.length - before, 2, "two briefs, two rows");
+  assert.deepEqual(rows.at(-2).scope, ["src/a.js"]);
+  assert.deepEqual(rows.at(-1).scope, ["src/b.js", "src/c.js"]);
+  // The active record is still one, and still the last one.
+  assert.equal(brief.current({ sessionId: "L1" }).problem, "second task");
+});
+
+test("a brief that located nothing is not a sample and is not logged", () => {
+  const before = brief.logged({}).length;
+  brief.activate(brief.record({ problem: "located nothing", scope: [] }, { sessionId: "L2" }));
+  assert.equal(brief.logged({}).length, before);
+});
+
+test("the log carries the scope and none of the quoted regions", () => {
+  brief.activate(REC());
+  const row = brief.logged({}).at(-1);
+  assert.ok(Array.isArray(row.scope) && row.scope.length);
+  assert.equal(row.anchors, undefined, "an anchor is a quote the guards need and the echo does not");
+  assert.equal(row.seen, undefined);
+  assert.ok(row.at && row.session_id === "S1");
+});
+
+test("rotateLog drops the oldest half rather than growing without a bound", () => {
+  for (let i = 0; i < 12; i++) brief.activate(brief.record({ problem: `t${i}`, scope: ["src/a.js"] }, { sessionId: "L3" }));
+  const n = brief.logged({}).length;
+  const dropped = brief.rotateLog({ max: 6 });
+  assert.ok(dropped > 0, "past the cap something is dropped");
+  assert.equal(brief.logged({}).length, n - dropped);
+  // The newest survive: what a locator did last is what its aim is now.
+  assert.equal(brief.logged({}).at(-1).problem, "t11");
+});
+
+test("sweep clears expired session records and leaves the log alone", () => {
+  // `sweep` deletes every `.json` in the brief directory that has aged out. The
+  // log lives in the same directory and holds every sample the locator has ever
+  // produced; losing it to a sweep would be silent and total.
+  const before = brief.logged({}).length;
+  assert.ok(before > 0);
+  brief.sweep({ maxAgeMin: -1 });
+  assert.equal(brief.logged({}).length, before);
+});
