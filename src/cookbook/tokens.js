@@ -106,3 +106,26 @@ export const typeName = (v) => (v === null ? "null" : Array.isArray(v) ? "list" 
 export const show = (v) => (typeof v === "string" ? v : JSON.stringify(v));
 export const clockOf = ({ timezone = "UTC", tz_offset_minutes = 0, run = "", now = Date.now() / 1000 } = {}) =>
   ({ now, timezone, tz_offset_minutes, run: run || stampOf(now) });
+
+// ── what the gate in front of a run needs to know, statically ───────────────
+// `bb cookbook check` refuses a token nothing defines, because an unresolved
+// one is a step ERROR at run time and a typo is otherwise a red step about
+// nothing. Both answers below are taken from the code above rather than from a
+// second copy of the grammar: a validator holding its own vocabulary would
+// eventually refuse a corpus that runs.
+
+/** Any valid clock answers the same yes/no. What varies with the clock is the
+ *  VALUE a name resolves to, never whether it resolves at all. */
+const PROBE = clockOf({ run: "probe", now: 0 });
+
+/** Does `token()` resolve this name from the clock alone, with no `vars`? */
+export const builtin = (name) => token(name, PROBE, {}) !== undefined;
+
+/** Every `{{name}}` in a value, at any depth, keys included — the same walk
+ *  `subst` makes, collecting the names instead of replacing them. */
+export function refs(v, out = []) {
+  if (typeof v === "string") { for (const m of v.matchAll(TOKEN)) out.push(m[1]); return out; }
+  if (Array.isArray(v)) { for (const x of v) refs(x, out); return out; }
+  if (v && typeof v === "object") for (const [k, val] of Object.entries(v)) { refs(k, out); refs(val, out); }
+  return out;
+}

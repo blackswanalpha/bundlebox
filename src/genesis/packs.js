@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as bridge from "../bridge/index.js";
+import * as corpus from "../cookbook/corpus.js";
 import * as episodes from "../buckmaster/episodes.js";
 import { OUT, rel, abs } from "../core/paths.js";
 import { readJson, writeJson } from "../core/config.js";
@@ -25,10 +26,23 @@ import { PACKS, world, plan } from "./world.js";
  *  surface costs one priming instead of four. The acceptance is `bb cookbook
  *  check`, which is free and refuses anything that asserts nothing — so a pack
  *  cannot come back green having written empty scenarios. */
-export function packText(id, specs, { corpusId, w }) {
+export function packText(id, specs, { corpusId, w, persona = {} }) {
   const surface = specs[0].surface || "(none)";
   const sfc = (w.surfaces || []).find((s) => s.id === surface);
   const dir = `.bundlebox/cookbook/${corpusId}/scenarios`;
+  // The built-in half is the same in every pack; the other half is this
+  // corpus's, and naming it is the difference between a brief that lists what
+  // resolves and one that lists what a DIFFERENT corpus happened to define.
+  // `bb cookbook check` refuses a token nothing defines, so an example var the
+  // persona does not carry is a refusal the far side cannot diagnose.
+  const pv = Object.keys(persona.vars || {});
+  const ps = (persona.setup || []).flatMap((st) => Object.keys((st && st.save) || {}));
+  const defined = [
+    "`{{base}}`, always injected — the base the board actually ran against",
+    pv.length ? `${pv.map((k) => `\`{{${k}}}\``).join(" ")} from \`persona.json\` vars` : "",
+    ps.length ? `${ps.map((k) => `\`{{${k}}}\``).join(" ")} saved by the persona's \`setup\`` : "",
+    "`{{anything_saved}}` from an earlier `save` in the SAME scenario",
+  ].filter(Boolean).join(" · ");
   const L = [
     `# Write ${specs.length} scenario${specs.length > 1 ? "s" : ""} for \`${surface}\``, "",
     `Everything below was derived locally and costs nothing to restate. Do not re-derive it, do not search for it, and do not read the whole tree: what you need is here.`, "",
@@ -47,7 +61,8 @@ export function packText(id, specs, { corpusId, w }) {
     '{"name": "STATIC: …", "static": {"file": "src/x.js", "contains": "CONST = 24"}}',
     "```", "",
     "**Expectation keys** (anything else is refused, nothing else is implemented): `status` `status_in` `max_ms` `json` `json_not` `json_in` `json_type` `json_present` `json_absent` `json_len_at_least` `json_len_at_most` `json_gte` `json_lte` `json_matches` `each` `contains` `not_both` — and for `run`: `rc` `stdout_contains` `stderr_contains`.", "",
-    "**Substitution tokens:** `{{+2d}}` `{{-1d}}` (a date) · `{{now+90m}}` `{{now-3d}}` (an instant) · `{{localdate}}` `{{localday+7h}}` (the persona's clock) · `{{run}}` `{{rand}}` `{{tenant}}` · `{{anything_saved}}` from an earlier `save` in the SAME scenario. A string that is exactly one token keeps that value's TYPE.", "",
+    "**Substitution tokens, built in** (these always resolve): `{{now}}` `{{today}}` `{{epoch}}` (this instant) · `{{+2d}}` `{{-1d}}` (a date) · `{{now+90m}}` `{{now-3d}}` (an instant) · `{{localdate}}` `{{localdate-1d}}` `{{localday+7h}}` (the persona's clock; `localday` is the NEXT local midnight plus the offset, in UTC) · `{{timezone}}` `{{tzoffset}}` · `{{run}}` `{{rand}}` `{{rand:16}}`. An offset carries its unit — `s` `m` `h` `d` `w` — so `{{+90}}` resolves to nothing rather than to seconds. A string that is exactly one token keeps that value's TYPE.", "",
+    `**Substitution tokens this corpus defines** (there are no others — the acceptance refuses a name nothing in scope defines): ${defined}.`, "",
     "## The rules this surface states, quoted from the document", "",
   ];
   const cited = new Map();
@@ -75,7 +90,7 @@ export function packText(id, specs, { corpusId, w }) {
     "5. Do not edit anything outside `" + dir + "`.", "",
     "## Done when", "",
     "```bash", `bb cookbook check --persona ${corpusId}`, "```", "",
-    "That is free, needs no server, and refuses a scenario that asserts nothing, an unknown surface, an unimplemented expectation key and a duplicate id. Run it; report what it printed.", "");
+    "That is free, needs no server, and refuses a scenario that asserts nothing, an unknown surface, an unimplemented expectation key, a duplicate id and a `{{token}}` nothing in scope defines. Run it; report what it printed.", "");
   return L.join("\n");
 }
 
@@ -97,7 +112,7 @@ export function pack(id, { corpusId = "", limit = 40, batch = 4, max = 0 } = {})
     for (let i = 0; i < all.length; i += batch) {
       if (max && packs.length >= max) break;
       const specs = all.slice(i, i + batch);
-      const text = packText(id, specs, { corpusId: cid, w });
+      const text = packText(id, specs, { corpusId: cid, w, persona: (corpus.load(cid) || {}).persona || {} });
       const file = path.join(dir, `${slug(surface) || "none"}-${String(Math.floor(i / batch) + 1).padStart(2, "0")}.md`);
       fs.writeFileSync(file, text);
       packs.push({ surface, specs: specs.map((s) => s.capability), tier: specs[0].tier, file: rel(file),

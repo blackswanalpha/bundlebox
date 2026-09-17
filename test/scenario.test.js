@@ -126,6 +126,30 @@ test("check refuses a scenario that asserts nothing, an unknown surface, a dupli
   assert.match(joined, /is not implemented/);
 });
 
+test("check refuses a token nothing in scope defines, and keeps the three that do", () => {
+  writeCorpus("tokens", [
+    { id: "typo", surface: "items", steps: [{ name: "a", do: "GET /items/{{tenatn}}", expect: { status: 200 } }] },
+    { id: "unit", surface: "items", steps: [{ name: "b", do: "GET /at/{{+90}}", expect: { status: 200 } }] },
+    { id: "order", surface: "items", steps: [
+      { name: "c", do: "GET /a/{{item}}", expect: { status: 200 } },
+      { name: "d", do: "POST /b", expect: { status: 201 }, save: { item: "id" } },
+    ] },
+    { id: "legal", surface: "items", steps: [
+      { name: "e", do: "POST /b", body: { when: "{{+2d}}", who: "{{tenant}}" }, expect: { status: 201 }, save: { item: "id" } },
+      { name: "f", do: "GET /b/{{item}}", headers: { "X-Run": "{{run}}" }, expect: { status: 200, json: { seat: "{{seat}}" } } },
+    ] },
+  ], { vars: { tenant: "acme" }, setup: [{ name: "seed", do: "POST /seed", expect: { status: 201 }, save: { seat: "id" } }] });
+  const r = corpus.check(corpus.load("tokens"));
+  assert.equal(r.ok, false);
+  const joined = r.errors.join("\n");
+  assert.match(joined, /\{\{tenatn\}\}/);                 // a typo
+  assert.match(joined, /\{\{\+90\}\}/);                    // an offset with no unit
+  assert.match(joined, /\{\{item\}\}/);                     // saved by a LATER step in the same scenario
+  // and nothing else: a persona var, a setup save, an earlier save and four
+  // built-ins all resolve without a server.
+  assert.equal(joined.match(/resolves to nothing/g).length, 3);
+});
+
 test("a corpus with no base is refused rather than run against a guess", async () => {
   writeCorpus("nobase", [{ id: "ok", surface: "items", severity: "low", rule: ["x"], steps: [{ name: "a", do: "GET /health", expect: { status: 200 } }] }]);
   const cookbook = await import("../src/cookbook/index.js");
