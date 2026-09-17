@@ -1,11 +1,11 @@
 {
  "id": "cc-routes",
- "surface": "the-command-centre",
+ "surface": "the-console",
  "severity": "high",
- "title": "the command centre serves exactly the routes it documents, and no more",
+ "title": "the console serves exactly the routes it documents, and no more",
  "question": "do the four documented routes answer, and is there really no write route?",
  "rule": [
-  "README: the command centre binds to loopback, has no write route, and nothing on it calls a model.",
+  "README: the console binds to loopback, has no write route, and nothing on it calls a model.",
   "Routes: GET / , GET /health , GET /api/state , GET /api/bench"
  ],
  "steps": [
@@ -24,7 +24,7 @@
     "status": 200,
     "json": {
      "ok": true,
-     "service": "bundlebox-commandcenter"
+     "service": "bundlebox-console"
     },
     "json_present": [
      "version"

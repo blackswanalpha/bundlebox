@@ -1,4 +1,4 @@
-// commandcenter/style.js — the page's one stylesheet.
+// console/style.js — the page's one stylesheet.
 //
 // Separate from the markup and the client script because these are three
 // different kinds of decision — how it looks, what it computes, what it is —

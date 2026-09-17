@@ -1,4 +1,4 @@
-// commandcenter/charts.js — the drawing half of the page: the savings cards, the
+// console/charts.js — the drawing half of the page: the savings cards, the
 // per-task bars, the trend line, the pipeline strip and the window meter.
 //
 // Inline SVG and nothing else, for the same reason the rest of the box has no

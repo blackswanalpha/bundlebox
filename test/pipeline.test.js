@@ -149,7 +149,7 @@ test("built-in gears load, user gears.json replaces by name, skip_if_fresh stage
   assert.equal(gears.intake.stages.length, 1);
   // `watch` is last, and it used to be absent: the cron tick folded the ledger
   // and rebuilt nothing, so the one page this workspace has showed the state of
-  // whenever somebody last ran `bb commandcenter build` by hand.
+  // whenever somebody last ran `bb console build` by hand.
   assert.deepEqual(gears.factory.chain.map((c) => c.gear), ["intake", "orient", "measure", "buckmaster", "watch"]);
   for (const g of Object.values(gears)) for (const s of g.stages) if (s.skip_if_fresh) assert.equal(typeof s.inputs, "function", `${g.name}/${s.name}`);
   fs.unlinkSync(path.join(root, ".bundlebox", "gears.json"));

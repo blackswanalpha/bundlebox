@@ -2,10 +2,10 @@
  "id": "measured-page",
  "surface": "measured-vs-estimated",
  "severity": "medium",
- "title": "the command centre answers, and labels the measured half",
+ "title": "the console answers, and labels the measured half",
  "question": "does the running dashboard serve state, and does that state carry its own label?",
  "rule": [
-  "The command centre is read-only, on loopback, and nothing on the page calls a model."
+  "The console is read-only, on loopback, and nothing on the page calls a model."
  ],
  "steps": [
   {
@@ -15,7 +15,7 @@
     "status": 200,
     "json": {
      "ok": true,
-     "service": "bundlebox-commandcenter"
+     "service": "bundlebox-console"
     },
     "max_ms": 2000
    }

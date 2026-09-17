@@ -1,4 +1,4 @@
-// commandcenter/brand.js — the mark, at the two sizes a page needs it.
+// console/brand.js — the mark, at the two sizes a page needs it.
 //
 // The full mark in `assets/logo.svg` is built for a 512px tile: a woven field,
 // four gradients, a rim light. None of that survives being drawn at 24px in a
@@ -12,7 +12,7 @@
 // colour from `currentColor` so the mark is correct in either theme without a
 // second copy.
 //
-// The favicon is a data URI rather than a file because the command centre has
+// The favicon is a data URI rather than a file because the console has
 // two delivery modes — a server and a single self-contained HTML file — and a
 // `<link href="/favicon.svg">` is a blank tab in the second one.
 

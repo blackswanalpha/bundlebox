@@ -83,7 +83,7 @@ export function titles({ refresh = false, write = true } = {}) {
     added += 1;
   }
   // `write:false` exists for the one caller that must not touch the disk: the
-  // command centre serves this over HTTP and is declared read-only. A read
+  // console serves this over HTTP and is declared read-only. A read
   // route that writes a cache is still a write route, and the next person to
   // reason about what the dashboard can do would be reasoning from a false
   // premise.

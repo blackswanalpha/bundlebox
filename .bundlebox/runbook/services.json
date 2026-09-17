@@ -1,8 +1,8 @@
 [
   {
-    "id": "commandcenter",
+    "id": "console",
     "group": "all",
-    "cmd": "node bin/bb.js commandcenter serve --port 7788",
+    "cmd": "node bin/bb.js console serve --port 7788",
     "cwd": ".",
     "port": 7788,
     "health": "http://127.0.0.1:7788/health",

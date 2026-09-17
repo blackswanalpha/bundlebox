@@ -1,4 +1,4 @@
-// commandcenter/page.js — the document: which sections exist, in what order,
+// console/page.js — the document: which sections exist, in what order,
 // and what each one is for.
 //
 // The style and the client script live beside it (style.js, script.js); this
@@ -31,14 +31,14 @@ export function html(state, { live = false } = {}) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>bundlebox command centre</title>
+<title>bundlebox console</title>
 <link rel="icon" href="${faviconHref()}">
 <link rel="apple-touch-icon" href="${faviconHref()}">
 <meta name="color-scheme" content="light dark">
 <style>${style}</style>
 </head><body>
 <header class="bar"><div class="wrap">
-  <a class="brand" href="/" aria-label="bundlebox command centre">${mark(22)}<b>bundlebox</b> <span id="ws"></span></a>
+  <a class="brand" href="/" aria-label="bundlebox console">${mark(22)}<b>bundlebox</b> <span id="ws"></span></a>
   <div class="spacer"></div>
   <div class="link" id="link" title="connection to the workspace"><i></i><span>connecting</span></div>
   <div class="meta" id="stamp"></div>

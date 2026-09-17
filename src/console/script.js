@@ -1,8 +1,8 @@
-// commandcenter/script.js — everything the page computes in the browser.
+// console/script.js — everything the page computes in the browser.
 //
 // It renders from a state object and nothing else, so the live server and the
-// static build share one code path: `bb commandcenter build` embeds the state
-// and opens with no server; `bb commandcenter` serves the same page and is
+// static build share one code path: `bb console build` embeds the state
+// and opens with no server; `bb console` serves the same page and is
 // pushed to. A second renderer would be a second opinion about what the numbers
 // mean, and the two would drift.
 //
@@ -35,7 +35,7 @@ const rows = (arr,cols,empty) => arr.length
 
 const render = `
 function render(s){
-  document.title = s.workspace+" — bundlebox command centre";
+  document.title = s.workspace+" — bundlebox console";
   $("#ws").textContent = s.workspace;
   $("#stamp").textContent = "v"+s.version+" · "+when(s.at);
   $("#stamp").title = s.at;

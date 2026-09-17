@@ -156,7 +156,7 @@ export const DEFAULTS = {
     // changed once and stayed.
     turntables: { window: 10 },
   },
-  commandcenter: { port: 7788, host: "127.0.0.1" },
+  console: { port: 7788, host: "127.0.0.1" },
   wire: {
     // Which agents `bb wire` installs into. auto = every one detected on this box.
     agents: ["auto"],

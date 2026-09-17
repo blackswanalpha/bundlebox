@@ -54,7 +54,7 @@ export const ROWS = [
   { id: "memory", what: "the agent's memory, compiled and swept of claims that no longer resolve", path: () => path.join(OUT, "janitor"), verb: "bb janitor compile", gear: "",
     by: "compiled by the SessionEnd hook, or by `bb janitor compile` — it writes files a person wrote, so no unattended tick gets to run it" },
   { id: "automation", what: "the habits this workspace has, as scripts, snippets, boilerplate and completions", path: () => path.join(OUT, "lathe", "INDEX.md"), verb: "bb lathe learn && bb lathe build --apply", gear: "buckmaster" },
-  { id: "commandcenter", what: "one page for this workspace: the pipeline, the window, every session and what it saved", path: () => path.join(OUT, "commandcenter", "index.html"), verb: "bb commandcenter build", gear: "watch" },
+  { id: "console", what: "one page for this workspace: the pipeline, the window, every session and what it saved", path: () => path.join(OUT, "console", "index.html"), verb: "bb console build", gear: "watch" },
 ];
 
 const stat = (p) => { try { return fs.statSync(p); } catch { return null; } };

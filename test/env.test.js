@@ -28,11 +28,11 @@ test("a bare workspace reports every artefact missing, and names the verb for ea
   }
 });
 
-test("commandcenter is one of the artefacts a complete environment holds", () => {
+test("console is one of the artefacts a complete environment holds", () => {
   const ids = env.ROWS.map((r) => r.id);
-  assert.ok(ids.includes("commandcenter"), ids.join(","));
-  const cc = env.ROWS.find((r) => r.id === "commandcenter");
-  assert.match(cc.path(), /\.bundlebox[/\\]out[/\\]commandcenter[/\\]index\.html$/);
+  assert.ok(ids.includes("console"), ids.join(","));
+  const cc = env.ROWS.find((r) => r.id === "console");
+  assert.match(cc.path(), /\.bundlebox[/\\]out[/\\]console[/\\]index\.html$/);
   assert.equal(cc.gear, "watch", "the gear that rebuilds it must be named, or a missing page has no fix");
 });
 
@@ -69,7 +69,7 @@ test("the cron tick rebuilds the page, which it used to leave stale", async () =
   const factory = GEARS.find((g) => g.name === "factory");
   assert.ok(factory.chain.map((c) => c.gear).includes("watch"), "the tick folded the ledger and rebuilt nothing");
   const watch = GEARS.find((g) => g.name === "watch");
-  assert.ok(watch.stages.some((s) => s.verb === "commandcenter"), "watch is the gear that rebuilds the page");
+  assert.ok(watch.stages.some((s) => s.verb === "console"), "watch is the gear that rebuilds the page");
 });
 
 test("nothing on the unattended tick can spend", async () => {

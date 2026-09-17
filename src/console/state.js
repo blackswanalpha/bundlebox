@@ -1,4 +1,4 @@
-// state.js — everything the command centre shows, assembled once.
+// state.js — everything the console shows, assembled once.
 //
 // One function, because the page, the JSON endpoint and the static build must
 // never disagree about what is true. Every number here is already measured
@@ -48,7 +48,7 @@ export function benchState() {
 
 /** Everything the page shows.
  *
- *  `write` is not a detail: the command centre serves this over HTTP and is
+ *  `write` is not a detail: the console serves this over HTTP and is
  *  declared read-only, so the one derived cache underneath it (session titles)
  *  must be readable without being written back. A read route that writes is
  *  still a write route. */
