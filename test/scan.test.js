@@ -141,3 +141,31 @@ test("a finding that comes back is open again and carries no stale closure", asy
   assert.equal(again[0].status, "open");
   assert.equal(again[0].closed_by, undefined);
 });
+
+// ── backfilling a closure git can still prove ───────────────────────────────
+// The tempting version of this is wrong: "no commit touched the path" does not
+// mean nobody fixed it, because this workspace edits for hours before it
+// commits. These pin the refusal as hard as the answers.
+
+test("provenClosure answers only what git can actually see", async () => {
+  const store = await import("../src/core/store.js");
+  const row = { path: "src/a.js", last_seen: "2026-01-01T00:00:00Z", resolved_at: "2026-01-01T00:30:00Z" };
+  const P = (opts) => store.provenClosure(row, opts);
+
+  // A path that is gone is gone, whatever git saw.
+  assert.equal(P({ exists: () => false, log: () => "" }), "vanished");
+  // A commit in the window touching the path is the positive label.
+  assert.equal(P({ exists: () => true, log: (a, b, f) => (f ? "abc" : "abc def") }), "acted_on");
+  // Commits happened and none touched it: something was being done, not this.
+  assert.equal(P({ exists: () => true, log: (a, b, f) => (f ? "" : "abc def") }), "unchanged");
+  // No commits at all in the window — git cannot see a working tree, so this
+  // is the case it cannot settle. Calling it `unchanged` would invent a label.
+  assert.equal(P({ exists: () => true, log: () => "" }), null);
+});
+
+test("a finding with no window is left alone rather than guessed at", async () => {
+  const store = await import("../src/core/store.js");
+  const opts = { exists: () => true, log: () => "abc" };
+  assert.equal(store.provenClosure({ path: "src/a.js" }, opts), null);
+  assert.equal(store.provenClosure({ last_seen: "x", resolved_at: "y" }, opts), null);
+});
