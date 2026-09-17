@@ -31,6 +31,17 @@ THRESHOLDS = {
 }
 STATE_RED = ("failed", "error")
 
+# The shipped ranking weights. Named because `calibrate()` below searches them
+# against recorded boards and `--apply` writes a fitted set beside them: a
+# coefficient that only exists inside the expression cannot be fitted, reported
+# or argued with.
+WEIGHTS = {"p_red": 2.0, "flip": 1.0, "staleness": 0.8, "cost": THRESHOLDS["cost_weight"]}
+# Below this many boards that actually contain a red, a fit is a coincidence.
+MIN_BOARDS = 4
+# What one point of recall is worth in corpus-steps. Printed with every score,
+# never hidden: a replay whose trade-off nobody can see is a number to distrust.
+REPLAY_COST = 0.5
+
 
 def _epoch(ts: str) -> float:
     if not ts:
@@ -54,7 +65,8 @@ def history(boards: list) -> dict:
     return out
 
 
-def select(scenarios: list, boards: list, budget_steps: int = 0, now: str = "") -> dict:
+def select(scenarios: list, boards: list, budget_steps: int = 0, now: str = "", weights: dict = None) -> dict:
+    w = dict(WEIGHTS, **(weights or {}))
     hist = history(boards)
     now_s = _epoch(now) or time.time()
     ranked = []
@@ -71,15 +83,16 @@ def select(scenarios: list, boards: list, budget_steps: int = 0, now: str = "") 
         p_red = (reds + 1.0) / (len(runs) + 2.0)
         flip_rate = flips / max(len(runs) - 1, 1) if len(runs) > 1 else 0.0
         staleness = 1.0 if age_days is None else min(age_days / THRESHOLDS["stale_days"], 2.0)
-        value = sev * (2.0 * p_red + 1.0 * flip_rate + 0.8 * staleness) - THRESHOLDS["cost_weight"] * steps
+        value = sev * (w["p_red"] * p_red + w["flip"] * flip_rate + w["staleness"] * staleness) - w["cost"] * steps
         ranked.append({
             "id": sid, "surface": sc.get("surface", ""), "severity": sc.get("severity", ""),
             "steps": steps, "runs": len(runs), "reds": reds, "flips": flips,
             "last_state": last["state"] if last else "never run",
             "age_days": None if age_days is None else round(age_days, 2),
             "p_red": round(p_red, 3), "value": round(value, 3),
-            "why": "severity %s × (2×p_red %.2f + flips %.2f + staleness %.2f) − %d steps"
-                   % (sc.get("severity", "?"), p_red, flip_rate, staleness, steps),
+            "why": "severity %s × (%g×p_red %.2f + %g×flips %.2f + %g×staleness %.2f) − %g×%d steps"
+                   % (sc.get("severity", "?"), w["p_red"], p_red, w["flip"], flip_rate,
+                      w["staleness"], staleness, w["cost"], steps),
         })
     ranked.sort(key=lambda r: (-r["value"], r["id"]))
     selected, spent = [], 0
@@ -92,7 +105,8 @@ def select(scenarios: list, boards: list, budget_steps: int = 0, now: str = "") 
             break
     return {"ranked": ranked, "selected": selected if budget_steps else [r["id"] for r in ranked],
             "budget_steps": budget_steps, "steps_selected": spent,
-            "basis": "%d board(s) of history" % len(boards) if boards else "no history: every scenario is scored as unseen"}
+            "basis": "%d board(s) of history" % len(boards) if boards else "no history: every scenario is scored as unseen",
+            "weights": w}
 
 
 def _counts(steps: list) -> dict:
@@ -162,3 +176,110 @@ def verdicts(board: dict, thresholds: dict = None, previous: dict = None) -> dic
     return {"findings": findings, "fired": fired, "thresholds": t,
             "surfaces": {k: _counts(v["steps"]) for k, v in sorted(by_surface.items())},
             "totals": _counts([st for sc in scenarios for st in sc.get("steps", [])])}
+
+
+# ── the replay simulator, and the experiment that reads it ──────────────────
+#
+# A stored board records the realised state of every scenario in the corpus. So
+# the set an ALTERNATIVE selector would have run is scoreable without running
+# anything: the outcomes are already on disk. That makes a board a replay world,
+# a weight vector a policy, and `calibrate()` an off-policy search in which
+# every number comes from a run that already happened. Nothing here makes a
+# request, spawns a process or spends a token.
+#
+# Four rules keep it from being a number that flatters itself:
+#
+#   1. A board is only ever scored by a policy fitted WITHOUT it. `calibrate()`
+#      walks boards in recorded order and each score uses strictly earlier ones.
+#   2. The shipped weights are always candidate zero, so the vector that comes
+#      back is never worse than today's on the same held-out boards.
+#   3. A selection is scored as a SET, never as an order. Path order is
+#      execution order and scenarios in a corpus share their setup, so a
+#      reordering is not something this history can price — and pricing it
+#      anyway is how a replay starts lying about what it knows.
+#   4. A board with nothing red carries no signal about a selector that is
+#      trying to find red. Those are excluded from the mean, not scored as zero.
+
+
+def replay(scenarios: list, boards: list, board: dict, weights: dict = None,
+           budget_steps: int = 0, cost_penalty: float = REPLAY_COST) -> dict:
+    """One replay: what the policy would have chosen knowing only `boards`,
+    scored against what `board` actually recorded. Executes nothing."""
+    states = {sc.get("id", ""): sc.get("state", "") for sc in board.get("scenarios", [])}
+    steps_of = {sc.get("id", ""): len(sc.get("steps") or []) for sc in scenarios}
+    red = {sid for sid, st in states.items() if st in STATE_RED}
+    total = sum(steps_of.get(sid, 0) for sid in states) or 1
+    at = board.get("at") or board.get("stamp") or ""
+    r = select(scenarios, boards, budget_steps, at, weights)
+    chosen = [sid for sid in r["selected"] if sid in states]
+    spent = sum(steps_of.get(sid, 0) for sid in chosen)
+    caught = len(red & set(chosen))
+    recall = (caught / len(red)) if red else None
+    share = spent / total
+    return {
+        "at": at, "scored": recall is not None,
+        "red": len(red), "caught": caught, "selected": len(chosen), "of": len(states),
+        "steps": spent, "steps_total": total, "cost_share": round(share, 4),
+        "recall": None if recall is None else round(recall, 4),
+        "score": None if recall is None else round(recall - cost_penalty * share, 4),
+        "why": "recall %s − %g×cost %.2f" % ("n/a" if recall is None else "%.2f" % recall, cost_penalty, share),
+    }
+
+
+def _grid() -> list:
+    """The candidate weight vectors, deterministic and small. Only the four
+    terms that shape the ranking move; SEVERITY_WEIGHT and stale_days stay put
+    because they say what the corpus MEANS, not how hard to lean on it."""
+    out = []
+    for pr in (1.0, 2.0, 3.0, 4.0):
+        for fl in (0.0, 1.0, 2.0):
+            for st in (0.0, 0.8, 1.6):
+                for co in (0.0, 0.02, 0.05):
+                    out.append({"p_red": pr, "flip": fl, "staleness": st, "cost": co})
+    return out
+
+
+def calibrate(scenarios: list, boards: list, budget_steps: int = 0,
+              cost_penalty: float = REPLAY_COST, min_boards: int = MIN_BOARDS) -> dict:
+    """Search the weights against the recorded boards, out-of-sample. Returns
+    the shipped vector unchanged when the history is too thin to say anything —
+    a fitted number from four boards is a number about four boards."""
+    gradable = [i for i, b in enumerate(boards)
+                if i > 0 and any(sc.get("state") in STATE_RED for sc in b.get("scenarios", []))]
+    shipped = dict(WEIGHTS)
+    if len(gradable) < min_boards:
+        return {"ok": False, "weights": shipped, "boards": len(boards), "scorable": len(gradable),
+                "need": min_boards, "cost_penalty": cost_penalty,
+                "why": "%d board(s) can be scored out-of-sample (need %d): a board with nothing red says "
+                       "nothing about a selector looking for red, and the first board has no history behind it"
+                       % (len(gradable), min_boards)}
+
+    def mean_score(w):
+        xs = [replay(scenarios, boards[:i], boards[i], w, budget_steps, cost_penalty)["score"] for i in gradable]
+        xs = [x for x in xs if x is not None]
+        return (sum(xs) / len(xs)) if xs else None
+
+    rows = []
+    for w in [shipped] + [c for c in _grid() if c != shipped]:
+        sc = mean_score(w)
+        if sc is not None:
+            rows.append({"weights": w, "score": round(sc, 4)})
+    if not rows:
+        return {"ok": False, "weights": shipped, "boards": len(boards), "scorable": len(gradable),
+                "need": min_boards, "cost_penalty": cost_penalty,
+                "why": "no board produced a score; every one of them is either first or entirely green"}
+    before = rows[0]["score"]
+    # Ties go to the shipped vector: it is rows[0] and the sort is stable, so a
+    # candidate has to actually WIN to be applied, not merely match.
+    best = max(rows, key=lambda r: r["score"])
+    ranked = sorted(rows, key=lambda r: -r["score"])[:8]
+    return {"ok": True, "weights": best["weights"], "shipped": shipped,
+            "score_before": before, "score_after": best["score"],
+            "changed": best["weights"] != shipped,
+            "boards": len(boards), "scored": len(gradable), "candidates": len(rows),
+            "cost_penalty": cost_penalty, "budget_steps": budget_steps,
+            "ranked": ranked,
+            "per_board": [replay(scenarios, boards[:i], boards[i], best["weights"], budget_steps, cost_penalty)
+                          for i in gradable],
+            "basis": "%d candidate vector(s) over %d out-of-sample board(s); score = mean(recall − %g×cost share)"
+                     % (len(rows), len(gradable), cost_penalty)}
