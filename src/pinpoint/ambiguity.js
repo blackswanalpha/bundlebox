@@ -66,12 +66,10 @@ export function ambiguity(b) {
  *  guesses at what it does not know produces work about the guess. */
 export function lines(a) {
   if (!a) return ["- not scored"];
-  if (!a.reasons.length) return ["- nothing unresolved: the scope is located, the regions are quoted, there is evidence on file and a gate that closes it."];
+  if (!a.reasons.length) return ["- nothing unresolved"];
   return [
-    `Ambiguity ${a.score} (${a.band}). These are stated, not resolved — do not fill one in by guessing:`,
+    `Ambiguity ${a.score} (${a.band}). Do not fill one in by guessing; if one blocks you, say which and stop.`,
     "",
     ...a.reasons.map((r) => `- **${r.id}** — ${r.why}`),
-    "",
-    "If one of these is what blocks you, say which, and stop. A question costs one turn; a wrong assumption costs the review that catches it.",
   ];
 }

@@ -58,6 +58,26 @@ test("a smaller read budget makes the bare arm smaller and leaves the packed arm
   assert.equal(tight.totals.packed, wide.totals.packed, "the packed arm must not depend on the bare arm's budget");
 });
 
+test("the bare arm greps and reads ranges: every read is a range, never the file, and the search output is counted", async () => {
+  const arms = await import("../src/bench/arms.js");
+  const estimate = await import("../src/tokens/estimate.js");
+  const a = arms.bare("reconcileLedger throws no id instead of refusing the entry", { cap: 4 });
+  assert.equal(a.read, 4);
+  assert.equal(a.range, arms.BARE_RANGE);
+  assert.ok(a.search > 0, "the search output a session reads is part of what it paid");
+  assert.ok(a.grep_lines <= arms.BARE_GREP_LINES);
+  for (const f of a.files) {
+    assert.ok(f.from >= 1 && f.to >= f.from && f.to - f.from + 1 <= arms.BARE_RANGE, `${f.file}: ${f.from}-${f.to}`);
+    assert.ok(f.tokens <= estimate.file(path.join(root, f.file)), `${f.file}: a range must not cost more than the file`);
+  }
+  assert.equal(a.tokens, a.payload + a.search + a.statement);
+  // An explicit file with no hit is still opened, from the top.
+  const e = arms.bare("zzqqx wrrbbl", { files: ["src/mod0.js"], cap: 4 });
+  assert.equal(e.read, 1);
+  assert.equal(e.files[0].from, 1);
+  assert.equal(e.search, 0);
+});
+
 test("losses are counted, not dropped", async () => {
   const suite = await import("../src/bench/suite.js");
   const bench = await import("../src/bench/index.js");

@@ -76,12 +76,12 @@ async function evidenceSection(problem, files) {
         const b = await pp.build(problem, { files });
         const body = typeof pp.prompt === "function" ? pp.prompt(b) : (b && (b.prompt || b.body)) || "";
         if (body) {
-          // pinpoint opens with the same problem as an H1; two identical titles read as generated.
-          const lines = String(body).split("\n");
-          if (lines[0] && lines[0].replace(/^#+\s*/, "").trim() === problem.trim()) lines.shift();
+          // pinpoint carries the same problem as an H1, after its cached
+          // preamble; two identical titles read as generated, so it goes.
+          const lines = String(body).split("\n").filter((l) => !(/^#\s/.test(l) && l.replace(/^#+\s*/, "").trim() === problem.trim()));
           // Nested under "## Local evidence": pinpoint's own H1/H2 become H3 so
           // the brief keeps exactly five top-level sections.
-          return { text: lines.map((l) => (/^#{1,2}\s/.test(l) ? `#${l}` : l)).join("\n").trim(), via: "pinpoint" };
+          return { text: lines.map((l) => l.replace(/^#{1,2}\s/, "### ")).join("\n").trim(), via: "pinpoint" };
         }
       }
     } catch (e) { warn(`pinpoint failed (${e.message}); falling back to findings`); }

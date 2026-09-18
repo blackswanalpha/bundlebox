@@ -119,7 +119,7 @@ test("genesis derives, seeds a corpus, and writes no scenarios", (t) => {
   assert.equal(c.scenarios.length, 0, "seeding must not invent scenarios — that is the judgement half");
 });
 
-test("a pack carries the derived half, the acceptance, and what it will not accept", (t) => {
+test("a pack carries the derived half, the acceptance, and what it will not accept", async (t) => {
   if (skipIfNoPython(t)) return;
   const r = genesis.pack("orders", { batch: 4 });
   assert.equal(r.rc, 0, r.why);
@@ -130,6 +130,14 @@ test("a pack carries the derived half, the acceptance, and what it will not acce
   assert.match(text, /json_len_at_least/, "the expectation vocabulary must be in the brief");
   assert.match(text, /\{\{localdate\}\}/, "the substitution tokens must be in the brief");
   assert.ok(r.packs.every((p) => p.est_tokens > 0 && p.est_tokens < 6000), "a pack must stay small enough to be worth sending");
+  // The order is the cache: the half that is the same in every pack leads, and
+  // the surface name is the first thing that varies. Measured before the
+  // reorder, six packs were 90% identical and none of it could be a prefix.
+  const { PREAMBLE } = await import("../src/wire/brief.js");
+  assert.ok(text.startsWith(PREAMBLE + "\n"), "a pack opens with the preamble every bundlebox brief shares");
+  assert.ok(text.indexOf("What this brief does not accept") < text.indexOf("\n# Write "), "the fixed half precedes the surface title");
+  assert.ok(text.indexOf("## Rules for this work") < text.indexOf("\n# Write "));
+  assert.doesNotMatch(text.slice(0, text.indexOf("\n# Write ")), /orders/, "nothing corpus-specific may sit in the fixed prefix");
 });
 
 test("selection ranks by expected information and prints every term", (t) => {

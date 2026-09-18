@@ -55,6 +55,32 @@ export const QUOTE_CHARS = 2600;
 /** Rows of symbol-table answer one denied search gets back. */
 export const SEARCH_ROWS = 14;
 
+// ── the preamble every brief opens with ─────────────────────────────────────
+//
+// One string, byte-identical across tasks and across surfaces, emitted FIRST.
+// Measured on 2026-09-18: two pinpoint briefs for different tasks shared 1,594
+// of their 3,350 characters, and every shared byte sat AFTER the task-specific
+// sections, so no run could ever cache them. Two genesis packs for unrelated
+// surfaces were 90% identical. A prefix that does not change bills at the
+// cache-read rate; the same bytes after the varying part are prefilled again
+// on every run and land on time-to-first-token.
+//
+// Imperative, with the reasons left out. The packed arm emitted 34% more output
+// per turn than the bare arm, and the lines it was acknowledging were the ones
+// that explained themselves. The reasons live here, where nobody is billed for
+// them.
+export const PREAMBLE = [
+  "Derived locally from artefacts on disk at 0 model tokens. Do not re-derive or search for anything stated here.",
+  "",
+  "- Edit only the files under Scope.",
+  "- Read a region by range, never a file whole.",
+  "- Before reading a file outside Scope, say which and why, in one line.",
+  "- Before the gate, one file's tests is the ceiling.",
+  "- No `git stash`, no `git checkout` on a shared checkout, no `--no-verify`, no commit outside Scope.",
+  "- Do this task only. No cleanup, refactor or docs.",
+  "- Report what changed and why in under 120 words.",
+].join("\n");
+
 // ── the record ──────────────────────────────────────────────────────────────
 //
 // Not the brief: a projection of it. The brief on disk is the document a person
@@ -82,6 +108,9 @@ export function record(b, { sessionId = "", briefPath = "" } = {}) {
     })),
     gates: b.gates || {},
     tables: (b.tables || []).map(String),
+    // The change the brief carries, when the statement spelled one out and it
+    // matched exactly one place. The band names it; the diff stays in the brief.
+    proposals: (b.proposals || []).slice(0, 4).map((p) => ({ file: String(p.file), line: Number(p.line) || 0, from: String(p.from).slice(0, 80), to: String(p.to).slice(0, 80) })),
     // Mutated by the guards, never by the builder: what has already been served
     // or refused under this brief. A duplicate is the cheapest waste to prove.
     seen: { reads: {}, searches: {} },
@@ -222,6 +251,7 @@ export function band(rec) {
   for (const f of rec.scope) L.push(`  ${f}`);
   if (rec.cut.length) L.push(`opening these needs a reason first: ${rec.cut.join(", ")}`);
   if (rec.candidates.length) L.push(`not in scope, use only if the scope does not hold it: ${rec.candidates.slice(0, 6).join(", ")}`);
+  for (const p of rec.proposals || []) L.push("", `proposed change, as a diff in the brief: ${p.file}:${p.line} — \`${p.from}\` → \`${p.to}\`. Apply it, then run the gate.`);
   const g = rec.gates || {};
   if (g.quick || g.full) L.push("", `done when: ${[g.quick, g.full !== g.quick ? g.full : ""].filter(Boolean).join("  /  ")}`);
   L.push("", `full brief (evidence, traps, guidelines, what it does not settle): ${rec.path}`);
