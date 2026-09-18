@@ -37,3 +37,25 @@ test("no module imports a filesystem path without making it a URL first", async 
   }
   assert.deepEqual(bad, [], "wrap the path in pathToFileURL(...).href");
 });
+
+test("the launcher finds node without one on PATH", { skip: process.platform === "win32" ? "POSIX launcher" : false }, () => {
+  // The bug that cost four sessions of accounting: `bin/bb.js` was
+  // `#!/usr/bin/env node`, `env` searches PATH, and the PATH a hook, a cron job
+  // or a systemd unit inherits is not the interactive one. The failure was
+  // `/usr/bin/env: 'node': No such file or directory` on a stderr that hooks
+  // redirect, naming env and node and never bundlebox.
+  const bb = path.join(process.cwd(), "bin/bb");
+  const env = { ...process.env, PATH: "/nonexistent", BB_NODE: process.execPath };
+  const r = spawnSync("/bin/sh", [bb, "--version"], { encoding: "utf8", env, timeout: 60000 });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /\d+\.\d+\.\d+/);
+
+  // With nothing on PATH and no home, it either finds node in a standard prefix
+  // or names itself on the way out — never the silent 127 that hid this bug.
+  // Which of the two depends on the box, so both are accepted and the third
+  // outcome is not.
+  const none = spawnSync("/bin/sh", [bb, "--version"], { encoding: "utf8", timeout: 60000,
+    env: { PATH: "/nonexistent", HOME: "/nonexistent" } });
+  assert.ok(none.status === 0 || (none.status === 127 && /^bb: bundlebox needs node/m.test(none.stderr)),
+    `status ${none.status}: ${none.stderr}`);
+});

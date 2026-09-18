@@ -1,0 +1,73 @@
+#!/bin/sh
+# bb — bundlebox's launcher. Finds a node, execs the CLI with it, and when it
+# cannot find one says so as bundlebox.
+#
+# `#!/usr/bin/env node` was the launcher until a SessionEnd hook lost four
+# sessions of accounting to it. `env` searches PATH, and the PATH a hook, a
+# cron job or a systemd unit inherits is not the one an interactive shell has:
+# on a box where node lives in ~/.local/bin, every unattended call died with
+#
+#     /usr/bin/env: 'node': No such file or directory
+#
+# on a stderr that well-behaved hooks redirect. The message names `env` and
+# `node` and never bundlebox, so the caller saw a silent 127 and kept going. A
+# tool whose selling point is running unattended at 03:00 cannot assume an
+# interactive PATH.
+#
+# So: the interpreter is searched for here, in the places node actually
+# installs, and $BB_NODE overrides the search for a box that keeps it somewhere
+# else. This file is POSIX sh on purpose — the same reason the CLI has no
+# dependencies: whatever is on disk at 03:00 has to be enough to run.
+set -e
+
+# The PATH a hook inherits may be missing more than node: the first version of
+# this file died on `dirname: not found`. Directory names are taken apart with
+# shell expansion instead, and the standard locations are appended to PATH so
+# `readlink` is there — appended, never prepended, so the caller's own node
+# still wins.
+PATH=${PATH:-}:/usr/local/bin:/usr/bin:/bin
+export PATH
+
+# $0 is the symlink `npm install -g` wrote, so the package is at the end of the
+# link chain, not beside the link. No `readlink -f`: it is not POSIX.
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self" 2>/dev/null) || break
+  [ -n "$link" ] || break
+  case $link in
+    /*) self=$link ;;
+    *)  dir=${self%/*}; [ "$dir" = "$self" ] && dir=.; self=$dir/$link ;;
+  esac
+done
+dir=${self%/*}
+[ "$dir" = "$self" ] && dir=.
+entry=$(CDPATH= cd -- "$dir" && pwd -P)/bb.js
+
+# In order: the override, the PATH the caller does have, then the prefixes node
+# installs into — user-local first, because that is the one a minimal PATH
+# misses. nvm and fnm keep a version per directory, so those are globbed last;
+# an unmatched glob expands to itself and fails the -x test.
+found=
+for node in \
+  "$BB_NODE" \
+  "$(command -v node 2>/dev/null)" \
+  "$HOME/.local/bin/node" \
+  "$HOME/.volta/bin/node" \
+  /usr/local/bin/node \
+  /usr/bin/node \
+  /opt/homebrew/bin/node \
+  /snap/bin/node \
+  "$HOME"/.nvm/versions/node/*/bin/node \
+  "$HOME"/.local/share/fnm/node-versions/*/installation/bin/node
+do
+  if [ -n "$node" ] && [ -x "$node" ]; then found=$node; break; fi
+done
+
+if [ -z "$found" ]; then
+  echo "bb: bundlebox needs node (>=20) and found none on PATH or in the usual prefixes." >&2
+  echo "bb: PATH=$PATH" >&2
+  echo "bb: set BB_NODE=/path/to/node, or give this caller a PATH that has node on it." >&2
+  exit 127
+fi
+
+exec "$found" "$entry" "$@"

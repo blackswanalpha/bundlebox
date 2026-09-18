@@ -137,6 +137,24 @@ export function mark(objects, roots = { files: new Set(), at: new Map() }, { at 
   }
 
   const reached = objects.filter((o) => o.reached).length;
+  // The one number in this pass that cannot legitimately be zero. Roots are the
+  // paths the sessions opened; if there are roots and none of them names
+  // anything on the heap, the trace ran against evidence it could not match.
+  // Nothing is promoted, so nothing is ever moved out of the sweep's reach and
+  // the generational half of the design is inert — while `kept` and `retracted`
+  // downstream are produced as if reachability had been consulted. One
+  // workspace reported `0 reached of 1155 from 12 roots, 0 promoted` for weeks
+  // and every compile looked healthy.
+  if (objects.length && rootFiles.size && !reached) {
+    diags.push(diag("error", "mark-reached-nothing",
+      `${rootFiles.size} root${rootFiles.size === 1 ? "" : "s"} reached none of ${objects.length} objects, so nothing was promoted and every object stays sweep-eligible`, null,
+      { source: "mark", roots: rootFiles.size, total: objects.length,
+        fix: "the roots and the objects are naming paths in different shapes — compare `bb janitor heap` sources against the file_path values in this window's transcripts" }));
+  } else if (objects.length && !rootFiles.size) {
+    diags.push(diag("note", "mark-no-roots",
+      `no transcript in the window recorded a path, so reachability had nothing to trace from and all ${objects.length} objects count as unreached`, null,
+      { source: "mark", total: objects.length, fix: "widen --days, or run a session with the hooks installed so a transcript records what was opened" }));
+  }
   return {
     diags,
     inDegree: g.inDegree,

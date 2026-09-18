@@ -117,3 +117,47 @@ test("the transcript directory name is a legal directory name", () => {
   assert.ok(!/[\\:]/.test(slug("C:\\Users\\me\\Documents\\ws")), slug("C:\\Users\\me\\Documents\\ws"));
   assert.equal(slug("/home/me/Documents/my_ws"), "-home-me-Documents-my-ws", "POSIX naming is unchanged");
 });
+
+test("session end refuses an id with no session behind it, and says where it looked", async () => {
+  // The failure that cost four sessions: `bb session end --session <typo>`
+  // wrote a full 974-byte record of zero and exited 0, so a hook passing an id
+  // the harness shaped differently filed a zero row and reported success.
+  const before = session.list().length;
+  const r = await session.end({ sessionId: "zzz-does-not-exist" });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.wrote, []);
+  assert.match(r.line, /zzz-does-not-exist/);
+  assert.match(r.line, /looked in/, "the caller is told which directory was searched");
+  assert.equal(session.list().length, before, "nothing reaches the index");
+  assert.ok(!fs.existsSync(path.join(root, ".bundlebox", "var", "sessions", "zzz-does-not-exist.md")));
+  const ok = await session.end({ sessionId: "s-known" });
+  assert.equal(ok.ok, true, "a session with a transcript still records");
+  assert.equal(ok.wrote.length, 2);
+});
+
+test("a record can be removed without hand-editing the generated index", async () => {
+  const m = await session.measure({ sessionId: "s-unknown" });
+  session.write(m);
+  const md = path.join(root, ".bundlebox", "var", "sessions", "s-unknown.md");
+  assert.ok(fs.existsSync(md));
+  const before = session.list().length;
+  const r = session.remove("s-unknown");
+  assert.equal(r.ok, true);
+  assert.ok(!fs.existsSync(md), "the record goes with its row");
+  assert.equal(session.list().length, before - 1);
+  assert.ok(!session.list().some((x) => x.session === "s-unknown"));
+  assert.equal(session.remove("s-unknown").ok, false, "removing it twice is a refusal, not a second success");
+  assert.equal(session.remove("").ok, false);
+});
+
+test("backfill measures the transcripts that have no record and skips the ones that do", async () => {
+  const first = await session.backfill({});
+  const wrote = first.rows.filter((r) => r.state === "wrote").map((r) => r.session);
+  assert.ok(wrote.includes("s-unknown"), "the one with no record is recovered");
+  assert.ok(first.rows.some((r) => r.session === "s-known" && r.state === "have"), "the one with a record is skipped");
+  const again = await session.backfill({});
+  assert.equal(again.rows.filter((r) => r.state === "wrote").length, 0, "a second pass rewrites nothing");
+  const dry = await session.backfill({ write: false });
+  assert.equal(dry.rows.filter((r) => r.state === "wrote").length, 0);
+  assert.equal((await session.backfill({ since: "not-a-date" })).error !== undefined, true);
+});

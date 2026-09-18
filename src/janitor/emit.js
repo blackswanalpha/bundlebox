@@ -188,7 +188,15 @@ export function rulesText(objects) {
   return L.join("\n");
 }
 
-export function emit({ objects, placed, diags, passes, stats, apply = false, dir = DIR() }) {
+/** Build all four artefacts, and write them only when the caller is applying.
+ *
+ *  `write` defaults to `apply` because the status verb said "read-only" while
+ *  replacing 1.1MB of `out/janitor/` on every bare run — WINDOW.md is the image
+ *  an agent loads, so a command documented as safe was silently swapping the
+ *  artefact another session was reading, and a status check was
+ *  indistinguishable on disk from a deliberate compile. Computing costs nothing
+ *  a status run was not already paying; it is the writing that was undeclared. */
+export function emit({ objects, placed, diags, passes, stats, apply = false, dir = DIR(), write: doWrite = apply }) {
   const files = {};
   const win = windowText(placed, stats);
   const heap = heapText({ objects, placed, diags, passes, stats });
@@ -196,18 +204,20 @@ export function emit({ objects, placed, diags, passes, stats, apply = false, dir
   const jsonl = objects.map((o) => JSON.stringify(o)).join("\n") + "\n";
   const fp = sha1(win + heap).slice(0, 12);
 
+  let tombed = 0;
+  if (!doWrite) return { dir, fingerprint: fp, files, tombstoned: tombed, window_tokens: stats.tokens, written: false };
+
   files["WINDOW.md"] = write(path.join(dir, "WINDOW.md"), win);
   files["HEAP.md"] = write(path.join(dir, "HEAP.md"), heap);
   files["RULES.md"] = write(path.join(dir, "RULES.md"), rules);
   files["heap.jsonl"] = write(path.join(dir, "heap.jsonl"), jsonl);
   writeJson(path.join(dir, "diagnostics.json"), { at: now(), fingerprint: fp, counts: bySeverity(diags), diagnostics: diags });
 
-  let tombed = 0;
   if (apply) tombed = appendTombstones(objects);
   writeJson(STATE(), {
     at: now(), fingerprint: fp, applied: !!apply, tombstoned: tombed,
     objects: objects.length, placed: placed.length, stats, counts: bySeverity(diags),
   });
 
-  return { dir, fingerprint: fp, files, tombstoned: tombed, window_tokens: stats.tokens };
+  return { dir, fingerprint: fp, files, tombstoned: tombed, window_tokens: stats.tokens, written: true };
 }

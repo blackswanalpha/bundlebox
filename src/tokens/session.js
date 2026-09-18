@@ -236,6 +236,20 @@ export function markdown(m) {
 }
 
 const HEAD = "# sessions — what each one used and saved\n\n";
+const INDEX = () => path.join(OUT_DIR, "index.md");
+
+/** The index, rewritten with this id's row replaced or dropped. Every verb that
+ *  changes `index.md` comes through here: the file is generated, so the format
+ *  belongs to one function and not to whoever is holding a text editor. */
+function index(tag, row) {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const idx = INDEX();
+  let prior = HEAD;
+  try { prior = fs.readFileSync(idx, "utf8"); } catch { /* first session */ }
+  const kept = prior.split("\n").filter((l) => !l.includes(tag)).join("\n").replace(/\n+$/, "");
+  fs.writeFileSync(idx, kept + "\n" + (row ? row + "\n" : ""));
+  return idx;
+}
 
 /** var/sessions/<id>.md plus one line in index.md, replacing that id's line if present. */
 export function write(m) {
@@ -243,15 +257,28 @@ export function write(m) {
   const stem = (m.session || "session").slice(0, 36);
   const md = path.join(OUT_DIR, `${stem}.md`);
   fs.writeFileSync(md, markdown(m));
-  const idx = path.join(OUT_DIR, "index.md");
   const tag = `\`${m.session.slice(0, 12)}\``;
-  let prior = HEAD;
-  try { prior = fs.readFileSync(idx, "utf8"); } catch { /* first session */ }
-  const kept = prior.split("\n").filter((l) => !l.includes(tag));
   const cost = m.unpriced_models.length ? "cost n/a" : usd2(m.usd.total);
   const row = `- ${tag} ${(m.ended || "").slice(0, 16)} — used ${m.used.billed.toLocaleString()} (${cost}) MEASURED, saved ${(m.saved.cache_tokens + m.saved.automation_tokens).toLocaleString()} MEASURED+ESTIMATE ([md](${stem}.md))`;
-  fs.writeFileSync(idx, kept.join("\n").replace(/\n+$/, "") + "\n" + row + "\n");
-  return [rel(md), rel(idx)];
+  return [rel(md), rel(index(tag, row))];
+}
+
+/** One record dropped: the markdown and its row, both through `index` above.
+ *  `id` is what the index prints or the full id the file is named for; a prefix
+ *  works when exactly one record answers to it. */
+export function remove(id) {
+  const want = String(id || "").trim();
+  if (!want) return { ok: false, why: "no id given", removed: [] };
+  const hits = list().filter((r) => r.session === want || want.startsWith(r.session) || r.session.startsWith(want));
+  if (!hits.length) return { ok: false, why: `no session record for ${want} in ${rel(INDEX())}`, removed: [] };
+  if (hits.length > 1) return { ok: false, why: `${want} matches ${hits.length} records: ${hits.map((h) => h.session).join(", ")}`, removed: [] };
+  const hit = hits[0];
+  const stem = (hit.line.match(/\(([^()]+)\.md\)/) || [])[1] || hit.session;
+  const md = path.join(OUT_DIR, `${stem}.md`);
+  const removed = [];
+  try { fs.unlinkSync(md); removed.push(rel(md)); } catch { /* the row outlived the file */ }
+  removed.push(rel(index(`\`${hit.session}\``, null)));
+  return { ok: true, session: hit.session, removed };
 }
 
 export function list() {
@@ -260,9 +287,55 @@ export function list() {
   return text.split("\n").filter((l) => l.startsWith("- `")).map((l) => ({ session: (l.match(/`([^`]+)`/) || [])[1] || "", line: l.slice(2) }));
 }
 
-/** SessionEnd: measure, write, and return the one line for the hook to print. */
+/** SessionEnd: measure, write, and return the one line for the hook to print.
+ *
+ *  A record is written for a session that HAPPENED, and the evidence that one
+ *  happened is a transcript or a usage row — not the id, which the caller
+ *  supplies and can get wrong. `bb session end --session zzz-does-not-exist`
+ *  used to write a 974-byte record of zero and exit 0, so a hook passing an id
+ *  the harness shaped differently filed a zero row instead of failing loudly,
+ *  and the ledger grew a junk line nothing could remove. An opened-and-closed
+ *  window with no turns is real and still records: it has a transcript. */
 export async function end({ sessionId = "", transcriptPath = "" } = {}) {
   const m = await measure({ sessionId, transcriptPath });
+  if (!m.transcript && !m.used.turns) {
+    const dirs = [...new Set(ledger.transcripts().map((t) => path.dirname(t.file)))];
+    const looked = transcriptPath || dirs.join(", ") || "no transcript directory this workspace can see";
+    return { ok: false, wrote: [], measure: m,
+      line: `session end: no transcript and no usage rows for ${sessionId || m.session || "(no id)"} — looked in ${looked}. Nothing written.` };
+  }
   const wrote = write(m);
-  return { line: line(m), wrote, measure: m };
+  return { ok: true, line: line(m), wrote, measure: m };
+}
+
+/** Every transcript for this workspace that has no record yet, measured and
+ *  written, newest first.
+ *
+ *  Bounded on both axes for the reason `lathe.backfill` is: transcripts here
+ *  run to tens of megabytes, and a verb that reads all of them is a verb that
+ *  is never run twice. `--since` is the gap you are recovering; `--transcripts`
+ *  is the ceiling on how much of it you pay for at once. */
+export async function backfill({ since = "", transcripts = 50, write: doWrite = true } = {}) {
+  const have = new Set(list().map((r) => r.session).filter(Boolean));
+  const floor = since ? Date.parse(since) : 0;
+  if (since && !Number.isFinite(floor)) return { error: `--since ${since} is not a date`, rows: [] };
+  const limit = Math.max(1, Number(transcripts) || 50);
+  const entries = ledger.transcripts()
+    .map((t) => { let m = 0, size = 0; try { const st = fs.statSync(t.file); m = st.mtimeMs; size = st.size; } catch { /* gone between listing and stat */ } return { ...t, m, size }; })
+    .filter((t) => t.size > 0 && (!floor || t.m >= floor))
+    .sort((a, b) => b.m - a.m)
+    .slice(0, limit);
+  const rows = [];
+  for (const t of entries) {
+    const id = resolve({ transcriptPath: t.file }).sessionId;
+    if (!id) { rows.push({ transcript: rel(t.file), state: "unreadable" }); continue; }
+    if (have.has(id.slice(0, 12))) { rows.push({ session: id, transcript: rel(t.file), state: "have" }); continue; }
+    const m = await measure({ transcriptPath: t.file });
+    if (!m.used.turns && !m.transcript) { rows.push({ session: id, transcript: rel(t.file), state: "empty" }); continue; }
+    if (doWrite) write(m);
+    have.add(id.slice(0, 12));
+    rows.push({ session: id, transcript: rel(t.file), state: doWrite ? "wrote" : "would write",
+      turns: m.used.turns, used: m.used.billed, saved: m.saved.cache_tokens + m.saved.automation_tokens, line: line(m) });
+  }
+  return { rows, scanned: entries.length, written: rows.filter((r) => r.state === "wrote").length };
 }
