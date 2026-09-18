@@ -17,6 +17,13 @@ def main(argv: list) -> int:
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     if verb == "triage":
         out = [triage.triage(f, inp.get("cfg"), inp.get("history")) for f in inp.get("findings", [])]
+    elif verb == "triage-replay":
+        out = triage.replay(triage.scorable(inp.get("findings") or []), inp.get("policy"), inp.get("cfg"),
+                            inp.get("history"), float(inp.get("cost_penalty", triage.TRIAGE_COST)))
+    elif verb == "triage-calibrate":
+        out = triage.calibrate(inp.get("findings") or [], inp.get("cfg"), inp.get("history"),
+                               float(inp.get("cost_penalty", triage.TRIAGE_COST)),
+                               int(inp.get("min_acted", triage.MIN_ACTED)))
     elif verb == "confidence":
         out = {k: confidence.for_rule(v.get("precision", "heuristic"), v.get("held", 0), v.get("weak", 0), v.get("broken", 0)) for k, v in inp.get("rules", {}).items()}
     elif verb == "signals":
@@ -68,7 +75,7 @@ def main(argv: list) -> int:
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "triage-replay", "triage-calibrate", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts"]}))
         return 2
     print(json.dumps(out))
     return 0

@@ -33,8 +33,8 @@
   "author": "Kamande Mbugua",
   "type": "module",
   "bin": {
-    "bundlebox": "bin/bb.js",
-    "bb": "bin/bb.js"
+    "bundlebox": "bin/bb",
+    "bb": "bin/bb"
   },
   "main": "src/index.js",
   "exports": {

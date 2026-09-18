@@ -139,6 +139,27 @@ test("reach is traced through wiki-links, and survivors are promoted", () => {
   assert.equal(r.stats.promoted, 2);
 });
 
+test("roots that reach nothing are an error, not a statistic", () => {
+  // The failure: `mark: { total: 1155, reached: 0, promoted: 0, roots: 12 }`
+  // reported as a normal result for weeks. With nothing promoted, nothing is
+  // ever moved out of the sweep's reach and the generational half of the design
+  // is inert, while `kept` and `retracted` are produced downstream as if
+  // reachability had been consulted.
+  const objs = [make({ kind: "note", text: "a", source: "a.md" }), make({ kind: "note", text: "b", source: "b.md" })];
+  const bad = mark(objs, rootsFrom(["nothing-here.md"]));
+  const e = bad.diags.find((d) => d.code === "mark-reached-nothing");
+  assert.equal(e.severity, "error", "the one number in this pass that cannot legitimately be zero");
+  assert.equal(bad.stats.reached, 0);
+  // No roots at all is a different fact and not an error: a workspace whose
+  // transcripts are outside the window has nothing to trace FROM.
+  const quiet = mark([make({ kind: "note", text: "c", source: "c.md" })], rootsFrom([]));
+  assert.equal(quiet.diags.find((d) => d.code === "mark-no-roots").severity, "note");
+  assert.ok(!quiet.diags.some((d) => d.code === "mark-reached-nothing"));
+  // And a trace that reaches something says nothing at all.
+  const good = mark([make({ kind: "note", text: "d", source: "d.md" })], rootsFrom(["d.md"]));
+  assert.ok(!good.diags.some((d) => String(d.code).startsWith("mark-")));
+});
+
 test("an unreached rule is never reported stale, whatever its age", () => {
   const rule = make({ kind: "rule", text: "Never force-push main", source: "r.md", learned_at: days(900) });
   const note = make({ kind: "note", text: "an old aside", source: "n.md", learned_at: days(900) });
@@ -518,4 +539,22 @@ test("the graph counts in-degree so a linked memory outranks an isolated one", (
   const g = graph([hub, a, b]);
   assert.equal(g.inDegree.get(hub.id), 2);
   assert.ok(value(hub, { inDegree: 2 }) > value(hub, { inDegree: 0 }));
+});
+
+test("the status verb computes the window and writes none of it", async () => {
+  // `bb janitor` printed "read-only" and rewrote all five files in
+  // out/janitor/ — 1.1MB — on every bare run. WINDOW.md is the image an agent
+  // loads, so a command documented as safe was replacing the artefact another
+  // session may have been reading, and a status check was indistinguishable on
+  // disk from a deliberate compile.
+  const { emit } = await import("../src/janitor/emit.js");
+  const d = path.join(tmp(), "out");
+  const objs = [make({ kind: "rule", text: "Never force-push main", source: "r.md" })];
+  const args = { objects: objs, placed: objs, diags: [], passes: [], stats: { tokens: 12, budget: 100, placed: 1 }, dir: d };
+  const r = emit({ ...args, apply: false });
+  assert.equal(r.written, false);
+  assert.ok(r.fingerprint, "it still computes: the numbers a status prints are the same ones");
+  assert.ok(!fs.existsSync(path.join(d, "WINDOW.md")));
+  assert.ok(!fs.existsSync(path.join(d, "diagnostics.json")));
+  assert.deepEqual(r.files, {});
 });

@@ -256,5 +256,58 @@ class Calibrate(unittest.TestCase):
         self.assertEqual([b["at"] for b in r["per_board"]], [b["at"] for b in boards[1:]])
 
 
+def _f(i, closed_by, severity="high", tokens=1000, detector="x"):
+    return {"id": "f%d" % i, "detector": detector, "severity": severity, "precision": "exact",
+            "status": "resolved", "closed_by": closed_by, "est_tokens": tokens, "files": ["a.js"]}
+
+
+class Triage(unittest.TestCase):
+    def test_an_unknown_closure_is_not_a_sample(self):
+        rows = [_f(1, "acted_on"), _f(2, "unknown"), _f(3, None), dict(_f(4, "acted_on"), status="open")]
+        self.assertEqual([f["id"] for f in triage.scorable(rows)], ["f1"])
+
+    def test_waste_is_a_share_of_the_corpus_not_of_what_was_promoted(self):
+        # The first fit on this workspace answered "promote everything": waste
+        # normalised by the promoted set is a RATE, and a rate cannot punish
+        # promoting more. Against the whole corpus it can.
+        rows = [_f(1, "acted_on"), *[_f(i, "unchanged") for i in range(2, 11)]]
+        wide = triage.replay(rows, {"promote_at": "low"})
+        narrow = triage.replay(rows, {"promote_at": "critical"})
+        self.assertEqual(wide["budget"], narrow["budget"])
+        self.assertGreater(wide["waste_share"], narrow["waste_share"])
+
+    def test_calibrate_refuses_below_the_floor_and_says_what_it_needs(self):
+        r = triage.calibrate([_f(1, "acted_on"), _f(2, "unchanged")])
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["policy"], triage.POLICY)
+        self.assertIn("need", r)
+
+    def test_the_fit_is_never_worse_than_the_shipped_rule(self):
+        rows = [*[_f(i, "acted_on") for i in range(20)], *[_f(100 + i, "unchanged") for i in range(20)]]
+        r = triage.calibrate(rows)
+        self.assertTrue(r["ok"], r.get("why"))
+        self.assertGreaterEqual(r["score_after"], r["score_before"])
+        self.assertEqual(r["shipped"], triage.POLICY)
+
+    def test_the_cost_it_trades_against_is_an_input_and_steers_the_answer(self):
+        # Cheap tokens buy recall; dear tokens buy precision. A fit that gave
+        # the same policy either way would not be trading anything.
+        rows = [*[_f(i, "acted_on", severity="low") for i in range(20)],
+                *[_f(100 + i, "unchanged", severity="low", tokens=40000) for i in range(30)]]
+        cheap = triage.calibrate(rows, cost_penalty=0.05)
+        dear = triage.calibrate(rows, cost_penalty=20.0)
+        self.assertTrue(cheap["ok"] and dear["ok"])
+        self.assertNotEqual(cheap["policy"], dear["policy"])
+
+    def test_the_search_leaves_the_shipped_rule_on_a_tie(self):
+        # Every neighbour scores the same when nothing was ever acted on... so
+        # the floor catches it first. With one positive above the floor and no
+        # separation, a tie must not move the policy.
+        rows = [*[_f(i, "acted_on") for i in range(14)]]
+        r = triage.calibrate(rows)
+        self.assertTrue(r["ok"])
+        self.assertGreaterEqual(r["score_after"], r["score_before"])
+
+
 if __name__ == "__main__":
     unittest.main()

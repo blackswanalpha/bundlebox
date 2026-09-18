@@ -310,3 +310,21 @@ test("rel resolves a relative path against the workspace root, not cwd", () => {
     assert.equal(paths.rel("."), ".");
   } finally { process.chdir(cwd); }
 });
+
+test("findings.json is bounded, and the work list outlives the history", () => {
+  // The failure: this document is a single JSON value that must be parsed whole
+  // to answer `bb findings`, and nothing dropped a row. On one workspace it
+  // reached 165MB in the directory every verb writes to.
+  const old = (i) => new Date(Date.now() - i * 60000).toISOString();
+  const rows = Array.from({ length: store.MAX_FINDINGS + 5000 }, (_, i) =>
+    ({ id: `f${i}`, status: i % 5 === 0 ? "open" : "resolved", last_seen: old(i) }));
+  const kept = store.bound(rows);
+  assert.equal(kept.length, store.MAX_FINDINGS);
+  assert.equal(kept.filter((f) => f.status === "open").length, rows.filter((f) => f.status === "open").length,
+    "every open finding survives: closed rows are history, open ones are the work list");
+  assert.ok(kept.some((f) => f.id === "f1"), "the newest history is kept");
+  assert.ok(!kept.some((f) => f.id === `f${rows.length - 1}`), "the oldest history is dropped");
+  assert.equal(store.bound(rows.slice(0, 10)).length, 10, "under the cap nothing is touched");
+  const allOpen = rows.map((f) => ({ ...f, status: "open" }));
+  assert.equal(store.bound(allOpen).length, store.MAX_FINDINGS, "open rows alone are still bounded");
+});

@@ -315,7 +315,7 @@ async function cmd({ _, flags }) {
     if (e.tombstoned) out(`  ${e.tombstoned} retractions recorded; they will not be re-learned`);
     out("");
   } else {
-    out(`  read-only. \`bb janitor compile\` to write the window, \`bb janitor prune\` to clean the sources.\n`);
+    out(`  read-only — nothing on disk changed. \`bb janitor compile\` to write the window, \`bb janitor prune\` to clean the sources.\n`);
   }
   return code(b);
 }

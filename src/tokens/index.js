@@ -131,11 +131,33 @@ async function sessionCmd({ _, flags }) {
     for (const r of rows) out("  " + r.line);
     return 0;
   }
+  if (sub === "rm") {
+    const r = session.remove(String(_[1] || flags.session || ""));
+    if (flags.json) { emit(r); return r.ok ? 0 : 1; }
+    if (!r.ok) { warn(r.why); return 1; }
+    out(`  removed ${r.session} — ${r.removed.join(", ")}`);
+    return 0;
+  }
+  if (sub === "backfill") {
+    const r = await session.backfill({ since: String(flags.since || ""), transcripts: Number(flags.transcripts) || 50, write: !flags.dryRun });
+    if (flags.json) { emit(r); return r.error ? 1 : 0; }
+    if (r.error) { warn(r.error); return 1; }
+    const fresh = r.rows.filter((x) => x.state === "wrote" || x.state === "would write");
+    for (const row of r.rows) {
+      if (row.state === "have" || row.state === "empty") continue;
+      out(`  ${row.session || row.transcript}  ${row.state === "unreadable" ? "unreadable" : row.line}`);
+    }
+    const dry = flags.dryRun ? "would be written" : "written";
+    out(`  ${fresh.length} ${dry} of ${r.scanned} transcripts scanned (${r.rows.filter((x) => x.state === "have").length} already recorded)`);
+    return 0;
+  }
   const opts = { sessionId: String(flags.session || (sub && sub !== "end" ? sub : "") || ""), transcriptPath: String(flags.transcript || "") };
   if (sub === "end") {
     const r = await session.end(opts);
-    if (flags.json) emit(r); else out(r.line);
-    return 0;
+    if (flags.json) { emit(r); return r.ok ? 0 : 1; }
+    if (r.ok) { out(r.line); return 0; }
+    warn(r.line);
+    return 1;
   }
   const m = await session.measure(opts);
   if (flags.json) { emit(m); return 0; }
@@ -169,6 +191,6 @@ async function headroomCmd({ _, flags }) {
 
 export const commands = {
   tokens: { help: "estimate, ledger, calibrate, profile, prices, budget", usage: "bb tokens estimate <paths> | ledger | calibrate [--apply] [--tokens-only] | profile [--probe] | prices | budget [--json]", run: tokensCmd },
-  session: { help: "what a session used and saved (MEASURED vs ESTIMATE)", usage: "bb session [id] [--write] | end --session <id> --transcript <path> | list [--json]", run: sessionCmd },
+  session: { help: "what a session used and saved (MEASURED vs ESTIMATE)", usage: "bb session [id] [--write] | end --session <id> --transcript <path> | list | rm <id> | backfill [--since <date>] [--transcripts N] [--dry-run] [--json]", run: sessionCmd },
   headroom: { help: "the wire: local compression proxy", usage: "bb headroom start --apply | status | stop | savings | doctor [--json]", run: headroomCmd },
 };

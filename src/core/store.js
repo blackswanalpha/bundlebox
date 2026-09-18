@@ -3,6 +3,7 @@
 // (episodes, sessions, outcomes). No database process, no dependency; a cron
 // worker reads what is on disk or it does not run.
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { VAR, ROOT, ensureDirs } from "./paths.js";
 import { readJson, writeJson } from "./config.js";
@@ -140,6 +141,71 @@ function closedBy(old, fresh) {
   if (fresh === "gone") return "vanished";
   if (!fresh || !old.witness) return "unknown";
   return old.witness === fresh ? "unchanged" : "acted_on";
+}
+
+// ── backfilling a closure git can still prove ───────────────────────────────
+//
+// `witness` only exists on rows written since it shipped, so every finding that
+// closed before it has `closed_by: unknown` forever. Git can recover some of
+// them, and it is worth being exact about WHICH, because the tempting version
+// of this is wrong: "no commit touched the path in the window" does not mean
+// nobody fixed it. Scans here run every thirty minutes and work sits in the
+// working tree for hours, so 128 of 201 closure windows on this repo contain no
+// commit at all. Labelling those `unchanged` would manufacture 128 negatives
+// out of git's blind spot, and a policy fitted on them would learn that the
+// findings people actually fix are the ones nobody touches.
+//
+// So the rule refuses more than it answers:
+//
+//   vanished   the path is gone from the tree. True whatever git saw.
+//   acted_on   a commit in the window touched the path.
+//   unchanged  the window HAS commits and none touched the path. Something was
+//              being done and it was not this.
+//   unknown    the window has no commits. Git cannot see a working tree, and
+//              this is the case it cannot see.
+const gitLog = (since, until, file) => {
+  try {
+    const args = ["log", "--format=%H", "--since", since, "--until", until];
+    if (file) args.push("--", file);
+    return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", timeout: 15000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch { return ""; }   // no git, no history, a path git refuses: unknown, never a guess
+};
+
+/** What git can still prove about one closed finding, or null to leave it. */
+export function provenClosure(f, { log = gitLog, exists = (p) => fs.existsSync(path.join(ROOT, p)) } = {}) {
+  const p = f.path || (Array.isArray(f.files) ? f.files[0] : "");
+  const since = f.last_seen, until = f.resolved_at;
+  if (!p || !since || !until) return null;
+  if (!exists(p)) return "vanished";
+  if (!log(since, until, "")) return null;          // git saw nothing happen at all
+  return log(since, until, p) ? "acted_on" : "unchanged";
+};
+
+/** Label the closures git can still prove. Rows it cannot settle are left
+ *  exactly as they were: a missing label is a sample this box does not have,
+ *  and inventing one is worse than not having it. */
+export function backfillClosures(opts = {}) {
+  const counts = { acted_on: 0, vanished: 0, unchanged: 0, left_unknown: 0, already: 0 };
+  update("findings", (rows) => rows.map((f) => {
+    if (f.status === "open") return f;
+    if (f.closed_by && f.closed_by !== "unknown") { counts.already += 1; return f; }
+    const got = provenClosure(f, opts);
+    if (!got) { counts.left_unknown += 1; return f; }
+    counts[got] += 1;
+    return { ...f, closed_by: got, closed_by_from: "git" };
+  }), []);
+  return counts;
+}
+
+/** Keep a fitted promotion rule where every other per-repo factor lives, so
+ *  `bb doctor` shows them together and a workspace that never calibrated runs
+ *  on the shipped one. */
+export function applyTriagePolicy(policy, fit = {}) {
+  const p = path.join(VAR, "calibration.json");
+  const cal = readJson(p, {}) || {};
+  cal.triage = { policy, ...fit, calibrated_at: now() };
+  writeJson(p, cal);
+  return p;
 }
 
 /** Findings: keyed by a stable id so a re-scan updates rather than duplicates,
