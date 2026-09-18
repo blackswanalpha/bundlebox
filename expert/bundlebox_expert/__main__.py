@@ -4,7 +4,7 @@ import json
 import sys
 import time
 
-from . import __version__, confidence, coverage, graph, memory, model, rules, scenarios, sequences, signals, throttle, triage, world
+from . import __version__, confidence, coverage, grapple, graph, memory, model, rules, scenarios, sequences, signals, throttle, triage, world
 
 
 def main(argv: list) -> int:
@@ -72,10 +72,12 @@ def main(argv: list) -> int:
                                   int(inp.get("min_boards", scenarios.MIN_BOARDS)))
     elif verb == "board-verdicts":
         out = scenarios.verdicts(inp.get("board") or {}, inp.get("thresholds"), inp.get("previous"))
+    elif verb == "grapple":
+        out = grapple.dispatch(inp)
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "triage-replay", "triage-calibrate", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "triage-replay", "triage-calibrate", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
         return 2
     print(json.dumps(out))
     return 0

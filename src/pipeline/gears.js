@@ -28,6 +28,21 @@ export const GEARS = [
       { verb: "scan", description: "every detector" },
       { verb: "oversight", args: ["scan"], flags: { write: true }, when: "open_findings > 0", skip_if_fresh: true, inputs: source, optional: true,
         description: "size and fan-in, only when something was found" },
+      // Before anything is packed for a model: what costs nothing to close.
+      // Declared with no flags on purpose. A stage is invoked with its OWN
+      // flags (`{ ...st.flags }` in the runner), never the gear's `--apply`, so
+      // this reports and edits nothing — the cron line stays a line that only
+      // writes under .bundlebox/. Closing them is `bb fix --apply`, by hand,
+      // because a worker that rewrites the tree every half hour is a worker nobody
+      // leaves installed.
+      //
+      // `skip_if_fresh` because the actuators RE-SCAN to confirm a finding still
+      // holds before they touch it: 22s measured on this tree, against a tick
+      // that was 8s without it. Optional because `fix` returns 1 when any one
+      // finding names a destructive or missing actuator, which is a fact about
+      // the finding, not a failure of the gear.
+      { verb: "fix", when: "open_findings > 0", skip_if_fresh: true, inputs: source, optional: true,
+        description: "what the local actuators could close for free, before a lane is packed for any of it" },
       // Gated on what is OPEN in the store, not on what this run's scan returned:
       // a gear run against a store that already holds findings still has work.
       { verb: "compile", flags: { write: true }, when: "open_findings > 0", description: "findings -> units packed to a window" },

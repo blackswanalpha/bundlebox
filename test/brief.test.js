@@ -156,6 +156,19 @@ test("a repeated search is denied as a duplicate", () => {
   assert.match(v.permissionDecisionReason, /already ran in this session/);
 });
 
+test("the same words over a different file is a different search, not a duplicate", () => {
+  brief.activate(REC());
+  assert.equal(brief.searchVerdict(brief.current({}), "^export", { pathArg: "src/big.js" }), null);
+  assert.equal(brief.searchVerdict(brief.current({}), "^export", { pathArg: "src/small.js" }), null, "a second file is a second question");
+  assert.equal(brief.searchVerdict(brief.current({}), "^export", { glob: "test/*.js" }), null, "a glob is a third");
+  const v = brief.searchVerdict(brief.current({}), "^export", { pathArg: "src/small.js" });
+  assert.equal(v.permissionDecision, "deny", "the same file again is the duplicate");
+  assert.match(v.permissionDecisionReason, /in src\/small\.js/);
+  // a search of the whole tree is keyed to the whole tree, and repeats as one
+  assert.equal(brief.searchVerdict(brief.current({}), "^export", {}), null);
+  assert.equal(brief.searchVerdict(brief.current({}), "^export", {}).permissionDecision, "deny");
+});
+
 test("tableHits never builds a table it cannot find", () => {
   assert.deepEqual(brief.tableHits(["nothingmatcheshere"]), []);
 });

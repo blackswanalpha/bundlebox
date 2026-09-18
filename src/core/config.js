@@ -230,10 +230,30 @@ export const DEFAULTS = {
     // is a hook that silently does nothing.
     notify: true,           // SessionStart: name the memory whose anchors no longer resolve
     restate_rules: true,    // UserPromptSubmit after a compaction: state the rules again, in full
+    // PreCompact freezes what the session was doing — task, scope, files
+    // edited, last commands, unmet gates, open questions — from the record on
+    // disk, and SessionStart(compact) or the next prompt puts it back. The
+    // summary keeps what looked important; the record keeps the work.
+    narrative: true,
     refresh: true,          // SessionEnd: recompile the heap while the transcript is fresh
     // How stale an emitted artefact may be before the hooks stop quoting it. A
     // janitor that asserts a stale fact about staleness has failed twice.
     max_age_hours: 168,
+  },
+  grapple: {
+    // The handoff layer: what the box cannot settle, asked once and stored.
+    // `observe` runs every detector and injects nothing — the queue is
+    // written, the harvest runs, and every event says what the other phases
+    // would have done. `enforce` adds ONE blocking check, the pre-write scope
+    // guard, and lets the queue reach the window. The phase moves when the
+    // bench arms say the guard earned it, not before.
+    enabled: true,
+    phase: "observe",
+    ask_per_session: 2,       // past this a queue is an interruption
+    question_ttl_hours: 72,   // an open question past this is `expired-unanswered`, never `answered`
+    ratify_batch: 10,         // yes/no rows per proposal: one decision moment
+    min_labels: 10,           // below this the harvest reports `unknown`, not a rate
+    drift_at: 0.67,           // the drift score that counts as no progress
   },
   lathe: {
     // The automation engine's input. The PostToolUse hook appends the SHAPE of

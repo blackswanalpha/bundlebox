@@ -8,7 +8,7 @@
 // exactly the pieces this module added and nothing the user wrote.
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, rel } from "../core/paths.js";
+import { ROOT, VAR, rel } from "../core/paths.js";
 import { load } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { AGENTS, ORDER, INSTRUCTIONS, instructions, START, END, CLAUDE_HOOKS, isOurHook, detectAgents } from "./agents.js";
@@ -287,6 +287,19 @@ export function status(names, { root = ROOT, scope = "project" } = {}) {
   });
 }
 
+/** The hooks call `bb hook <event>` and `bb` is whatever is on PATH. When
+ *  that is an older install than the one that wrote the hooks, every event it
+ *  does not know is logged as `unknown event` and silently does nothing — the
+ *  guard is installed, the log says it ran, and no session ever felt it. The
+ *  log is the only place this shows, so status reads it. */
+export function binaryCheck({ log = path.join(VAR, "hooks.log") } = {}) {
+  let rows = [];
+  try { rows = fs.readFileSync(log, "utf8").split("\n").filter((l) => / unknown event$/.test(l)); } catch { return null; }
+  if (!rows.length) return null;
+  const events = [...new Set(rows.map((l) => l.split(" ")[1]).filter(Boolean))];
+  return { unknown: rows.length, events, last: rows.at(-1).split(" ")[0] };
+}
+
 function preview(r, root) {
   const p = path.isAbsolute(r.path) && !r.path.startsWith(root) ? r.path : rel(r.path);
   const lines = [`  ${r.action.padEnd(9)} ${p}${r.note ? `   (${r.note})` : ""}`];
@@ -355,11 +368,13 @@ export const commands = {
       }
       if (_[0] === "status") {
         const st = status(names.length ? names : ORDER, { scope });
-        if (flags.json) { emit({ scope, agents: st }); return 0; }
+        const bin = binaryCheck();
+        if (flags.json) { emit({ scope, agents: st, binary: bin }); return 0; }
         for (const s of st) {
           out(`  ${s.agent.padEnd(9)} ${s.state.padEnd(8)} ${s.wired}/${s.files} files${s.verified ? "" : "   (unverified shape)"}`);
           for (const p of s.paths) out(`             ${p.ok ? "ok " : "-- "} ${p.path}`);
         }
+        if (bin) warn(`${bin.unknown} hook call(s) hit an event the \`bb\` on PATH does not know (${bin.events.join(", ")}; last ${bin.last}). The installed bundlebox is older than the hooks it is wired to — reinstall it (from a checkout: npm i -g .), then bb wire --apply.`);
         return 0;
       }
       if (!names.length) { warn("no agents detected on this box; name them: bb wire --agents claude,codex"); return 1; }

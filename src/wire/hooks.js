@@ -14,12 +14,13 @@ import * as store from "../core/store.js";
 import { text as estimateText, file as estimateFile } from "../tokens/estimate.js";
 import { now, human } from "../core/util.js";
 import * as brief from "./brief.js";
+import * as narrative from "./narrative.js";
 
 // A cap is what a band may cost, not what it should. `pre-read` and
 // `pre-search` are the two that carry an ANSWER rather than a pointer, so they
 // are the two allowed to be expensive: what they replace is the whole file or
 // the whole search.
-const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-search": 500, "post-tool": 300, "restate-rules": 700 };
+export const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-write": 900, "pre-search": 500, "post-tool": 300, "restate-rules": 700, narrative: 1200 };
 
 // ── the janitor's three touch points ────────────────────────────────────────
 //
@@ -138,8 +139,19 @@ async function autoInit(cfg) {
       : " Run `bb env up --apply` to build the tables, findings and worklist — locally, no tokens.");
 }
 
-async function sessionStart() {
+async function sessionStart(payload = {}) {
   const cfg = load();
+  // Claude Code fires SessionStart with `source: "compact"` right after a
+  // compaction, before the next prompt. That is the first observable moment
+  // the window can be corrected, and the record goes back here rather than
+  // one prompt later. The marker keeps the prompt from doing it twice.
+  if (String(payload.source || "") === "compact") {
+    if (restateAfterCompaction(payload, cfg, "SessionStart")) return;
+    // No marker (a harness with no PreCompact hook): still the same moment,
+    // and the record is still on disk, just not frozen.
+    const bands = compactionBands(cfg, { sessionId: String(payload.session_id || "") });
+    if (bands.length) { emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: bands.join("\n\n") } }); return; }
+  }
   const created = await autoInit(cfg);
   if (!cfg.wire.inject_context) {
     // `auto_init` is not a context-injection feature and does not switch off
@@ -218,19 +230,43 @@ export function restateBand(rulesMarkdown) {
  *  It fires once per compaction, not once per prompt: the marker records which
  *  compaction has already been answered. Returns true when it emitted, so the
  *  caller does not also spend the prompt budget on a pinpoint nudge. */
-function restateRules(payload, cfg) {
-  if (!cfg.janitor?.restate_rules) return false;
+/** The two bands that go back after a compaction, each under its own cap.
+ *
+ *  The narrative first: it is the WORK — task, scope, what was edited, what
+ *  ran, what gate is open — read off the record the guards wrote, never off
+ *  the summary. The rules second, verbatim. Two caps, because truncating from
+ *  the end of one joined band would cut the rules to keep the narrative or
+ *  the other way round, and neither is the right thing to lose. */
+export function compactionBands(cfg, { sessionId = "" } = {}) {
+  const out = [];
+  if (cfg.janitor?.narrative !== false) {
+    const n = narrative.afterCompaction({ sessionId });
+    if (n) out.push(capTokens(n, CAPS.narrative));
+  }
+  if (cfg.janitor?.restate_rules) {
+    const r = restateBand(janitorArtefact("RULES.md", Number(cfg.janitor.max_age_hours) || 168));
+    if (r) out.push(capTokens(r, CAPS["restate-rules"]));
+  }
+  return out;
+}
+
+/** Once per compaction: the marker says which compaction was answered, so a
+ *  SessionStart(compact) that already restated leaves nothing for the prompt
+ *  to do, and a harness with no SessionStart(compact) gets it at the prompt. */
+function restateAfterCompaction(payload, cfg, hookEventName) {
+  if (!cfg.janitor?.restate_rules && cfg.janitor?.narrative === false) return false;
   let mark; try { mark = JSON.parse(fs.readFileSync(COMPACTED(), "utf8")); } catch { return false; }
   if (!mark || !mark.at) return false;
   const session = String(payload.session_id || "");
   if (session && mark.session_id && mark.session_id !== session) return false;
   if (mark.restated_at && Date.parse(mark.restated_at) >= Date.parse(mark.at)) return false;
-  const band = restateBand(janitorArtefact("RULES.md", Number(cfg.janitor.max_age_hours) || 168));
-  if (!band) return false;
-  try { fs.writeFileSync(COMPACTED(), JSON.stringify({ ...mark, restated_at: now() })); } catch { /* at worst it restates twice */ }
-  emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(band, CAPS["restate-rules"]) } });
+  const bands = compactionBands(cfg, { sessionId: session });
+  if (!bands.length) return false;
+  try { fs.writeFileSync(COMPACTED(), JSON.stringify({ ...mark, restated_at: now(), restated_on: hookEventName })); } catch { /* at worst it restates twice */ }
+  emit({ hookSpecificOutput: { hookEventName, additionalContext: bands.join("\n\n") } });
   return true;
 }
+const restateRules = (payload, cfg) => restateAfterCompaction(payload, cfg, "UserPromptSubmit");
 
 const TASK_SHAPED = /\b(fix|add|implement|refactor|change|update|write|remove|migrate|debug|investigate|make|build|wire|optimi[sz]e|ensure|analyse|analyze|audit|port|rename)\b/i;
 /** A prompt worth locating. A question, an acknowledgement or a one-word reply
@@ -379,6 +415,40 @@ async function postTool(payload) {
   }
   if (cfg.slop?.guard_writes) await slopGuard(payload, cfg);
   if (cfg.lathe?.record_shapes) await recordShape(payload, cfg);
+  if (cfg.grapple?.enabled !== false) await grappleObserve(payload);
+}
+
+/** grapple's counters, fed for free: sixty bytes per tool call, no decision.
+ *  Everything `bb grapple` scores as drift is read back from this row. */
+async function grappleObserve(payload) {
+  try { const d = await import("../grapple/detect.js"); d.observeTool(payload); }
+  catch (e) { log("post-tool", `grapple ${String(e && e.message || e).slice(0, 120)}`); }
+}
+
+/** The one blocking check grapple adds, at the one moment the agent has
+ *  committed nothing: a write outside the brief's scope list.
+ *
+ *  In `observe` phase this records the verdict it would have returned and
+ *  emits NOTHING — no decision, no bytes — so the session behaves exactly as
+ *  it did before grapple existed, and the recorded verdicts are the base rate
+ *  the enforce phase is gated on. In `enforce` the verdict is emitted within
+ *  the `pre-write` cap, bounded like every other band in this file. */
+export async function preWrite(payload) {
+  const cfg = load();
+  // detect.js and store.js only: this runs once per write, and the rest of the
+  // grapple graph (the expert bridge, the harvest, child_process) is the CLI's.
+  const [detect, gstore] = await Promise.all([import("../grapple/detect.js"), import("../grapple/store.js")]);
+  const s = gstore.settings(cfg);
+  if (s.phase === "off") return null;
+  const fp = payload?.tool_input?.file_path || payload?.tool_input?.path || payload?.tool_input?.notebook_path;
+  if (!fp) return null;
+  const rec = brief.current({ maxAgeMin: Number(cfg.wire.brief_max_age_min) || 45, sessionId: String(payload.session_id || "") });
+  const v = detect.writeVerdict(rec, fp);
+  if (!v) return null;
+  gstore.record("write_verdict", { session_id: String(payload.session_id || ""), file: String(fp), decision: v.permissionDecision, phase: s.phase, emitted: s.phase === "enforce" });
+  if (s.phase !== "enforce") return null;
+  decide("PreToolUse", v, CAPS["pre-write"]);
+  return v;
 }
 
 /** The automation engine's input, recorded when it is free.
@@ -439,10 +509,18 @@ async function slopGuard(payload, cfg) {
  *  additionalContext IS observable in a transcript — does the work. */
 async function preCompact(payload) {
   store.append("episodes", { kind: "hook", verb: "compaction", features: { trigger: payload.trigger || "auto" }, rc: 0, seconds: 0, produced: 0, turns_saved: 0, session_id: payload.session_id || "" });
-  if (!load().janitor?.restate_rules) return;
+  const cfg = load();
+  if (!cfg.janitor?.restate_rules && cfg.janitor?.narrative === false) return;
+  // Freeze the record NOW, so what goes back after the summary is written
+  // describes the same moment the summary does and not a later one.
+  let frozen = "";
+  if (cfg.janitor?.narrative !== false) {
+    try { frozen = narrative.write({ sessionId: String(payload.session_id || "") }); }
+    catch (e) { log("pre-compact", `narrative ${String(e && e.message || e).slice(0, 120)}`); }
+  }
   try {
     ensureDirs();
-    fs.writeFileSync(COMPACTED(), JSON.stringify({ session_id: payload.session_id || "", at: now(), trigger: payload.trigger || "auto", restated_at: "" }));
+    fs.writeFileSync(COMPACTED(), JSON.stringify({ session_id: payload.session_id || "", at: now(), trigger: payload.trigger || "auto", restated_at: "", narrative: frozen }));
   } catch (e) { log("pre-compact", `marker ${String(e && e.message || e).slice(0, 120)}`); }
 }
 
@@ -484,6 +562,14 @@ async function sessionEnd(payload) {
   // the only signal a hook has for the ones whose sessions never reached this
   // handler.
   try { brief.sweep(); } catch { /* a stale record expires on its own */ }
+  // grapple's sleep-time pass, for the same reason as lathe's below: the
+  // harvest and the tally read rows already on disk, and the session that
+  // paid for the turns should not pay for learning from them. Nothing is
+  // emitted from here; a session-end hook has no window to reach.
+  if (cfg.grapple?.enabled !== false) {
+    try { const g = await import("../grapple/index.js"); const s = g.observe({ session: String(payload.session_id || ""), cfg }); log("session-end", `grapple ${s.queue.open} open question(s), ${s.labels.n} label(s), drift ${s.drift.score}`); }
+    catch (e) { log("session-end", `grapple ${String(e && e.message || e).slice(0, 160)}`); }
+  }
   // Sleep-time compute, alongside the janitor's recompile and for the same
   // reason: the model wants what this session did, and the session that pays
   // for a turn should not pay for learning from it. 1.4s measured on this tree,
@@ -540,13 +626,17 @@ async function sessionEnd(payload) {
   }
 }
 
-export async function handle(event) {
-  const payload = readStdin();
+export async function handle(event) { return handleEvent(event, readStdin()); }
+
+/** One event with its payload already in hand: what `handle` does after
+ *  reading stdin, and what a test calls without a stdin to read. */
+export async function handleEvent(event, payload = {}) {
   const t0 = Date.now();
   try {
     if (event === "session-start") await sessionStart(payload);
     else if (event === "prompt") await prompt(payload);
     else if (event === "pre-read") await preRead(payload);
+    else if (event === "pre-write") await preWrite(payload);
     else if (event === "pre-search") await preSearch(payload);
     else if (event === "post-tool") await postTool(payload);
     else if (event === "pre-compact") await preCompact(payload);
@@ -559,4 +649,4 @@ export async function handle(event) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "pre-search", "post-tool", "pre-compact", "stop", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "pre-write", "pre-search", "post-tool", "pre-compact", "stop", "session-end"];

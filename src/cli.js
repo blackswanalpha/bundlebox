@@ -52,6 +52,7 @@ export const MODULES = [
   ["scripts", "./scripts/index.js"],
   ["wire", "./wire/index.js"],
   ["uptake", "./uptake/index.js"],
+  ["grapple", "./grapple/index.js"],
   ["cron", "./cron.js"],
   ["selftest", "./selftest.js"],
   ["kernel", "./kernel-cmd.js"],
@@ -97,7 +98,7 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve"]);
+  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],

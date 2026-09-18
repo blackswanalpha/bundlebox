@@ -100,3 +100,16 @@ test("a skill document declares the name its directory carries", () => {
     assert.match(fm, /^description:\s*\S/m, `${s.name} has no description, which is the only thing that decides whether it triggers`);
   }
 });
+
+test("status names a bb on PATH that is older than the hooks it runs", async () => {
+  const { binaryCheck } = await import("../src/wire/index.js");
+  const log = path.join(root, "hooks-fixture.log");
+  fs.writeFileSync(log, "2026-09-18T22:03:53.507Z pre-write unknown event\n2026-09-18T22:04:00.000Z prompt ok 12ms\n2026-09-18T22:05:00.000Z pre-write unknown event\n");
+  const b = binaryCheck({ log });
+  assert.equal(b.unknown, 2);
+  assert.deepEqual(b.events, ["pre-write"]);
+  assert.equal(b.last, "2026-09-18T22:05:00.000Z");
+  assert.equal(binaryCheck({ log: path.join(root, "absent.log") }), null, "no log is nothing to say");
+  fs.writeFileSync(log, "2026-09-18T22:04:00.000Z prompt ok 12ms\n");
+  assert.equal(binaryCheck({ log }), null);
+});
