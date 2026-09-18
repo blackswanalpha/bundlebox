@@ -24,6 +24,7 @@ import { human, now, stamp, table } from "../core/util.js";
 import * as store from "../core/store.js";
 import * as suite from "./suite.js";
 import { bare, packed, BARE_READ_CAP } from "./arms.js";
+import * as arms from "./arms.js";
 import * as swebench from "./swebench.js";
 import * as gate from "./gate.js";
 
@@ -76,7 +77,7 @@ export async function run(id = "default", { cap = BARE_READ_CAP, maxFiles = 6, w
 
   const result = {
     suite: id, title: spec.title, at: now(), seconds: Math.round((Date.now() - t0) / 100) / 10,
-    bare_read_cap: cap, max_files: maxFiles,
+    bare_read_cap: cap, bare_range: arms.BARE_RANGE, max_files: maxFiles,
     totals: { bare: totalBare, packed: totalPacked, saved, saved_pct: pct(saved, totalBare),
       tasks: tasks.length, measured: ok.length, errors: tasks.length - ok.length, losses: losses.length,
       ratio: totalPacked > 0 ? Math.round((totalBare / totalPacked) * 10) / 10 : null },
@@ -109,7 +110,7 @@ export function report(r) {
     t.error ? "" : String(t.packed_files),
   ]), { header: ["id", "task", "bare", "packed", "saved", "read", "scope"] }));
   const t = r.totals;
-  L.push("", `  bare   ${human(t.bare)} tokens — search the tree, open the top ${r.bare_read_cap} files whole`);
+  L.push("", `  bare   ${human(t.bare)} tokens — grep the tree, read the search output, open a ${r.bare_range || 80}-line range in each of the top ${r.bare_read_cap} files`);
   L.push(`  packed ${human(t.packed)} tokens — one pinpoint prompt per task`);
   L.push(`  saved  ${human(t.saved)} tokens, ${t.saved_pct}% of the bare arm${t.ratio ? ` (${t.ratio}x less context)` : ""}`);
   if (t.losses) L.push(`  ${t.losses} task(s) cost MORE packed than bare; they are in the table above and are not dropped.`);
@@ -253,7 +254,7 @@ export const commands = {
       "  bb bench swebench show           the last SWE-bench run",
       "  bb bench swebench instances      which repositories the cached instances come from",
       "",
-      "BARE   search the tree for the task's terms and read the top --cap files whole.",
+      "BARE   grep the tree for the task's terms, read the search output, open one range per hit in the top --cap files.",
       "PACKED one `bb pinpoint` prompt for the same task.",
       "",
       "Both arms are measured with the same estimator over text on disk; neither calls a model.",

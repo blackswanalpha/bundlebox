@@ -246,8 +246,9 @@ bb bench run                  # both arms, per task, with the losses printed
 bb bench show --json
 ```
 
-BARE searches the tree for the task's terms and reads the top files whole,
-which is what a session does on a box where nothing is installed. PACKED is the
+BARE greps the tree for the task's terms, reads the search output and opens a
+range around the first hit in each of the top files, which is what a session
+does on a box where nothing is installed. PACKED is the
 one `bb pinpoint` prompt for the same task. Both arms are counted by the same
 estimator over text on disk, so neither calls a model and a second run on the
 same tree returns the same number. A task that costs more packed than bare is

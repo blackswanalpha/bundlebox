@@ -23,6 +23,7 @@ import * as snapgen from "../snapgen/index.js";
 import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
 import { clean } from "../slop/index.js";
+import { PREAMBLE } from "../wire/brief.js";
 import { rank, informative } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 
@@ -247,6 +248,7 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
   // Scored after the cut loop, because cutting for budget is itself one of the
   // things the brief does not settle.
   b.ambiguity = ambiguity(b);
+  b.proposals = proposals(b);
   b.prompt = prompt(b);
   b.path = write(b);
   return b;
@@ -261,52 +263,109 @@ async function tablesFor() {
   return names.filter((n) => fs.existsSync(reg.path(n))).map((n) => `\`${rel(reg.path(n))}\` ~${human(estimate.file(reg.path(n)))}`);
 }
 
+// ── the change, not only the coordinates ────────────────────────────────────
+//
+// A brief that says where the code is and stops leaves the session to spend
+// its next turns working out what to write, and every turn replays the whole
+// window (measured: 19,240 tokens of harness prompt per turn, 51% of a bare
+// run). When the statement itself spells the edit out — `old` -> `new`,
+// "rename `a` to `b`" — and the old text occurs at exactly one place in the
+// located regions, the brief carries the diff. Exactly one: two occurrences is
+// a choice, and a diff that chose wrong costs the undo on top of the fix,
+// which is more than no diff at all.
+
+/** The edits a statement spells out, as {from, to} pairs. Only backticked
+ *  spans count: a bare word is a description, a span is a string to match. */
+export function statedEdits(problem) {
+  const p = String(problem || "");
+  const rx = [
+    /`([^`\n]+)`\s*(?:->|→|=>)\s*`([^`\n]+)`/g,
+    /\b(?:replace|swap)\s+`([^`\n]+)`\s+(?:with|by|for)\s+`([^`\n]+)`/gi,
+    /\b(?:rename|change|turn|set|bump|update|raise|lower)\s+`([^`\n]+)`\s+(?:to|into)\s+`([^`\n]+)`/gi,
+    /`([^`\n]+)`\s+(?:should|must)\s+(?:be|read|become)\s+`([^`\n]+)`/gi,
+  ];
+  const seen = new Set(), out = [];
+  for (const r of rx) for (const m of p.matchAll(r)) {
+    if (m[1] === m[2] || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    out.push({ from: m[1], to: m[2] });
+  }
+  return out;
+}
+
+/** One unified diff per stated edit whose `from` occurs once, on one line, in
+ *  one located region. Anything else is skipped without comment: the section
+ *  is absent rather than hedged. */
+export function proposals(b, { context = 3 } = {}) {
+  const out = [];
+  for (const e of statedEdits(b.problem)) {
+    const hits = [];
+    for (const a of b.anchors || []) {
+      const lines = String(a.text || "").split("\n");
+      lines.forEach((l, i) => { if (l.includes(e.from)) hits.push({ a, i, lines }); });
+    }
+    if (hits.length !== 1) continue;
+    const { a, i, lines } = hits[0];
+    if (lines[i].split(e.from).length !== 2) continue;
+    const lo = Math.max(0, i - context), hi = Math.min(lines.length, i + context + 1);
+    const start = a.line_start + lo;
+    const diff = [
+      `--- a/${a.path}`, `+++ b/${a.path}`,
+      `@@ -${start},${hi - lo} +${start},${hi - lo} @@`,
+      ...lines.slice(lo, i).map((x) => ` ${x}`),
+      `-${lines[i]}`, `+${lines[i].replace(e.from, e.to)}`,
+      ...lines.slice(i + 1, hi).map((x) => ` ${x}`),
+    ].join("\n");
+    out.push({ file: a.path, line: a.line_start + i, symbol: a.symbol || "", from: e.from, to: e.to, diff });
+  }
+  return out;
+}
+
+// The order is the cache. Everything that is the same for every task on this
+// tree comes first — the preamble, the tables, the workspace's process rules —
+// and the problem statement opens the varying part. A run then pays cache-read
+// rates on the prefix instead of prefilling it again.
 export function prompt(b) {
-  const L = [`# ${b.problem}`, "", "Touch nothing outside **Scope**. Everything below was located already; spend turns on the change, not on finding it.", "",
-    "## Where — located already, do not search"];
+  const L = [PREAMBLE, "",
+    `Reference tables, read instead of searching: ${b.tables.length ? b.tables.join(", ") : "(none built; `bb snapgen build`)"}`];
+  if (b.process.length) L.push("", "Process rules this workspace measured itself needing:", ...b.process);
+  L.push("", `# ${b.problem}`, "", "## Where — located");
   for (const h of b.symbols) L.push(`- \`${h.file}:${h.line}\` — \`${h.symbol}\``);
   for (const h of b.grep) L.push(`- \`${h.file}:${h.line}\` — ${h.text}`);
-  if (!b.symbols.length && !b.grep.length) L.push(`- nothing in the symbol tables matched the problem's words; the scope below is the best path match. Read the symbols tables under \`${rel(snapgen.DIR)}/\` before any grep.`);
-  L.push("", "## The regions this touches — quoted, current, do not re-read the files");
+  if (!b.symbols.length && !b.grep.length) L.push("- nothing in the symbol tables matched the problem's words; the scope below is the best path match");
+  L.push("", "## The regions this touches — quoted, current");
   if (b.anchors.length) for (const a of b.anchors.slice(0, 6)) L.push("", `\`${a.path}\` lines ${a.line_start}-${a.line_end} (~${a.tokens} tokens)`, "```", anchorsMod.excerpt(a, 900), "```");
   else L.push("- no region located; the scope files are costed whole");
+  if (b.proposals && b.proposals.length) {
+    L.push("", "## Proposed change — apply it, then run the gate");
+    for (const p of b.proposals) L.push("", `\`${p.file}:${p.line}\`${p.symbol ? ` in \`${p.symbol}\`` : ""}: \`${p.from}\` → \`${p.to}\`, from the statement, one occurrence in the located regions.`, "```diff", p.diff, "```");
+  }
   L.push("", "## Scope — the only files you may edit");
   for (const f of b.scope) L.push(`- \`${f}\` (~${human(estimate.file(abs(f)))} tokens)`);
   if (b.cut.length) L.push(`- ask before opening these: ${b.cut.map((c) => `\`${c}\``).join(", ")} (cut for budget)`);
   if (b.candidates && b.candidates.length) {
-    L.push("", "## If the scope does not hold it — ranked, not budgeted",
-      "These matched the problem's words and did not fit the read budget. They are NOT in scope: do not edit them. Open one only when the scope above turns out not to contain the cause, and say which one you opened and why.");
+    L.push("", "## If the scope does not hold it — ranked, not budgeted", "Not in scope. Open one only if Scope does not hold the cause, and say which.");
     for (const c of b.candidates) L.push(`- \`${c.file}${c.line ? `:${c.line}` : ""}\`${c.symbol ? ` — \`${c.symbol}\`` : ""} (~${human(c.tokens)} tokens whole)`);
   }
-  L.push("", "## Evidence already on file — do not re-derive");
+  L.push("", "## Evidence already on file");
   if (b.evidence.length) for (const e of b.evidence) L.push(`- [${e.detector}/${e.severity}] ${e.title}${e.fix_hint ? ` → ${e.fix_hint}` : ""}`);
   else L.push("- no open finding touches this scope");
   L.push("", "## Done when");
   const g = b.gates || {};
   if (g.quick) L.push(`    ${g.quick}`);
   if (g.full && g.full !== g.quick) L.push(`    ${g.full}   # before the PR`);
-  if (!g.quick && !g.full) L.push("    (no gate detected: state in one line what you ran to prove the change; the unit is unproven until then)");
-  L.push("", "State what changed and why in under 120 words.");
-  L.push("", "## What this brief does not settle");
-  for (const l of ambiguityLines(b.ambiguity)) L.push(l);
+  if (!g.quick && !g.full) L.push("    (no gate detected: state in one line what you ran)");
   L.push("", "## Traps");
   if (b.traps.length) for (const t of b.traps) L.push(`- ${t}`);
-  else L.push("- none recorded for these files (`.bundlebox/edge-cases.md` or `docs/edge-cases.md`, rows `| E<n> |`)");
+  else L.push("- none recorded for these files");
   const ov = b.oversight;
   L.push("", `## What is already known about these files (bb oversight, ${ov?.at || "no scan on file"})`);
   if (ov && (ov.guidelines.length || ov.notes.length)) {
     for (const gl of ov.guidelines) L.push(`- **${gl.rule}** — ${gl.title}${gl.hint ? `. ${gl.hint}` : ""}`);
     for (const n of ov.notes) L.push(`- ${n}`);
   } else L.push(ov ? "- nothing measured against these files" : "- run `bb oversight scan` to fill this");
-  L.push("", "## Process rules this workspace measured itself needing");
-  if (b.process.length) L.push(...b.process);
-  else L.push("- none yet (`bb buckmaster` writes `.bundlebox/out/buckmaster/recommendations.md`)");
-  L.push("", "## Do not",
-    "- read a file outside Scope without saying which and why, in one line, first",
-    "- run a test suite the change does not touch; one file's tests is the ceiling before the gate",
-    "- `git stash`, `git checkout` on a shared checkout, `--no-verify`, or a commit outside the scope",
-    "- widen into cleanup, refactor or docs. One problem, one diff.",
-    "", `Reference tables, read instead of searching: ${b.tables.length ? b.tables.join(", ") : "(none built; `bb snapgen build`)"}`);
+  L.push("", "## What this brief does not settle");
+  for (const l of ambiguityLines(b.ambiguity)) L.push(l);
   // Through the anti-slop pass on the way out. This is the document in this
   // tree with the strongest claim to it: every brief here is READ BY A MODEL
   // AND BILLED, so a hedge is not a style complaint, it is tokens the lane pays

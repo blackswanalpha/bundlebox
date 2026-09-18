@@ -61,21 +61,19 @@ test("prompt: the exact section order, gates, traps, process rules", async () =>
   const b = await pinpoint.build("loginToken expires early in refreshSession", { files: ["src/auth.js"] });
   const heads = b.prompt.split("\n").filter((l) => l.startsWith("## "));
   assert.deepEqual(heads, [
-    "## Where — located already, do not search",
-    "## The regions this touches — quoted, current, do not re-read the files",
+    "## Where — located",
+    "## The regions this touches — quoted, current",
     "## Scope — the only files you may edit",
     // Ranked candidates the budget could not afford are NAMED rather than
     // dropped: naming one costs about fifteen tokens, budgeting one costs its
     // whole size times churn. Measured on SWE-bench Verified, the file the fix
     // belonged in was usually just outside the scope.
     "## If the scope does not hold it — ranked, not budgeted",
-    "## Evidence already on file — do not re-derive",
+    "## Evidence already on file",
     "## Done when",
-    "## What this brief does not settle",
     "## Traps",
     "## What is already known about these files (bb oversight, no scan on file)",
-    "## Process rules this workspace measured itself needing",
-    "## Do not",
+    "## What this brief does not settle",
   ]);
   assert.match(b.prompt, /ask before opening these: `src\/\w+\.js`/);
   assert.match(b.prompt, /    npm run lint\n    npm test   # before the PR/);
@@ -83,12 +81,65 @@ test("prompt: the exact section order, gates, traps, process rules", async () =>
   assert.doesNotMatch(b.prompt, /E2/);
   assert.match(b.prompt, /- batch independent calls\n- read the region/);
   assert.match(b.prompt, /^Reference tables, read instead of searching: `\.bundlebox\/out\/snapgen\/layout\.md` ~\d+/m);
-  assert.match(b.prompt, /do not re-read the files\n\n`src\/\w+\.js` lines \d+-\d+ \(~\d+ tokens\)\n```\n/);
+  assert.match(b.prompt, /quoted, current\n\n`src\/\w+\.js` lines \d+-\d+ \(~\d+ tokens\)\n```\n/);
   // The ambiguity ledger states what the brief leaves open rather than filling
   // it in. A brief with nothing open still prints the section, because a
   // missing section reads as "not checked".
   assert.ok(b.ambiguity.score >= 0 && b.ambiguity.score <= 1);
   assert.match(b.prompt, /## What this brief does not settle\n(- nothing unresolved|Ambiguity 0\.\d+)/);
+});
+
+// ── the order is the cache ──────────────────────────────────────────────────
+//
+// Measured 2026-09-18: two briefs for different tasks shared 1,594 of 3,350
+// characters, all of them AFTER the task-specific sections, so no run could
+// cache them. The shared part now leads, and the problem statement is the
+// first byte that differs.
+test("two briefs for different tasks share a byte-identical prefix that ends at the problem statement", async () => {
+  process.env.BB_KERNEL = "/nonexistent";
+  const { PREAMBLE } = await import("../src/wire/brief.js");
+  const a = await pinpoint.build("loginToken expires early in refreshSession", { files: ["src/auth.js"] });
+  const b = await pinpoint.build("checkPassword rejects valid passwords", { files: ["src/auth.js"] });
+  assert.ok(a.prompt.startsWith(PREAMBLE + "\n"), "the brief opens with the shared preamble");
+  let i = 0;
+  while (i < a.prompt.length && a.prompt[i] === b.prompt[i]) i++;
+  const shared = a.prompt.slice(0, i);
+  assert.ok(shared.length > PREAMBLE.length + 40, `shared prefix is ${shared.length} chars; the tables and process rules belong in it too`);
+  assert.ok(shared.includes("Reference tables, read instead of searching"));
+  assert.ok(shared.includes("- batch independent calls"));
+  assert.match(a.prompt.slice(i - 3), /^\n# /, "the first differing byte is the problem statement's title");
+  assert.doesNotMatch(a.prompt, /## Do not/, "the policy list lives in the preamble now, once, ahead of the varying part");
+});
+
+// ── the change, not only the coordinates ─────────────────────────────────────
+test("proposals: a statement that spells the edit out yields one diff when the old text sits in exactly one located region", async () => {
+  process.env.BB_KERNEL = "/nonexistent";
+  const b = await pinpoint.build("refreshSession returns a stale token: change `loginToken(id)` to `loginToken(id, { fresh: true })`", { files: ["src/session.js"] });
+  assert.equal(b.proposals.length, 1, JSON.stringify(b.proposals));
+  const p = b.proposals[0];
+  assert.equal(p.file, "src/session.js");
+  assert.equal(p.from, "loginToken(id)");
+  assert.match(p.diff, /^--- a\/src\/session\.js\n\+\+\+ b\/src\/session\.js\n@@ -\d+,\d+ \+\d+,\d+ @@\n/);
+  assert.match(p.diff, /\n-  const t = loginToken\(id\);\n\+  const t = loginToken\(id, \{ fresh: true \}\);\n/);
+  assert.match(b.prompt, /## Proposed change — apply it, then run the gate\n\n`src\/session\.js:\d+` in `refreshSession`: `loginToken\(id\)` → `loginToken\(id, \{ fresh: true \}\)`/);
+  assert.match(b.prompt, /```diff\n--- a\/src\/session\.js/);
+  // The band names it, so the session knows the brief carries the change
+  // before it opens anything.
+  const brief = await import("../src/wire/brief.js");
+  const band = brief.band(brief.record(b));
+  assert.match(band, /proposed change, as a diff in the brief: src\/session\.js:\d+ — `loginToken\(id\)` → `loginToken\(id, \{ fresh: true \}\)`/);
+});
+
+test("proposals: an old text that matches nowhere, or in two places, yields no diff and no section", () => {
+  const anchors = [
+    { path: "a.js", symbol: "f", line_start: 10, line_end: 12, text: "function f() {\n  return x + 1;\n}", tokens: 10 },
+    { path: "b.js", symbol: "g", line_start: 20, line_end: 22, text: "function g() {\n  return x + 1;\n}", tokens: 10 },
+  ];
+  assert.deepEqual(pinpoint.proposals({ problem: "change `x + 1` to `x + 2`", anchors }), [], "two regions match: a choice, not a diff");
+  assert.deepEqual(pinpoint.proposals({ problem: "change `y` to `z`", anchors }), [], "nothing matches");
+  assert.deepEqual(pinpoint.statedEdits("make it faster"), [], "no spans, no edits");
+  assert.deepEqual(pinpoint.statedEdits("`a` -> `b`; rename `c` to `d`; replace `e` with `f`; `g` should be `h`"),
+    [{ from: "a", to: "b" }, { from: "e", to: "f" }, { from: "c", to: "d" }, { from: "g", to: "h" }]);
 });
 
 test("ambiguity: a brief that locates nothing and proves nothing scores higher than one that does", async () => {

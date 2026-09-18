@@ -17,7 +17,47 @@ import { readJson, writeJson } from "../core/config.js";
 import { readText } from "../core/fs.js";
 import { now, slug } from "../core/util.js";
 import { text as estimateText } from "../tokens/estimate.js";
+import { PREAMBLE } from "../wire/brief.js";
 import { PACKS, world, plan } from "./world.js";
+
+// ── the half of a pack that never changes ───────────────────────────────────
+//
+// Emitted first, after the preamble every bundlebox brief shares, so two packs
+// for unrelated surfaces present the same prefix to the cache. Measured before
+// the reorder: six packs, 30.1 kB, 90% identical, and every identical byte
+// came after the surface name. Nothing in here may mention the surface, the
+// corpus or the persona; those open the varying half below.
+const FIXED = [
+  "## The shape, exactly", "",
+  "```json",
+  JSON.stringify({ id: "unique-across-the-corpus", surface: "<this surface>", severity: "high | medium | low",
+    title: "what a person would call this situation", question: "the question the steps answer",
+    rule: ["the behaviour as the SOURCE defines it, quoted, with the constant names"],
+    steps: ["…"] }, null, 2),
+  "```", "",
+  "A step is one of three things and never two:", "",
+  "```json",
+  '{"name": "…", "do": "POST /path", "body": {}, "expect": {"status": 201}, "save": {"x": "id"}, "precondition": false}',
+  '{"name": "…", "run": "npm test", "expect": {"rc": 0, "stdout_contains": "…"}}',
+  '{"name": "STATIC: …", "static": {"file": "src/x.js", "contains": "CONST = 24"}}',
+  "```", "",
+  "**Expectation keys** (anything else is refused, nothing else is implemented): `status` `status_in` `max_ms` `json` `json_not` `json_in` `json_type` `json_present` `json_absent` `json_len_at_least` `json_len_at_most` `json_gte` `json_lte` `json_matches` `each` `contains` `not_both` — and for `run`: `rc` `stdout_contains` `stderr_contains`.", "",
+  "**Substitution tokens, built in** (these always resolve): `{{now}}` `{{today}}` `{{epoch}}` (this instant) · `{{+2d}}` `{{-1d}}` (a date) · `{{now+90m}}` `{{now-3d}}` (an instant) · `{{localdate}}` `{{localdate-1d}}` `{{localday+7h}}` (the persona's clock; `localday` is the NEXT local midnight plus the offset, in UTC) · `{{timezone}}` `{{tzoffset}}` · `{{run}}` `{{rand}}` `{{rand:16}}`. An offset carries its unit — `s` `m` `h` `d` `w` — so `{{+90}}` resolves to nothing rather than to seconds. A string that is exactly one token keeps that value's TYPE.", "",
+  "## What this brief does not accept", "",
+  "| what it is tempting to do instead | why it does not apply here |",
+  "|---|---|",
+  "| \"I read the handler; the shape is obvious\" | A scenario asserts what the SERVICE returns, not what the source appears to return. The gap between those two is the only thing this corpus exists to find. |",
+  "| \"I'll assert the status and move on\" | A `status`-only step proves the route exists, not that it works. The plan already counts those as shallow and they will come back on the next pass. |",
+  "| \"the acceptance is slow, I'll run it at the end\" | It takes under a second and needs no server. Run it after the first file, not after the last. |",
+  "| \"this needs a field I do not know, I'll guess it\" | A guessed field name produces a red step about the corpus, which costs another session to un-diagnose. Narrow the assertion and put the gap in `question`. |",
+  "| \"I should also fix the bug this found\" | Not in this call. A red step becomes a finding, gets packed and budgeted, and is fixed under its own acceptance. |", "",
+  "## Rules for this work", "",
+  "1. **Quote, do not invent.** The `rule` block cites the document or the source, with constant names. A red step must be the system contradicting something written down, not the corpus having an opinion.",
+  "2. **Every scenario asserts.** A step with an empty `expect` is refused by the acceptance below.",
+  "3. **Read back after a write.** A 200 that stored nothing is identical to a 200 that stored everything, from the write alone.",
+  "4. **Say what you could not settle.** If a body shape, a field name or an auth header is not in this brief, put it in the scenario's `question` and leave the assertion narrow. A guessed field name is a red step about the corpus.",
+  "5. **Edit only under Scope**, named below.",
+].join("\n");
 
 /** One brief per surface, carrying the derived half and nothing else.
  *
@@ -43,25 +83,11 @@ export function packText(id, specs, { corpusId, w, persona = {} }) {
     ps.length ? `${ps.map((k) => `\`{{${k}}}\``).join(" ")} saved by the persona's \`setup\`` : "",
     "`{{anything_saved}}` from an earlier `save` in the SAME scenario",
   ].filter(Boolean).join(" · ");
+  // Fixed half first, varying half second: see FIXED.
   const L = [
+    PREAMBLE, "", FIXED, "",
     `# Write ${specs.length} scenario${specs.length > 1 ? "s" : ""} for \`${surface}\``, "",
-    `Everything below was derived locally and costs nothing to restate. Do not re-derive it, do not search for it, and do not read the whole tree: what you need is here.`, "",
-    `**Where they go:** \`${dir}/NN-${surface}/<nn>-<slug>.json\`, one file per scenario. Path order is execution order and scenarios in one corpus share their setup, so a scenario may rely on a row an EARLIER path wrote.`, "",
-    "**The shape, exactly:**", "",
-    "```json",
-    JSON.stringify({ id: "unique-across-the-corpus", surface, severity: "high | medium | low",
-      title: "what a person would call this situation", question: "the question the steps answer",
-      rule: ["the behaviour as the SOURCE defines it, quoted, with the constant names"],
-      steps: ["…"] }, null, 2),
-    "```", "",
-    "A step is one of three things and never two:", "",
-    "```json",
-    '{"name": "…", "do": "POST /path", "body": {}, "expect": {"status": 201}, "save": {"x": "id"}, "precondition": false}',
-    '{"name": "…", "run": "npm test", "expect": {"rc": 0, "stdout_contains": "…"}}',
-    '{"name": "STATIC: …", "static": {"file": "src/x.js", "contains": "CONST = 24"}}',
-    "```", "",
-    "**Expectation keys** (anything else is refused, nothing else is implemented): `status` `status_in` `max_ms` `json` `json_not` `json_in` `json_type` `json_present` `json_absent` `json_len_at_least` `json_len_at_most` `json_gte` `json_lte` `json_matches` `each` `contains` `not_both` — and for `run`: `rc` `stdout_contains` `stderr_contains`.", "",
-    "**Substitution tokens, built in** (these always resolve): `{{now}}` `{{today}}` `{{epoch}}` (this instant) · `{{+2d}}` `{{-1d}}` (a date) · `{{now+90m}}` `{{now-3d}}` (an instant) · `{{localdate}}` `{{localdate-1d}}` `{{localday+7h}}` (the persona's clock; `localday` is the NEXT local midnight plus the offset, in UTC) · `{{timezone}}` `{{tzoffset}}` · `{{run}}` `{{rand}}` `{{rand:16}}`. An offset carries its unit — `s` `m` `h` `d` `w` — so `{{+90}}` resolves to nothing rather than to seconds. A string that is exactly one token keeps that value's TYPE.", "",
+    `**Scope:** \`${dir}/NN-${surface}/<nn>-<slug>.json\`, one file per scenario, and nothing outside \`${dir}\`. Path order is execution order and scenarios in one corpus share their setup, so a scenario may rely on a row an EARLIER path wrote.`, "",
     `**Substitution tokens this corpus defines** (there are no others — the acceptance refuses a name nothing in scope defines): ${defined}.`, "",
     "## The rules this surface states, quoted from the document", "",
   ];
@@ -74,20 +100,6 @@ export function packText(id, specs, { corpusId, w, persona = {} }) {
     L.push(`### \`${s.capability}\` — ${s.tier}`, "", `${s.why}`, "", "```json", JSON.stringify(s.skeleton, null, 2), "```", "");
   }
   L.push(
-    "## What this brief does not accept", "",
-    "| what it is tempting to do instead | why it does not apply here |",
-    "|---|---|",
-    "| \"I read the handler; the shape is obvious\" | A scenario asserts what the SERVICE returns, not what the source appears to return. The gap between those two is the only thing this corpus exists to find. |",
-    "| \"I'll assert the status and move on\" | A `status`-only step proves the route exists, not that it works. The plan already counts those as shallow and they will come back on the next pass. |",
-    "| \"the acceptance is slow, I'll run it at the end\" | It takes under a second and needs no server. Run it after the first file, not after the last. |",
-    "| \"this needs a field I do not know, I'll guess it\" | A guessed field name produces a red step about the corpus, which costs another session to un-diagnose. Narrow the assertion and put the gap in `question`. |",
-    "| \"I should also fix the bug this found\" | Not in this call. A red step becomes a finding, gets packed and budgeted, and is fixed under its own acceptance. |", "",
-    "## Rules for this work", "",
-    "1. **Quote, do not invent.** The `rule` block cites the document or the source, with constant names. A red step must be the system contradicting something written down, not the corpus having an opinion.",
-    "2. **Every scenario asserts.** A step with an empty `expect` is refused by the acceptance below.",
-    "3. **Read back after a write.** A 200 that stored nothing is identical to a 200 that stored everything, from the write alone.",
-    "4. **Say what you could not settle.** If a body shape, a field name or an auth header is not in this brief, put it in the scenario's `question` and leave the assertion narrow. A guessed field name is a red step about the corpus.",
-    "5. Do not edit anything outside `" + dir + "`.", "",
     "## Done when", "",
     "```bash", `bb cookbook check --persona ${corpusId}`, "```", "",
     "That is free, needs no server, and refuses a scenario that asserts nothing, an unknown surface, an unimplemented expectation key, a duplicate id and a `{{token}}` nothing in scope defines. Run it; report what it printed.", "");
