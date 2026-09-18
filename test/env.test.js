@@ -75,7 +75,33 @@ test("the cron tick rebuilds the page, which it used to leave stale", async () =
 test("nothing on the unattended tick can spend", async () => {
   const cron = await import("../src/cron.js");
   assert.deepEqual(await cron.unsafeVerbs("factory"), [], "a cron line must not be able to say --apply to something that costs money");
+  for (const e of cron.CRON_ENTRIES) assert.deepEqual(await cron.unsafeVerbs(e.gear), [], `${e.gear} is on a cron line`);
   assert.deepEqual(await cron.unsafeVerbs(env.BOOTSTRAP), []);
+});
+
+test("a gear declaring on: cron is reached by a line install writes", async () => {
+  // `on: cron` was an eligibility, not a schedule: one line ran `factory`, and
+  // `situation`, `ops` and `scenarios` declared cron while no chain named them.
+  const cron = await import("../src/cron.js");
+  const { GEARS } = await import("../src/pipeline/gears.js");
+  const byName = new Map(GEARS.map((g) => [g.name, g]));
+  const reached = new Set();
+  const stack = cron.CRON_ENTRIES.map((e) => e.gear);
+  while (stack.length) {
+    const g = byName.get(stack.pop());
+    if (!g || reached.has(g.name)) continue;
+    reached.add(g.name);
+    for (const c of g.chain) stack.push(c.gear);
+  }
+  const declared = GEARS.filter((g) => g.on.includes("cron")).map((g) => g.name);
+  assert.deepEqual(declared.filter((n) => !reached.has(n)), [], "declared on: cron, reached by no installed line");
+  const ls = cron.lines({});
+  assert.equal(ls.length, cron.CRON_ENTRIES.length);
+  for (const [i, e] of cron.CRON_ENTRIES.entries()) assert.ok(ls[i].includes(`pipeline run ${e.gear} --apply`), e.gear);
+  assert.equal(cron.schedule(30), "*/30 * * * *");
+  assert.equal(cron.schedule(360), "0 */6 * * *");
+  assert.equal(cron.gearOf(ls[1]), "full");
+  assert.equal(cron.gearOf("*/5 * * * * somebody-elses-line"), "");
 });
 
 test("a row no gear may build is reported apart from one that is missing", async () => {

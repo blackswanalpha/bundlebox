@@ -197,16 +197,17 @@ check("bb help lists every verb", async () => {
 
 check("the cron line runs the stages instead of reporting them", async () => {
   const cron = await import("./cron.js");
-  const l = cron.line({});
-  const bad = await cron.unsafeVerbs();
+  const ls = cron.lines({});
   // A worker installed without --apply reported `would-run` every half hour and
   // produced nothing, indefinitely, while looking installed. The other half of
   // the same check: --apply on a gear that reaches `run` would be a spending
-  // loop on a timer, so the gear's verbs are checked rather than trusted.
-  const runs = l.includes(`pipeline run ${cron.CRON_GEAR} --apply`);
-  return [runs && !bad.length,
-    runs ? (bad.length ? `\`${cron.CRON_GEAR}\` reaches a spending verb: ${bad.join(", ")}` : `--apply present; ${cron.CRON_GEAR} reaches no spending verb`)
-      : "the line is a dry run: every stage would report would-run and do nothing"];
+  // loop on a timer, so every entry's verbs are checked rather than trusted.
+  const bad = [];
+  for (const e of cron.CRON_ENTRIES) bad.push(...(await cron.unsafeVerbs(e.gear)));
+  const dry = cron.CRON_ENTRIES.filter((e, i) => !ls[i].includes(`pipeline run ${e.gear} --apply`)).map((e) => e.gear);
+  return [!dry.length && !bad.length,
+    dry.length ? `dry-run line(s): ${dry.join(", ")} — every stage would report would-run and do nothing`
+      : bad.length ? `a cron gear reaches a spending verb: ${bad.join(", ")}` : `--apply present on ${ls.length} line(s); no cron gear reaches a spending verb`];
 });
 
 check("the ablation bench measures both arms and is deterministic", async () => {
