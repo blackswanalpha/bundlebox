@@ -72,6 +72,14 @@ export const GEARS = [
       // nothing; a factor with too few samples keeps its shipped value and the
       // report says so.
       { verb: "tokens", args: ["calibrate"], flags: { apply: true }, description: "refit churn, widen and the reserve table from this workspace's own history" },
+      // The other fitted number, beside the first. Every promotion on the board
+      // decided from the shipped PRECISION constants because nothing on any
+      // schedule reached `triage calibrate`; the replay simulator and its
+      // labels sat unused. The verb keeps the shipped rule below its floor of
+      // labelled closures and records that it did, with the sample size, so
+      // `bb doctor` shows which rule is in force and on how much evidence.
+      { verb: "triage", args: ["calibrate"], flags: { apply: true }, optional: true,
+        description: "refit the promotion rule to the labelled closures; below the floor, keep the shipped one and say so" },
       // The other axis: what the WORK looked like, not what it cost. Reads the
       // recorded shapes, the folded turns and the brief scopes — all three of
       // which the stages above just refreshed — and files a finding per hit.
@@ -122,7 +130,9 @@ export const GEARS = [
     on: ["cron", "hand"],
     stages: [
       { verb: "cookbook", args: ["check"], when: "corpora > 0", description: "the corpus asserts something — no server, no requests" },
-      { verb: "cookbook", args: ["run"], when: "corpus_base == 1 and scenarios > 0", description: "the kernel executes it; red steps become findings" },
+      // Three terms, not two: a declared base that nothing answers at is a
+      // board full of connection errors, which is worse than no board.
+      { verb: "cookbook", args: ["run"], when: "corpus_base == 1 and base_up == 1 and scenarios > 0", description: "the kernel executes it; red steps become findings" },
       { verb: "mainboard", args: ["run"], flags: { only: "scoreyard,turntables,cyberrender" }, when: "corpora > 0", optional: true, description: "what the board means, whether the same scenario still answers the same way, and what it still does not cover" },
       { verb: "frames", args: ["eval"], description: "every eval; a red one becomes a finding under `eval`" },
     ],
@@ -166,7 +176,11 @@ export const GEARS = [
     name: "full", description: "the whole pipeline: what is happening, what is wrong, what a session gets, what the system does, what it cost",
     on: ["cron"],
     stages: [],
-    chain: ["situation", "intake", "orient", "scenarios", "watch", "buckmaster"],
+    // Every gear that declares `on: cron` is reached from an installed line or
+    // it is not on cron: `factory` covers the free path every half hour and
+    // this one, on the slower line, covers the rest — `ops` included, which
+    // declared cron for months while no chain named it.
+    chain: ["situation", "ops", "intake", "orient", "scenarios", "watch", "buckmaster"],
   }),
   gear({
     name: "pr", description: "what routed, and what a PR run would do (dry)",

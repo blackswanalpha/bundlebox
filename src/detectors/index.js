@@ -227,12 +227,21 @@ export const commands = {
         ...(flags.cost ? { cost_penalty: Number(flags.cost) } : {}),
       });
       if (!r) { warn(`python3 is required to fit the promotion rule (${expert.lastError}). bb doctor`); return 2; }
-      if (flags.json) { emit(r); return r.ok ? 0 : 1; }
+      // --apply records whichever rule is in force, with the sample size
+      // beside it: a fitted one, or the shipped one and why. A fit below the
+      // floor that wrote nothing left `bb doctor` unable to say whether the
+      // rule had ever been checked against this workspace's closures.
+      const record = (fitted) => store.applyTriagePolicy(r.policy, {
+        fitted, n: r.acted_on, labelled: r.labelled, ...(r.need ? { need: r.need } : {}), ...(r.why ? { why: r.why } : {}),
+        ...(r.ok ? { score_before: r.score_before, score_after: r.score_after, explored: r.explored } : {}),
+      });
+      if (flags.json) { if (flags.apply) record(Boolean(r.ok && r.changed)); emit(r); return r.ok ? 0 : 1; }
       const shape = (p) => `promote_at ${p.promote_at} / ev_mult ${p.ev_mult}`;
       if (!r.ok) {
         out(`  not calibrated: ${r.why}`);
         out(`  running on the shipped rule: ${shape(r.policy)}`);
         out(`  \`bb triage backfill\` labels what git can still prove.`);
+        if (flags.apply) { out(`  recorded as in force, with n=${r.acted_on}, in ${record(false)}`); return 0; }
         return 1;
       }
       out(`  ${r.basis}`, "");
@@ -240,10 +249,13 @@ export const commands = {
         const x = r[k];
         out(`  ${name.padEnd(8)} ${shape(name === "shipped" ? r.shipped : r.policy).padEnd(34)} promoted ${x.promoted}, caught ${x.caught} of ${x.acted_on}, recall ${x.recall}, waste ${x.waste_share}  score ${k === "before" ? r.score_before : r.score_after}`);
       }
-      if (!r.changed) { out(`\n  the shipped rule already wins over ${r.explored} policy(s) explored; nothing to apply`); return 0; }
+      if (!r.changed) {
+        out(`\n  the shipped rule already wins over ${r.explored} policy(s) explored; nothing to change`);
+        if (flags.apply) out(`  recorded as in force, with n=${r.acted_on}, in ${record(false)}`);
+        return 0;
+      }
       if (flags.apply) {
-        const p = store.applyTriagePolicy(r.policy, { acted_on: r.acted_on, score_before: r.score_before, score_after: r.score_after });
-        out(`\n  written to ${p}`);
+        out(`\n  written to ${record(true)}`);
         return 0;
       }
       out(`\n  ${r.explored} policy(s) explored in ${r.steps} step(s). \`bb triage calibrate --apply\` keeps it.`);

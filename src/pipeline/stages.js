@@ -25,6 +25,7 @@ import { readJson, load as loadCfg } from "../core/config.js";
 import { gitOk, git } from "../core/exec.js";
 import { shouldRun, REPEATABLES } from "../recom/repeatable.js";
 import { list as corpusList } from "../cookbook/corpus.js";
+import { reachable } from "./facts.js";
 
 const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
 const newest = (dir, suffix = ".json") => {
@@ -125,6 +126,10 @@ export const STAGES = [
       if (!base) {
         return unknown("no corpus declares a base to run against: set `base` in .bundlebox/cookbook/<id>/persona.json, or pass `bb cookbook run --base <url>`", { needs: "persona.base" });
       }
+      // A base nothing answers at is the same kind of UNKNOWN as no base: the
+      // run cannot happen, and reporting a gap says the corpus was not run
+      // when what happened is that there was nothing to run it against.
+      if (!reachable(base)) return unknown(`nothing answers at ${base}; the corpus cannot be run until the service is up`, { base, needs: "service" });
       if (!boards) return gap(`the corpus has never been run against ${base}; a corpus nobody runs is documentation`, { base });
       if (boards < scen) return gap(`the newest board is older than the newest scenario (${ago(boards)} vs ${ago(scen)}) — it is reporting on a corpus that has changed`, { board_at: boards, corpus_at: scen });
       return ok(`board is ${ago(boards)}, newer than the corpus`, { board_at: boards });

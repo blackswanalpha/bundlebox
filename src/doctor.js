@@ -104,7 +104,19 @@ export async function rows() {
   // `fitted_at` and so reported "shipped coefficients" forever, however many
   // times it was run. Both keys are accepted, newest wins.
   const fittedAt = cal.calibrated_at || cal.fitted_at || "";
-  r.push(row("calibration", fittedAt ? "ok" : "warn", fittedAt ? `fitted ${fittedAt}${cal.fit?.code?.samples ? ` (${cal.fit.code.samples} samples)` : ""}` : "shipped coefficients", fittedAt ? "" : "bb tokens calibrate --write (needs transcripts)"));
+  // Both fits on one row: the token fit and the promotion rule. A rule with no
+  // sample size beside it is a number nobody can weigh, so that is a warn even
+  // when a policy is present; the shipped rule below the floor is a legitimate
+  // answer and says how far below.
+  const tr = cal.triage || null;
+  const triage = !tr ? "triage rule never calibrated"
+    : !Number.isFinite(Number(tr.n)) ? "triage rule with no sample size"
+    : tr.fitted ? `triage rule fitted (n=${tr.n} acted_on of ${tr.labelled ?? "?"} labelled)`
+    : `shipped triage rule (n=${tr.n} acted_on${tr.need ? `, need ${tr.need}` : ""})`;
+  const triageOk = Boolean(tr && Number.isFinite(Number(tr.n)));
+  r.push(row("calibration", fittedAt && triageOk ? "ok" : "warn",
+    `${fittedAt ? `fitted ${fittedAt}${cal.fit?.code?.samples ? ` (${cal.fit.code.samples} samples)` : ""}` : "shipped coefficients"}; ${triage}`,
+    !fittedAt ? "bb tokens calibrate --write (needs transcripts)" : !triageOk ? "bb triage calibrate --apply" : ""));
   const obs = cal.overhead_observed || null;
   const over = cfg.budget.overhead_lean ? `${human(cfg.budget.overhead_lean)} (probed lean)`
     : obs && cfg.budget.overhead_tokens ? `${human(cfg.budget.overhead_tokens)} (observed min of ${obs.n} transcript${obs.n > 1 ? "s" : ""}; upper bound for a lean lane)`
@@ -121,6 +133,19 @@ export async function rows() {
       `${g.ok} of ${g.of} stages hold${g.next ? `; first gap: ${g.next.title.toLowerCase()}` : ""}`,
       g.next ? g.next.fix : ""));
   } catch (e) { r.push(row("pipeline", "warn", `stages could not be evaluated: ${String(e.message).split("\n")[0]}`, "")); }
+  // A gear declaring `on: cron` that no installed line reaches is its own row,
+  // not a pipeline gap: "not installed" and "ran and failed" are different
+  // fixes, and the pipeline row could not tell them apart.
+  try {
+    const cron = await import("./cron.js");
+    const g = await cron.cronGears();
+    if (g.installed === null) r.push(row("cron gears", "warn", `${g.declared.length} declared; crontab is not readable on this box`, ""));
+    else if (!g.installed.length) r.push(row("cron gears", "warn", `${g.declared.length} declared, no line installed`, "bb cron install --apply"));
+    else r.push(row("cron gears", g.missing.length ? "warn" : "ok",
+      g.missing.length ? `${g.missing.length} of ${g.declared.length} declared \`on: cron\` reached by no installed line: ${g.missing.join(", ")}`
+        : `${g.declared.length} declared, all reached by ${g.installed.length} installed line(s)`,
+      g.missing.length ? "bb cron install --apply" : ""));
+  } catch (e) { r.push(row("cron gears", "warn", String(e.message).split("\n")[0], "")); }
   try {
     const corpus = await import("./cookbook/corpus.js");
     const rows = corpus.list();
