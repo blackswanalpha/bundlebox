@@ -144,7 +144,11 @@ jobs:
   # reason this file has four jobs.
   npm:
     needs: [ref, gate, release]
-    if: ${{ inputs.npm != false }}
+    # `inputs.npm` is null on a tag push, and GitHub compares null equal to
+    # false, so `inputs.npm != false` skipped this job on every tagged release
+    # (v0.5.0 and v0.6.0 both shipped binaries and never reached the registry).
+    # A push always publishes; a dispatch publishes unless told not to.
+    if: ${{ github.event_name == 'push' || inputs.npm }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
