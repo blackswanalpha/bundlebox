@@ -412,10 +412,16 @@ export function searchVerdict(rec, pattern, { glob = "", pathArg = "", cwd = "",
   const lookup = terms.length === 1;                         // one name: a declaration lookup
 
   if (rec) {
-    const key = terms.join("+").toLowerCase();
+    // The same words over a DIFFERENT target is a different search. Keyed on
+    // the words alone, `grep "^export" a.js` made `grep "^export" b.js` a
+    // duplicate, and the denial told the session the answer was already in
+    // its window when it was not: one wasted turn, then a retry that had to
+    // be worded around the guard. Measured on this guard's own author's
+    // session, twice in one afternoon.
+    const key = `${terms.join("+").toLowerCase()}@${dirFilter(pathArg, glob, cwd) || "*"}`;
     if ((rec.seen?.searches || {})[key]) {
       tally(rec, "searches", key);
-      return deny(`bundlebox: this search already ran in this session (${terms.join(", ")}). Its result is in your context. Re-running it returns the same rows and bills them twice.`);
+      return deny(`bundlebox: this search already ran in this session (${terms.join(", ")}${pathArg || glob ? ` in ${pathArg || glob}` : ""}). Its result is in your context. Re-running it returns the same rows and bills them twice.`);
     }
     tally(rec, "searches", key);
     const tl = lookup ? terms.map((t) => t.toLowerCase()) : [];

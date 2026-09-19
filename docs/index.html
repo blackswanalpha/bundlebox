@@ -27,18 +27,13 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 var(--sans);l
 .wide{max-width:1000px}
 a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
 a:hover{border-bottom-color:var(--accent)}
-nav{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--rule)}
-nav .wrap{display:flex;align-items:center;gap:22px;height:56px;max-width:1000px}
-nav .n{font-weight:700;letter-spacing:-.025em;font-size:16px;color:var(--ink);border:0}
-nav .links{display:flex;gap:18px;margin-left:auto;font-size:13.5px;overflow-x:auto}
-nav .links a{color:var(--muted);border:0;white-space:nowrap}
-nav .links a:hover{color:var(--ink)}
 header.hero{padding:84px 0 56px;border-bottom:1px solid var(--rule)}
 h1{font-size:clamp(34px,5.4vw,50px);line-height:1.05;letter-spacing:-.035em;margin:0 0 20px;font-weight:700}
 .tagline{font-size:20px;line-height:1.45;color:var(--muted);margin:0 0 30px;max-width:30em;letter-spacing:-.012em}
 .badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px}
 .badges img{height:20px}
-section{padding:52px 0;border-bottom:1px solid var(--rule);scroll-margin-top:66px}
+section{padding:52px 0;border-bottom:1px solid var(--rule);scroll-margin-top:24px}
+@media(max-width:900px){section{scroll-margin-top:64px}}
 section:last-of-type{border-bottom:0}
 h2{font-size:26px;letter-spacing:-.025em;margin:0 0 6px;font-weight:700;line-height:1.2}
 h2 + .kicker{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:0 0 20px}
@@ -74,28 +69,78 @@ td code,th code{white-space:nowrap}
 footer{padding:44px 0 72px;color:var(--faint);font-size:13.5px}
 footer a{color:var(--muted)}
 @media(max-width:900px){.stages{grid-template-columns:repeat(2,minmax(0,1fr))}}
-nav .n{display:inline-flex;align-items:center;gap:8px}
-nav .n .mark{display:block;flex:0 0 auto;margin-top:-1px}
 @media(max-width:700px){.wrap{padding:0 20px}header.hero{padding:56px 0 40px}section{padding:40px 0}.stages{grid-template-columns:1fr}}
+/* the sidebar shell */
+.shell{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--rule);background:var(--panel);
+  padding:20px 12px 18px;display:flex;flex-direction:column}
+.side .brand{display:inline-flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.025em;font-size:16px;color:var(--ink);
+  border:0;padding:4px 10px 14px}
+.side .brand .mark{display:block;flex:0 0 auto;margin-top:-1px}
+.side .sub{font-size:12px;color:var(--faint);padding:0 10px 10px;line-height:1.4}
+.side .group{font:10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:16px 10px 7px}
+.side nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;color:var(--muted);border:0;
+  font-size:13.5px;line-height:1.2;letter-spacing:-.005em}
+.side nav a svg{width:16px;height:16px;flex:0 0 16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;
+  stroke-linejoin:round;opacity:.75}
+.side nav a:hover{background:var(--code-bg);color:var(--ink)}
+.side nav a.on{background:var(--accent-soft);color:var(--accent)}
+.side nav a.on svg{opacity:1}
+.side nav a .k{margin-left:auto;font:10.5px var(--mono);color:var(--faint);letter-spacing:.04em}
+.side nav a.on .k{color:var(--accent)}
+.side .ext{margin-top:auto;padding-top:12px;border-top:1px solid var(--rule)}
+.main{min-width:0}
+.topbar{display:none}
+.scrim{display:none}
+@media(max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .side{position:fixed;top:0;left:0;bottom:0;width:276px;z-index:40;transform:translateX(-102%);transition:transform .18s ease-out;
+    box-shadow:0 0 0 1px var(--rule)}
+  .shell.open .side{transform:none}
+  .scrim{display:block;position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .18s}
+  .shell.open .scrim{opacity:1;pointer-events:auto}
+  .topbar{display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;height:52px;padding:0 16px;
+    background:var(--bg);border-bottom:1px solid var(--rule)}
+  .topbar .brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.025em;font-size:15px;color:var(--ink);border:0}
+  .topbar button{margin-left:auto;background:0;border:1px solid var(--rule);border-radius:7px;color:var(--ink);width:36px;height:32px;
+    display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .topbar button svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+}
 </style>
 </head>
 <body>
 
-<nav><div class="wrap">
-  <a class="n" href="#top"><svg class="mark" width="19" height="19" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 3.5 L42.5 14.2 L42.5 33.8 L24 44.5 L5.5 33.8 L5.5 14.2 Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" opacity=".9"/><path d="M5.5 14.2 L24 24.9 L42.5 14.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" opacity=".28"/><path d="M24 24.9 L24 44.5" stroke="currentColor" stroke-width="1.8" opacity=".28"/><circle cx="24" cy="23.4" r="7.4" fill="var(--bg)"/><circle cx="24" cy="23.4" r="7.4" stroke="var(--accent)" stroke-width="4"/></svg>bundlebox</a>
-  <span class="links">
-    <a href="#problem">Why</a>
-    <a href="#pipeline">Pipeline</a>
-    <a href="#genesis">Genesis</a>
-    <a href="#scenarios">Scenarios</a>
-    <a href="#auditor">Auditor</a>
-    <a href="#budget">Budget</a>
-    <a href="#swebench">SWE-bench</a>
-    <a href="#window">Window</a>
-    <a href="#verbs">Verbs</a>
-    <a href="https://github.com/blackswanalpha/bundlebox">GitHub</a>
-  </span>
-</div></nav>
+<div class="shell" id="shell">
+<aside class="side" id="side">
+  <a class="brand" href="#top"><svg class="mark" width="19" height="19" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 3.5 L42.5 14.2 L42.5 33.8 L24 44.5 L5.5 33.8 L5.5 14.2 Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" opacity=".9"/><path d="M5.5 14.2 L24 24.9 L42.5 14.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" opacity=".28"/><path d="M24 24.9 L24 44.5" stroke="currentColor" stroke-width="1.8" opacity=".28"/><circle cx="24" cy="23.4" r="7.4" fill="var(--bg)"/><circle cx="24" cy="23.4" r="7.4" stroke="var(--accent)" stroke-width="4"/></svg>bundlebox</a>
+  <div class="sub">The zero-token software factory for AI coding agents.</div>
+  <nav aria-label="Sections">
+    <div class="group">Read</div>
+    <a href="#problem"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.7 1.7c-.6.3-.9.7-.9 1.3M8 11.6h.01"/></svg><span>Why</span></a>
+    <a href="#pipeline"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="5.5" width="4" height="5" rx="1"/><rect x="10.5" y="5.5" width="4" height="5" rx="1"/><path d="M5.5 8h5"/></svg><span>Pipeline</span></a>
+    <a href="#genesis"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13M6 8.5h4M6 11h4"/></svg><span>Genesis</span></a>
+    <a href="#scenarios"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5l1.3 1.3L6.5 3M2.5 9l1.3 1.3L6.5 7.5M2.5 13.5l1.3 1.3L6.5 12M9 4.5h5M9 9h5M9 13.5h5"/></svg><span>Scenarios</span></a>
+    <a href="#runtimes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l6.5 3.5L8 9 1.5 5.5z"/><path d="M1.5 9L8 12.5 14.5 9"/></svg><span>Runtimes</span></a>
+    <a href="#simulation"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3l2-5 3 10 2-5h3"/></svg><span>Simulation</span></a>
+    <div class="group">Govern and measure</div>
+    <a href="#auditor"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.5 2v4.5c0 3.2-2.3 5.6-5.5 6.5C4.8 13.6 2.5 11.2 2.5 8V3.5z"/><path d="M5.5 8l1.8 1.8L10.8 6"/></svg><span>Auditor</span></a>
+    <a href="#budget"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.2v7.6M10 6.3c0-.9-.9-1.5-2-1.5s-2 .6-2 1.4c0 1.9 4 .9 4 2.9 0 .8-.9 1.4-2 1.4s-2-.6-2-1.5"/></svg><span>Budget</span></a>
+    <a href="#window"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/></svg><span>Window</span></a>
+    <a href="#swebench"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5h11M4.5 13.5V8M8 13.5V4M11.5 13.5V10"/></svg><span>SWE-bench</span></a>
+    <a href="#honesty"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="5.5" width="13" height="5" rx="1"/><path d="M4.5 5.5v2M7.5 5.5v3M10.5 5.5v2"/></svg><span>Reporting</span></a>
+    <div class="group">Reference</div>
+    <a href="#verbs"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg><span>Verbs</span><span class="k">60</span></a>
+    <a href="#config"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12"/><circle cx="5.5" cy="4.5" r="1.5" fill="var(--panel)"/><circle cx="10.5" cy="8" r="1.5" fill="var(--panel)"/><circle cx="6.5" cy="11.5" r="1.5" fill="var(--panel)"/></svg><span>Config</span></a>
+  </nav>
+  <nav class="ext" aria-label="Elsewhere">
+    <a href="visuals/index.html"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M6.5 5.5L10 8l-3.5 2.5z"/></svg><span>One prompt, end to end</span></a>
+    <a href="https://github.com/blackswanalpha/bundlebox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8A1.5 1.5 0 0 0 13 12.5v-3M9.5 2H14v4.5M14 2L7.5 8.5"/></svg><span>GitHub</span></a>
+    <a href="https://www.npmjs.com/package/bundlebox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8A1.5 1.5 0 0 0 13 12.5v-3M9.5 2H14v4.5M14 2L7.5 8.5"/></svg><span>npm</span></a>
+  </nav>
+</aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<div class="topbar"><a class="brand" href="#top"><svg class="mark" width="19" height="19" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 3.5 L42.5 14.2 L42.5 33.8 L24 44.5 L5.5 33.8 L5.5 14.2 Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" opacity=".9"/><path d="M5.5 14.2 L24 24.9 L42.5 14.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" opacity=".28"/><path d="M24 24.9 L24 44.5" stroke="currentColor" stroke-width="1.8" opacity=".28"/><circle cx="24" cy="23.4" r="7.4" fill="var(--bg)"/><circle cx="24" cy="23.4" r="7.4" stroke="var(--accent)" stroke-width="4"/></svg>bundlebox</a><button id="menu" aria-label="Open the section list" aria-controls="side"><svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button></div>
 
 <header class="hero" id="top"><div class="wrap">
   <h1>The zero-token software factory for AI coding agents.</h1>
@@ -399,5 +444,29 @@ cd your-repo &amp;&amp; bb init &amp;&amp; bb doctor</code></pre>
   <p>bundlebox began as a standard-library Python factory wired into one workspace. This is its portable core, rebuilt and corrected.</p>
 </div></footer>
 
+</div></div>
+<script>
+(function(){
+  var shell=document.getElementById('shell'), btn=document.getElementById('menu'), scrim=document.getElementById('scrim');
+  function close(){shell.classList.remove('open')}
+  if(btn) btn.addEventListener('click',function(){shell.classList.toggle('open')});
+  if(scrim) scrim.addEventListener('click',close);
+  var links=[].slice.call(document.querySelectorAll('.side nav a[href^="#"]'));
+  links.forEach(function(a){a.addEventListener('click',close)});
+  var byId={}; links.forEach(function(a){byId[a.getAttribute('href').slice(1)]=a});
+  var targets=Object.keys(byId).map(function(id){return document.getElementById(id)}).filter(Boolean);
+  if(!('IntersectionObserver' in window)||!targets.length) return;
+  var seen={};
+  function mark(){
+    var top=null, best=Infinity;
+    targets.forEach(function(t){var r=t.getBoundingClientRect(); var d=Math.abs(r.top-80); if(r.bottom>80 && d<best){best=d; top=t}});
+    if(!top) return;
+    links.forEach(function(a){a.classList.toggle('on', a===byId[top.id])});
+  }
+  var io=new IntersectionObserver(function(){mark()},{rootMargin:'-20% 0px -60% 0px',threshold:[0,.25,.5,1]});
+  targets.forEach(function(t){io.observe(t)});
+  window.addEventListener('scroll',mark,{passive:true}); mark();
+})();
+</script>
 </body>
 </html>

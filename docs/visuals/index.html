@@ -1,0 +1,1200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bundlebox — one prompt, end to end</title>
+<meta name="description" content="What bundlebox does between the moment you press enter and the moment the session is measured: sixty verbs, nine hooks, five chained gears, eleven readiness stages, and the one arrow that spends.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2048%22%3E%3Crect%20width%3D%2248%22%20height%3D%2248%22%20rx%3D%2211%22%20fill%3D%22%2307271D%22%2F%3E%3Cpath%20d%3D%22M24%207%20L40%2016.2%20L40%2032.8%20L24%2042%20L8%2032.8%20L8%2016.2%20Z%22%20fill%3D%22none%22%20stroke%3D%22%236FEFC0%22%20stroke-width%3D%223%22%20stroke-linejoin%3D%22round%22%2F%3E%3Ccircle%20cx%3D%2224%22%20cy%3D%2223.4%22%20r%3D%226%22%20fill%3D%22%2307271D%22%2F%3E%3Ccircle%20cx%3D%2224%22%20cy%3D%2223.4%22%20r%3D%226%22%20fill%3D%22none%22%20stroke%3D%22%23CFFFEC%22%20stroke-width%3D%223.4%22%2F%3E%3C%2Fsvg%3E">
+<meta name="color-scheme" content="light dark">
+<style>
+:root{
+  --ink:#141414; --muted:#63615b; --faint:#908d86; --rule:#e4e1da; --bg:#faf9f6; --panel:#fff;
+  --accent:#1f7a5c; --accent-soft:#e9f2ee; --red:#a8302a; --red-soft:#faeeed; --amber:#8a5a12; --amber-soft:#f7efdf; --code-bg:#f4f2ec;
+  --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,"Liberation Mono",Menlo,monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+  --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
+  --accent:#55b892; --accent-soft:#15271e; --red:#e0776e; --red-soft:#2a1816; --amber:#d9a556; --amber-soft:#2a2214; --code-bg:#181a17;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 var(--sans);letter-spacing:-.006em;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding:0 32px}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+header.hero{padding:64px 0 40px;border-bottom:1px solid var(--rule)}
+h1{font-size:clamp(32px,4.6vw,46px);line-height:1.05;letter-spacing:-.035em;margin:0 0 18px;font-weight:700}
+.tagline{font-size:19px;line-height:1.5;color:var(--muted);margin:0 0 30px;max-width:36em;letter-spacing:-.012em}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.stats a{display:block;background:var(--panel);padding:14px 16px;border:0;color:var(--ink)}
+.stats a:hover{background:var(--code-bg)}
+.stats .n{font:700 26px/1 var(--sans);letter-spacing:-.03em;display:block;margin-bottom:6px}
+.stats .l{font-size:12.5px;color:var(--muted);display:block;line-height:1.3}
+.stats a.spend .n{color:var(--red)}
+section{padding:52px 0;border-bottom:1px solid var(--rule);scroll-margin-top:24px}
+section:last-of-type{border-bottom:0}
+h2{font-size:26px;letter-spacing:-.025em;margin:0 0 6px;font-weight:700;line-height:1.2}
+h2 + .kicker{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:0 0 20px}
+h3{font-size:16px;letter-spacing:-.015em;margin:34px 0 10px;font-weight:700}
+p{margin:0 0 18px;max-width:40em}
+p.lead{font-size:18px;color:var(--muted);letter-spacing:-.01em}
+code{font-family:var(--mono);font-size:.875em;background:var(--code-bg);padding:2px 5px;border-radius:4px}
+.muted{color:var(--muted)}
+.note{font-size:14px;color:var(--muted);border-left:2px solid var(--rule);padding-left:16px;margin:0 0 20px;max-width:44em}
+
+/* the board */
+figure{margin:0 0 26px}
+figure svg{display:block;width:100%;height:auto}
+figcaption{font-size:13px;color:var(--faint);margin-top:12px;max-width:44em}
+.b-node{fill:var(--panel);stroke:var(--rule);stroke-width:1.5}
+.b-node.spend{stroke:var(--red);stroke-width:2;fill:var(--red-soft)}
+.b-node.you{fill:var(--accent-soft);stroke:var(--accent)}
+.b-label{font:600 13px var(--mono);fill:var(--ink)}
+.b-cap{font:11px var(--sans);fill:var(--faint)}
+.b-cap.spend{fill:var(--red)}
+.b-band{fill:none;stroke:var(--accent);stroke-width:1.2;stroke-dasharray:5 5;opacity:.55}
+.b-bandlabel{font:10.5px var(--mono);fill:var(--accent);letter-spacing:.06em;text-transform:uppercase}
+.b-wire{fill:none;stroke:var(--faint);stroke-width:1.5}
+
+/* every verb */
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 18px}
+.toolbar input{flex:1 1 240px;max-width:380px;font:14px var(--sans);color:var(--ink);background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:9px 12px;outline:0}
+.toolbar input:focus{border-color:var(--accent)}
+.toolbar .count{font:12px var(--mono);color:var(--faint);letter-spacing:.04em;margin-left:auto}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 26px}
+.chips button{font:12.5px var(--sans);color:var(--muted);background:var(--panel);border:1px solid var(--rule);border-radius:999px;padding:5px 12px;cursor:pointer}
+.chips button:hover{color:var(--ink)}
+.chips button.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:0 0 26px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.chapter{margin:0 0 34px}
+.chapter.empty{display:none}
+.ch-head{display:flex;align-items:baseline;gap:12px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+.ch-id{font:600 12px var(--mono);color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
+.ch-q{font-size:15px;color:var(--ink);font-weight:600;letter-spacing:-.01em}
+.ch-n{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 15px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.card.hide{display:none}
+.card-top{display:flex;align-items:center;gap:10px}
+.verb{font:600 13.5px var(--mono);color:var(--ink);letter-spacing:-.01em}
+.eff{margin-left:auto;font:10.5px var(--mono);letter-spacing:.04em;border-radius:4px;padding:3px 7px;white-space:nowrap}
+.eff.reads{background:var(--code-bg);color:var(--faint)}
+.eff.records{background:var(--accent-soft);color:var(--accent)}
+.eff.writes{background:var(--amber-soft);color:var(--amber)}
+.eff.spends{background:var(--red-soft);color:var(--red)}
+.card .help{font-size:13.5px;line-height:1.45;color:var(--muted);margin:0;max-width:none}
+.card .usage{display:block;font:11.5px/1.5 var(--mono);color:var(--ink);background:var(--code-bg);padding:7px 9px;border-radius:6px;white-space:pre-wrap;word-break:break-word}
+.card-foot{font:11px var(--mono);color:var(--faint);margin-top:auto;padding-top:2px}
+.aliases{font-size:13.5px;color:var(--muted);max-width:none}
+.aliases code{white-space:nowrap}
+
+/* the timeline */
+ol.tl{list-style:none;margin:0 0 8px;padding:0 0 0 26px;border-left:1px solid var(--rule)}
+ol.tl > li{position:relative;padding:0 0 30px 26px}
+ol.tl > li::before{content:"";position:absolute;left:-31px;top:7px;width:9px;height:9px;border-radius:50%;background:var(--bg);border:2px solid var(--accent)}
+ol.tl > li:last-child{padding-bottom:0}
+.ev{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:3px}
+.ev b{font:600 15px var(--sans);letter-spacing:-.01em}
+.ev .t{font:10.5px var(--mono);color:var(--faint);letter-spacing:.06em}
+.ev .cmd{font:12px var(--mono);color:var(--muted);background:var(--code-bg);padding:2px 7px;border-radius:4px}
+.tl p{margin:0 0 9px;font-size:14.5px;color:var(--muted);max-width:44em;line-height:1.55}
+.tl p:last-child{margin-bottom:0}
+.tl p b{color:var(--ink);font-weight:600}
+.tl .eff{margin-left:0;font-size:11px;padding:3px 8px;margin-right:7px;display:inline-flex;align-items:center;gap:7px}
+.eff.in{background:var(--accent-soft);color:var(--accent)}
+.eff.deny{background:var(--red-soft);color:var(--red)}
+.eff.quiet{background:var(--code-bg);color:var(--faint)}
+.tl .sub{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:8px}
+.tl .sub li{display:grid;grid-template-columns:132px 1fr;gap:14px;align-items:baseline;font-size:13.5px;line-height:1.5;color:var(--muted)}
+.tl .sub .k{font:12px var(--mono);color:var(--accent)}
+
+/* rails and grids */
+.rail{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:0 0 18px}
+.rail .step{flex:1 1 0;min-width:132px;background:var(--panel);border:1px solid var(--rule);border-radius:9px;padding:12px 13px}
+.rail .arw{flex:0 0 26px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13px}
+.rail .v{font:600 12.5px var(--mono);color:var(--ink);display:block;margin-bottom:4px;word-break:break-word}
+.rail .d{font-size:12px;line-height:1.4;color:var(--muted)}
+.gears{display:grid;gap:16px;margin:0 0 6px}
+.gear{border:1px solid var(--rule);border-radius:10px;background:var(--panel);padding:16px 18px}
+.gear h4{margin:0 0 3px;font:600 14px var(--sans)}
+.gear h4 code{background:0;padding:0;color:var(--accent);font-size:13px}
+.gear .g-d{font-size:13px;color:var(--muted);margin:0 0 13px}
+.stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin:0 0 20px}
+.stages > div{background:var(--panel);padding:14px 15px;display:flex;flex-direction:column}
+.stages .num{font:10.5px var(--mono);color:var(--faint);letter-spacing:.06em;margin-bottom:6px}
+.stages .t{font-weight:700;font-size:14px;margin-bottom:4px}
+.stages .d{color:var(--muted);font-size:12.5px;line-height:1.45}
+.passes{margin-bottom:20px}
+.passes .num{color:var(--ink);font-weight:600;font-size:12px;margin-bottom:6px}
+.stages .last{background:var(--accent-soft)}
+.stages .last .t,.stages .last .num{color:var(--accent)}
+.stages .fix{font:11px var(--mono);color:var(--accent);margin-top:auto;padding-top:13px;word-break:break-word}
+table{width:100%;border-collapse:collapse;font-size:14.5px;margin:0 0 20px}
+th{text-align:left;font:11px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:400;padding:0 12px 9px 0;border-bottom:1px solid var(--rule)}
+td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+footer{padding:44px 0 72px;color:var(--faint);font-size:13.5px}
+footer a{color:var(--muted)}
+@media(max-width:900px){
+  .stages{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  section{scroll-margin-top:64px}
+}
+@media(max-width:700px){
+  .wrap{padding:0 16px}header.hero{padding:40px 0 32px}section{padding:40px 0}
+  .stages{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rail{display:grid;grid-template-columns:1fr}.rail .arw{height:18px;transform:rotate(90deg)}
+  ol.tl{padding-left:20px}ol.tl > li{padding-left:18px}ol.tl > li::before{left:-25px}
+  .cards{grid-template-columns:1fr}
+}
+/* the sidebar shell */
+.shell{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--rule);background:var(--panel);
+  padding:20px 12px 18px;display:flex;flex-direction:column}
+.side .brand{display:inline-flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.025em;font-size:16px;color:var(--ink);
+  border:0;padding:4px 10px 14px}
+.side .brand .mark{display:block;flex:0 0 auto;margin-top:-1px}
+.side .sub{font-size:12px;color:var(--faint);padding:0 10px 10px;line-height:1.4}
+.side .group{font:10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:16px 10px 7px}
+.side nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;color:var(--muted);border:0;
+  font-size:13.5px;line-height:1.2;letter-spacing:-.005em}
+.side nav a svg{width:16px;height:16px;flex:0 0 16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;
+  stroke-linejoin:round;opacity:.75}
+.side nav a:hover{background:var(--code-bg);color:var(--ink)}
+.side nav a.on{background:var(--accent-soft);color:var(--accent)}
+.side nav a.on svg{opacity:1}
+.side nav a .k{margin-left:auto;font:10.5px var(--mono);color:var(--faint);letter-spacing:.04em}
+.side nav a.on .k{color:var(--accent)}
+.side .ext{margin-top:auto;padding-top:12px;border-top:1px solid var(--rule)}
+.main{min-width:0}
+.topbar{display:none}
+.scrim{display:none}
+@media(max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .side{position:fixed;top:0;left:0;bottom:0;width:276px;z-index:40;transform:translateX(-102%);transition:transform .18s ease-out;
+    box-shadow:0 0 0 1px var(--rule)}
+  .shell.open .side{transform:none}
+  .scrim{display:block;position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .18s}
+  .shell.open .scrim{opacity:1;pointer-events:auto}
+  .topbar{display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:30;height:52px;padding:0 16px;
+    background:var(--bg);border-bottom:1px solid var(--rule)}
+  .topbar .brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.025em;font-size:15px;color:var(--ink);border:0}
+  .topbar button{margin-left:auto;background:0;border:1px solid var(--rule);border-radius:7px;color:var(--ink);width:36px;height:32px;
+    display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .topbar button svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+}
+</style>
+</head>
+<body>
+
+<div class="shell" id="shell">
+<aside class="side" id="side">
+  <a class="brand" href="#top"><svg class="mark" width="19" height="19" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 3.5 L42.5 14.2 L42.5 33.8 L24 44.5 L5.5 33.8 L5.5 14.2 Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" opacity=".9"/><path d="M5.5 14.2 L24 24.9 L42.5 14.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" opacity=".28"/><path d="M24 24.9 L24 44.5" stroke="currentColor" stroke-width="1.8" opacity=".28"/><circle cx="24" cy="23.4" r="7.4" fill="var(--bg)"/><circle cx="24" cy="23.4" r="7.4" stroke="var(--accent)" stroke-width="4"/></svg>bundlebox</a>
+  <div class="sub">One prompt, end to end: what runs, what it reads, and the one arrow that spends.</div>
+  <nav aria-label="Sections">
+    <div class="group">The loop</div>
+    <a href="#board"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg><span>The board</span></a>
+    <a href="#verbs"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M4.5 6l2.5 2-2.5 2M8.5 10.5h3"/></svg><span>Every verb</span><span class="k">60</span></a>
+    <a href="#session"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.5"/><path d="M1.5 8h4M10.5 8h4"/></svg><span>One prompt</span><span class="k">9</span></a>
+    <div class="group">Underneath</div>
+    <a href="#artefacts"><svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="3.5" rx="6" ry="2"/><path d="M2 3.5v9c0 1.1 2.7 2 6 2s6-.9 6-2v-9M2 8c0 1.1 2.7 2 6 2s6-.9 6-2"/></svg><span>What it reads</span></a>
+    <a href="#clock"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/></svg><span>Own clock</span></a>
+    <a href="#gears"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg><span>Gears</span><span class="k">5</span></a>
+    <a href="#triggers"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 1.5L3 9h4.5L7 14.5 13 7H8.5z"/></svg><span>Triggers</span></a>
+    <a href="#stages"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M5 8.2l2 2 4-4.2"/></svg><span>Readiness</span><span class="k">11</span></a>
+  </nav>
+  <nav class="ext" aria-label="Elsewhere">
+    <a href="../index.html"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2.5h4.5a2 2 0 0 1 2 2v9.5a1.5 1.5 0 0 0-1.5-1.5H2zM14 2.5H9.5a2 2 0 0 0-2 2v9.5a1.5 1.5 0 0 1 1.5-1.5H14z"/></svg><span>The docs</span></a>
+    <a href="https://github.com/blackswanalpha/bundlebox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8A1.5 1.5 0 0 0 13 12.5v-3M9.5 2H14v4.5M14 2L7.5 8.5"/></svg><span>GitHub</span></a>
+  </nav>
+</aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+<div class="topbar"><a class="brand" href="#top"><svg class="mark" width="19" height="19" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 3.5 L42.5 14.2 L42.5 33.8 L24 44.5 L5.5 33.8 L5.5 14.2 Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" opacity=".9"/><path d="M5.5 14.2 L24 24.9 L42.5 14.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" opacity=".28"/><path d="M24 24.9 L24 44.5" stroke="currentColor" stroke-width="1.8" opacity=".28"/><circle cx="24" cy="23.4" r="7.4" fill="var(--bg)"/><circle cx="24" cy="23.4" r="7.4" stroke="var(--accent)" stroke-width="4"/></svg>bundlebox</a><button id="menu" aria-label="Open the section list" aria-controls="side"><svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button></div>
+
+<header class="hero" id="top"><div class="wrap">
+  <h1>One prompt, end to end</h1>
+  <p class="tagline">What happens between the moment you press enter and the moment the session is
+  measured: sixty verbs, nine hooks, five chained gears, eleven readiness stages, and exactly one arrow that spends.</p>
+  <div class="stats">
+    <a href="#verbs"><span class="n">60</span><span class="l">verbs under <code>src/</code>, every one listed below</span></a>
+    <a href="#session"><span class="n">9</span><span class="l">hooks, in the order they fire</span></a>
+    <a href="#gears"><span class="n">5</span><span class="l">chained gears, every 30 minutes, free</span></a>
+    <a href="#stages"><span class="n">11</span><span class="l">readiness stages, each with an exit criterion</span></a>
+    <a href="#board" class="spend"><span class="n">1</span><span class="l">arrow that spends: <code>bb run --apply</code></span></a>
+  </div>
+</div></header>
+
+<section id="board"><div class="wrap">
+  <h2>The board</h2>
+  <p class="kicker">the whole loop, and where the money is</p>
+  <p class="lead">Everything except one box is a parse, a count, a path check or a set difference. The
+  loop closes on itself: what a merge changes is what the next scan reads.</p>
+
+  <figure>
+  <svg viewBox="0 0 960 300" role="img" aria-labelledby="boardT boardD">
+    <title id="boardT">The bundlebox loop, from a prompt to a merge and back to the scan</title>
+    <desc id="boardD">A prompt or a document enters at the left. bb scan produces findings, bb compile
+    packs them into units, bb route assigns lanes. Those three sit inside a dashed band marked as the
+    free path a cron tick runs every thirty minutes. Only bb run --apply, drawn in red, spawns
+    sessions and spends tokens. Sessions flow down to bb finish check and bb git, and a return wire
+    carries the merge back into bb scan.</desc>
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--faint)"/>
+      </marker>
+    </defs>
+
+    <rect class="b-band" x="172" y="38" width="460" height="96" rx="12"/>
+    <text class="b-bandlabel" x="180" y="28">cron tick · every 30 min · gated by bb recom gate · 0 tokens</text>
+
+    <g><rect class="b-node you" x="28" y="56" width="124" height="56" rx="9"/>
+      <text class="b-label" x="90" y="89" text-anchor="middle">you</text>
+      <text class="b-cap" x="90" y="128" text-anchor="middle">a prompt, or a doc</text></g>
+    <g><rect class="b-node" x="184" y="56" width="124" height="56" rx="9"/>
+      <text class="b-label" x="246" y="89" text-anchor="middle">bb scan</text>
+      <text class="b-cap" x="246" y="128" text-anchor="middle">findings, with evidence</text></g>
+    <g><rect class="b-node" x="340" y="56" width="124" height="56" rx="9"/>
+      <text class="b-label" x="402" y="89" text-anchor="middle">bb compile</text>
+      <text class="b-cap" x="402" y="128" text-anchor="middle">units, one window each</text></g>
+    <g><rect class="b-node" x="496" y="56" width="124" height="56" rx="9"/>
+      <text class="b-label" x="558" y="89" text-anchor="middle">bb route</text>
+      <text class="b-cap" x="558" y="128" text-anchor="middle">lanes, in waves</text></g>
+    <g><rect class="b-node spend" x="652" y="56" width="124" height="56" rx="9"/>
+      <text class="b-label" x="714" y="89" text-anchor="middle">bb run --apply</text>
+      <text class="b-cap spend" x="714" y="128" text-anchor="middle">the only verb that spends</text></g>
+    <g><rect class="b-node" x="808" y="56" width="124" height="56" rx="9"/>
+      <text class="b-label" x="870" y="89" text-anchor="middle">sessions</text>
+      <text class="b-cap" x="870" y="128" text-anchor="middle">the nine hooks below</text></g>
+
+    <path class="b-wire" d="M154,84 H178" marker-end="url(#ah)"/>
+    <path class="b-wire" d="M310,84 H334" marker-end="url(#ah)"/>
+    <path class="b-wire" d="M466,84 H490" marker-end="url(#ah)"/>
+    <path class="b-wire" d="M622,84 H646" marker-end="url(#ah)"/>
+    <path class="b-wire" d="M778,84 H802" marker-end="url(#ah)"/>
+
+    <g><rect class="b-node" x="808" y="192" width="124" height="56" rx="9"/>
+      <text class="b-label" x="870" y="225" text-anchor="middle">bb finish</text>
+      <text class="b-cap" x="870" y="264" text-anchor="middle">the ledger, declared first</text></g>
+    <g><rect class="b-node" x="652" y="192" width="124" height="56" rx="9"/>
+      <text class="b-label" x="714" y="225" text-anchor="middle">bb git</text>
+      <text class="b-cap" x="714" y="264" text-anchor="middle">gated merge</text></g>
+
+    <path class="b-wire" d="M870,114 V186" marker-end="url(#ah)"/>
+    <path class="b-wire" d="M806,220 H782" marker-end="url(#ah)"/>
+    <path class="b-wire" d="M650,220 H178 Q168,220 168,210 V110 Q168,100 178,100" marker-end="url(#ah)"/>
+  </svg>
+  <figcaption>The cron worker runs the free path unattended and stops at lanes: <code>bb run</code> and
+  <code>bb bridge</code> are refused inside a gear, checked when the crontab line is written rather than
+  trusted. Pressing enter yourself enters at <em>you</em> and skips straight to a session.</figcaption>
+  </figure>
+</div></section>
+
+<section id="verbs"><div class="wrap">
+  <h2>Every verb</h2>
+  <p class="kicker">sixty, read off <code>src/cli.js</code> in the order a factory uses them</p>
+  <p class="lead">Each card is one entry in the command table: the name, what it answers, the usage line,
+  and what it does to the world. Two can spend money and only with the flag named on the card. Eleven can
+  change a file a person wrote and only with <code>--apply</code>. The rest read, or write under
+  <code>.bundlebox/</code>.</p>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="filter by name, group or what it answers" aria-label="Filter verbs" autocomplete="off">
+    <span class="count" id="count">60 of 60</span>
+  </div>
+  <div class="chips" id="chips">
+    <button class="on" data-ch="">all</button>
+    <button data-ch="govern">govern</button>
+    <button data-ch="look">look</button>
+    <button data-ch="pack">pack</button>
+    <button data-ch="prove">prove</button>
+    <button data-ch="spend">spend</button>
+    <button data-ch="ship">ship</button>
+    <button data-ch="wire">wire</button>
+    <button data-ch="watch">watch</button>
+  </div>
+  <div class="legend">
+    <span><span class="eff reads">reads</span> reports; nothing on disk changes</span>
+    <span><span class="eff records">records</span> writes under <code>.bundlebox/</code> only</span>
+    <span><span class="eff writes">writes --apply</span> can change a file you wrote, dry run until the flag</span>
+    <span><span class="eff spends">spends</span> can call a paid model, with the flag named</span>
+  </div>
+<div class="chapter" data-chapter="govern">
+  <div class="ch-head"><span class="ch-id">govern</span><span class="ch-q">What is the bar, before anything is written?</span><span class="ch-n">1</span></div>
+  <div class="cards">
+    <article class="card" data-verb="auditor" data-text="auditor auditor the bar, declared before the work: scope, standards, governance, assurance — then checked after it bb auditor [areas|standards [area]|charter &lt;area&gt;|brief &lt;area&gt;|gate &lt;area&gt;|plan|pack|send &lt;area&gt; &lt;kind&gt;|record &lt;area&gt; &lt;kind&gt; &lt;file&gt;|drift] [--json]">
+      <div class="card-top"><span class="verb">bb auditor</span><span class="eff records">records</span></div>
+      <p class="help">the bar, declared before the work: scope, standards, governance, assurance — then checked after it</p>
+      <code class="usage">bb auditor [areas|standards [area]|charter &lt;area&gt;|brief &lt;area&gt;|gate &lt;area&gt;|plan|pack|send &lt;area&gt; &lt;kind&gt;|record &lt;area&gt; &lt;kind&gt; &lt;file&gt;|drift] [--json]</code>
+      <div class="card-foot"><span class="src">src/auditor/index.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="look">
+  <div class="ch-head"><span class="ch-id">look</span><span class="ch-q">What is in this tree?</span><span class="ch-n">9</span></div>
+  <div class="cards">
+    <article class="card" data-verb="init" data-text="init init detect languages, agents and gates; write .bundlebox/config.json bb init [--force] [--json]">
+      <div class="card-top"><span class="verb">bb init</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">detect languages, agents and gates; write .bundlebox/config.json</p>
+      <code class="usage">bb init [--force] [--json]</code>
+      <div class="card-foot"><span class="src">src/init.js</span></div>
+    </article>
+    <article class="card" data-verb="doctor" data-text="doctor doctor what this box can run, and which runtime serves each op bb doctor [--json]">
+      <div class="card-top"><span class="verb">bb doctor</span><span class="eff reads">reads</span></div>
+      <p class="help">what this box can run, and which runtime serves each op</p>
+      <code class="usage">bb doctor [--json]</code>
+      <div class="card-foot"><span class="src">src/doctor.js</span></div>
+    </article>
+    <article class="card" data-verb="env" data-text="env env what a complete .bundlebox holds, and whether this one does (no tokens) bb env [--json] | bb env up [--apply]">
+      <div class="card-top"><span class="verb">bb env</span><span class="eff reads">reads</span></div>
+      <p class="help">what a complete .bundlebox holds, and whether this one does (no tokens)</p>
+      <code class="usage">bb env [--json] | bb env up [--apply]</code>
+      <div class="card-foot"><span class="src">src/env.js</span></div>
+    </article>
+    <article class="card" data-verb="scan" data-text="scan scan run the local detectors (no tokens) bb scan [--only a,b] [--json]">
+      <div class="card-top"><span class="verb">bb scan</span><span class="eff records">records</span></div>
+      <p class="help">run the local detectors (no tokens)</p>
+      <code class="usage">bb scan [--only a,b] [--json]</code>
+      <div class="card-foot"><span class="src">src/scan.js</span></div>
+    </article>
+    <article class="card" data-verb="findings" data-text="findings scan list findings bb findings [--detector x] [--severity s] [--status open|resolved|fixed|wontfix|all] [--limit n] [--json]">
+      <div class="card-top"><span class="verb">bb findings</span><span class="eff reads">reads</span></div>
+      <p class="help">list findings</p>
+      <code class="usage">bb findings [--detector x] [--severity s] [--status open|resolved|fixed|wontfix|all] [--limit n] [--json]</code>
+      <div class="card-foot"><span class="src">src/scan.js</span></div>
+    </article>
+    <article class="card" data-verb="explain" data-text="explain scan one finding: evidence and the triage derivation bb explain &lt;id&gt; [--json]">
+      <div class="card-top"><span class="verb">bb explain</span><span class="eff reads">reads</span></div>
+      <p class="help">one finding: evidence and the triage derivation</p>
+      <code class="usage">bb explain &lt;id&gt; [--json]</code>
+      <div class="card-foot"><span class="src">src/scan.js</span></div>
+    </article>
+    <article class="card" data-verb="triage" data-text="triage triage label what closed findings cost, and fit the promotion rule to them (0 model tokens) bb triage [backfill|calibrate] [--apply] [--json]">
+      <div class="card-top"><span class="verb">bb triage</span><span class="eff reads">reads</span></div>
+      <p class="help">label what closed findings cost, and fit the promotion rule to them (0 model tokens)</p>
+      <code class="usage">bb triage [backfill|calibrate] [--apply] [--json]</code>
+      <div class="card-foot"><span class="src">src/detectors/index.js</span></div>
+    </article>
+    <article class="card" data-verb="oversight" data-text="oversight oversight measure the tree against its own medians; findings, guidelines, briefs (no tokens) bb oversight scan [--trees a,b] [--write] [--json] | report | brief &lt;files...&gt; | guidelines [--build] | thresholds">
+      <div class="card-top"><span class="verb">bb oversight</span><span class="eff records">records</span></div>
+      <p class="help">measure the tree against its own medians; findings, guidelines, briefs (no tokens)</p>
+      <code class="usage">bb oversight scan [--trees a,b] [--write] [--json] | report | brief &lt;files...&gt; | guidelines [--build] | thresholds</code>
+      <div class="card-foot"><span class="src">src/oversight/index.js</span></div>
+    </article>
+    <article class="card" data-verb="designlabs" data-text="designlabs designlabs the design studio: doctrine, ui research plans, a declared system and the gate that holds it bb designlabs [status|init|check|tables|plan|collect|intake|sources|principles] [dir] [--apply] [--json]">
+      <div class="card-top"><span class="verb">bb designlabs</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">the design studio: doctrine, UI research plans, a declared system and the gate that holds it</p>
+      <code class="usage">bb designlabs [status|init|check|tables|plan|collect|intake|sources|principles] [dir] [--apply] [--json]</code>
+      <div class="card-foot"><span class="src">src/designlabs/index.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="pack">
+  <div class="ch-head"><span class="ch-id">pack</span><span class="ch-q">What goes in the window?</span><span class="ch-n">12</span></div>
+  <div class="cards">
+    <article class="card" data-verb="compile" data-text="compile compile turn open findings into packed work units (no tokens) bb compile [--write] [--max-units n] [--json]">
+      <div class="card-top"><span class="verb">bb compile</span><span class="eff records">records</span></div>
+      <p class="help">turn open findings into packed work units (no tokens)</p>
+      <code class="usage">bb compile [--write] [--max-units N] [--json]</code>
+      <div class="card-foot"><span class="src">src/compile/index.js</span></div>
+    </article>
+    <article class="card" data-verb="context" data-text="context compile will these files fit one session? parts table and split bb context &lt;paths...&gt; [--kind fix|verify|investigate|build|write] [--brief file] [--json]">
+      <div class="card-top"><span class="verb">bb context</span><span class="eff reads">reads</span></div>
+      <p class="help">will these files fit one session? parts table and split</p>
+      <code class="usage">bb context &lt;paths...&gt; [--kind fix|verify|investigate|build|write] [--brief file] [--json]</code>
+      <div class="card-foot"><span class="src">src/compile/index.js</span></div>
+    </article>
+    <article class="card" data-verb="gates" data-text="gates compile what proves a change here (detected, merged with kernel.gates) bb gates [--list] [--json]">
+      <div class="card-top"><span class="verb">bb gates</span><span class="eff reads">reads</span></div>
+      <p class="help">what proves a change here (detected, merged with kernel.gates)</p>
+      <code class="usage">bb gates [--list] [--json]</code>
+      <div class="card-foot"><span class="src">src/compile/index.js</span></div>
+    </article>
+    <article class="card" data-verb="route" data-text="route route pack compiled units into lanes and waves (no tokens) bb route [--write] [--max-parallel n] [--agent name] [--run-id id] [--json]">
+      <div class="card-top"><span class="verb">bb route</span><span class="eff records">records</span></div>
+      <p class="help">pack compiled units into lanes and waves (no tokens)</p>
+      <code class="usage">bb route [--write] [--max-parallel N] [--agent name] [--run-id id] [--json]</code>
+      <div class="card-foot"><span class="src">src/route/index.js</span></div>
+    </article>
+    <article class="card" data-verb="snapgen" data-text="snapgen snapgen reference tables a session reads instead of searching (no tokens) bb snapgen build [--only a,b] [--force] | stale | list | show &lt;table&gt; | index | skeleton &lt;file&gt; | blast [--since ref] | callers &lt;symbol&gt;  [--json]">
+      <div class="card-top"><span class="verb">bb snapgen</span><span class="eff records">records</span></div>
+      <p class="help">reference tables a session reads instead of searching (no tokens)</p>
+      <code class="usage">bb snapgen build [--only a,b] [--force] | stale | list | show &lt;table&gt; | index | skeleton &lt;file&gt; | blast [--since ref] | callers &lt;symbol&gt;  [--json]</code>
+      <div class="card-foot"><span class="src">src/snapgen/index.js</span></div>
+    </article>
+    <article class="card" data-verb="arc" data-text="arc arc compile the derived symbol tables into one binary index the guards read in microseconds bb arc [stat] | bb arc build | bb arc lookup &lt;name...&gt; [--under dir] [--shapes exact,prefix,suffix]">
+      <div class="card-top"><span class="verb">bb arc</span><span class="eff records">records</span></div>
+      <p class="help">compile the derived symbol tables into one binary index the guards read in microseconds</p>
+      <code class="usage">bb arc [stat] | bb arc build | bb arc lookup &lt;name...&gt; [--under dir] [--shapes exact,prefix,suffix]</code>
+      <div class="card-foot"><span class="src">src/arc/index.js</span></div>
+    </article>
+    <article class="card" data-verb="pinpoint" data-text="pinpoint pinpoint one problem, one focused prompt: where, regions, scope, evidence, gate (no tokens) bb pinpoint "&lt;problem&gt;" [--files a,b] [--max-files n] [--kind fix|verify|investigate|build|write] [--print] [--json]">
+      <div class="card-top"><span class="verb">bb pinpoint</span><span class="eff records">records</span></div>
+      <p class="help">one problem, one focused prompt: where, regions, scope, evidence, gate (no tokens)</p>
+      <code class="usage">bb pinpoint "&lt;problem&gt;" [--files a,b] [--max-files N] [--kind fix|verify|investigate|build|write] [--print] [--json]</code>
+      <div class="card-foot"><span class="src">src/pinpoint/index.js</span></div>
+    </article>
+    <article class="card" data-verb="tokens" data-text="tokens tokens estimate, ledger, calibrate, profile, prices, budget bb tokens estimate &lt;paths&gt; | ledger | calibrate [--apply] [--tokens-only] | profile [--probe] | prices | budget [--json]">
+      <div class="card-top"><span class="verb">bb tokens</span><span class="eff reads">reads</span></div>
+      <p class="help">estimate, ledger, calibrate, profile, prices, budget</p>
+      <code class="usage">bb tokens estimate &lt;paths&gt; | ledger | calibrate [--apply] [--tokens-only] | profile [--probe] | prices | budget [--json]</code>
+      <div class="card-foot"><span class="src">src/tokens/index.js</span></div>
+    </article>
+    <article class="card" data-verb="sieve" data-text="sieve sieve the input axis: shrink a tool result before it enters the window, and measure it on transcripts that already exist (0 tokens) bb sieve [status] | bb sieve replay [--limit n] [--json] | bb sieve check &lt;file|-&gt; [--text] | bb sieve spill">
+      <div class="card-top"><span class="verb">bb sieve</span><span class="eff records">records</span></div>
+      <p class="help">the input axis: shrink a tool result before it enters the window, and measure it on transcripts that already exist (0 tokens)</p>
+      <code class="usage">bb sieve [status] | bb sieve replay [--limit N] [--json] | bb sieve check &lt;file|-&gt; [--text] | bb sieve spill</code>
+      <div class="card-foot"><span class="src">src/sieve/index.js</span></div>
+    </article>
+    <article class="card" data-verb="janitor" data-text="janitor janitor compile the agent's memory: check every anchor, sweep what rotted, place what survives bb janitor [status|compile|heap|explain &lt;id&gt;|prune|warehouse] [--budget n] [--age-factor n] [--stores a,b] [--verbose] [--json]">
+      <div class="card-top"><span class="verb">bb janitor</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">compile the agent's memory: check every anchor, sweep what rotted, place what survives</p>
+      <code class="usage">bb janitor [status|compile|heap|explain &lt;id&gt;|prune|warehouse] [--budget N] [--age-factor N] [--stores a,b] [--verbose] [--json]</code>
+      <div class="card-foot"><span class="src">src/janitor/index.js</span></div>
+    </article>
+    <article class="card" data-verb="slop" data-text="slop slop anti-slop for prose: what a summary says that costs tokens and carries nothing (0 model tokens) bb slop &lt;file|-&gt; | bb slop fix &lt;file|-&gt; [--apply] | bb slop rules [--json]">
+      <div class="card-top"><span class="verb">bb slop</span><span class="eff reads">reads</span></div>
+      <p class="help">anti-slop for prose: what a summary says that costs tokens and carries nothing (0 model tokens)</p>
+      <code class="usage">bb slop &lt;file|-&gt; | bb slop fix &lt;file|-&gt; [--apply] | bb slop rules [--json]</code>
+      <div class="card-foot"><span class="src">src/slop/index.js</span></div>
+    </article>
+    <article class="card" data-verb="bench" data-text="bench bench the ablation benchmark: what a task costs with the factory and without it (no tokens) bb bench [run [suite]] | init [--limit n] | suites | show | gate [&lt;task&gt;] | swebench run [--n 12] [--repos a,b] [--json] [--cap 10]">
+      <div class="card-top"><span class="verb">bb bench</span><span class="eff records">records</span></div>
+      <p class="help">the ablation benchmark: what a task costs with the factory and without it (no tokens)</p>
+      <code class="usage">bb bench [run [suite]] | init [--limit N] | suites | show | gate [&lt;task&gt;] | swebench run [--n 12] [--repos a,b] [--json] [--cap 10]</code>
+      <div class="card-foot"><span class="src">src/bench/index.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="prove">
+  <div class="ch-head"><span class="ch-id">prove</span><span class="ch-q">What does the running system do?</span><span class="ch-n">10</span></div>
+  <div class="cards">
+    <article class="card" data-verb="genesis" data-text="genesis genesis a document or a prompt becomes a world model, a corpus and the briefs that fill it (0 tokens until send) bb genesis &lt;doc.md|-|--prompt "..."&gt; [--base url] [--name id] | show | plan | pack [--batch 4] | send [surface] [--run --spend] | seed | list">
+      <div class="card-top"><span class="verb">bb genesis</span><span class="eff records">records</span></div>
+      <p class="help">a document or a prompt becomes a world model, a corpus and the briefs that fill it (0 tokens until send)</p>
+      <code class="usage">bb genesis &lt;doc.md|-|--prompt "..."&gt; [--base url] [--name id] | show | plan | pack [--batch 4] | send [surface] [--run --spend] | seed | list</code>
+      <div class="card-foot"><span class="src">src/genesis/index.js</span></div>
+    </article>
+    <article class="card" data-verb="cookbook" data-text="cookbook cookbook run a scenario corpus against the running system; red steps become findings (0 model tokens) bb cookbook [list|check|select|calibrate|run|board|init] [--persona id] [--base url] [--rpm n] [--only surface] [--budget steps] [--engine kernel|js] [--plan] [--apply] [--json]">
+      <div class="card-top"><span class="verb">bb cookbook</span><span class="eff records">records</span></div>
+      <p class="help">run a scenario corpus against the running system; red steps become findings (0 model tokens)</p>
+      <code class="usage">bb cookbook [list|check|select|calibrate|run|board|init] [--persona id] [--base url] [--rpm n] [--only surface] [--budget steps] [--engine kernel|js] [--plan] [--apply] [--json]</code>
+      <div class="card-foot"><span class="src">src/cookbook/index.js</span></div>
+    </article>
+    <article class="card" data-verb="simulate" data-text="simulate simulate run a situation profile at rising concurrency and report what the system does (0 model tokens) bb simulate run [profile] --base &lt;url&gt; [--levels 1,8,32] [--seconds 3] | profiles | show | init &lt;id&gt;">
+      <div class="card-top"><span class="verb">bb simulate</span><span class="eff records">records</span></div>
+      <p class="help">run a situation profile at rising concurrency and report what the system does (0 model tokens)</p>
+      <code class="usage">bb simulate run [profile] --base &lt;url&gt; [--levels 1,8,32] [--seconds 3] | profiles | show | init &lt;id&gt;</code>
+      <div class="card-foot"><span class="src">src/simulate/index.js</span></div>
+    </article>
+    <article class="card" data-verb="runbook" data-text="runbook runbook the running system: is it up, is it answering, what broke since the last call, what is it costing (0 model tokens) bb runbook [status | up &lt;group&gt; | down &lt;group&gt; | wait &lt;group&gt; | logs [id] | perf | services | groups | init] [--apply] [--wait[=s]] [--force] [--level e] [--grep &lt;rx&gt;] [--sample] [--all] [--json]">
+      <div class="card-top"><span class="verb">bb runbook</span><span class="eff records">records</span></div>
+      <p class="help">the running system: is it up, is it answering, what broke since the last call, what is it costing (0 model tokens)</p>
+      <code class="usage">bb runbook [status | up &lt;group&gt; | down &lt;group&gt; | wait &lt;group&gt; | logs [id] | perf | services | groups | init] [--apply] [--wait[=s]] [--force] [--level E] [--grep &lt;rx&gt;] [--sample] [--all] [--json]</code>
+      <div class="card-foot"><span class="src">src/runbook/index.js</span></div>
+    </article>
+    <article class="card" data-verb="viewport" data-text="viewport viewport the ports this workspace is served by, as a page: what is listening, for which directory, and whether it answers (0 tokens) bb viewport [status] [--json] | bb viewport build | bb viewport serve [--port 65432] | bb viewport open">
+      <div class="card-top"><span class="verb">bb viewport</span><span class="eff records">records</span></div>
+      <p class="help">the ports this workspace is served by, as a page: what is listening, for which directory, and whether it answers (0 tokens)</p>
+      <code class="usage">bb viewport [status] [--json] | bb viewport build | bb viewport serve [--port 65432] | bb viewport open</code>
+      <div class="card-foot"><span class="src">src/viewport/index.js</span></div>
+    </article>
+    <article class="card" data-verb="recom" data-text="recom recom what has already been driven, and whether that answer still holds (0 model tokens) bb recom [list|check &lt;id&gt;|gate &lt;id&gt; -- &lt;cmd&gt;|repeatable|replay &lt;id&gt;|record --from &lt;file&gt;|refresh &lt;id&gt;|forget &lt;id&gt;|mobile|probes|template] [--apply] [--json]">
+      <div class="card-top"><span class="verb">bb recom</span><span class="eff records">records</span></div>
+      <p class="help">what has already been driven, and whether that answer still holds (0 model tokens)</p>
+      <code class="usage">bb recom [list|check &lt;id&gt;|gate &lt;id&gt; -- &lt;cmd&gt;|repeatable|replay &lt;id&gt;|record --from &lt;file&gt;|refresh &lt;id&gt;|forget &lt;id&gt;|mobile|probes|template] [--apply] [--json]</code>
+      <div class="card-foot"><span class="src">src/recom/index.js</span></div>
+    </article>
+    <article class="card" data-verb="dotty" data-text="dotty dotty what the screen showed: a frame for a person, an accessibility summary for the session (0 model tokens) bb dotty [targets | shot [label] --url &lt;u&gt; | during [label] [--reload] -- &lt;cmd&gt;] [--port 9222] [--json]">
+      <div class="card-top"><span class="verb">bb dotty</span><span class="eff records">records</span></div>
+      <p class="help">what the screen showed: a frame for a person, an accessibility summary for the session (0 model tokens)</p>
+      <code class="usage">bb dotty [targets | shot [label] --url &lt;u&gt; | during [label] [--reload] -- &lt;cmd&gt;] [--port 9222] [--json]</code>
+      <div class="card-foot"><span class="src">src/dotty/index.js</span></div>
+    </article>
+    <article class="card" data-verb="mainboard" data-text="mainboard mainboard one board over every view, one ledger under it; and which pipeline stage does not hold bb mainboard [board|run|gaps|views|check] [--base url] [--only view,view] [--persona id] [--target local|prod] [--json]">
+      <div class="card-top"><span class="verb">bb mainboard</span><span class="eff records">records</span></div>
+      <p class="help">one board over every view, one ledger under it; and which pipeline stage does not hold</p>
+      <code class="usage">bb mainboard [board|run|gaps|views|check] [--base url] [--only view,view] [--persona id] [--target local|prod] [--json]</code>
+      <div class="card-foot"><span class="src">src/mainboard/index.js</span></div>
+    </article>
+    <article class="card" data-verb="frames" data-text="frames frames a dataframe over the factory's own data, and the evals that turn a measurement into a finding bb frames [sources|show|check|eval] [--source x] [--where col:op:value] [--group col] [--agg name:fn:col] [--sort -col] [--cols a,b] [--limit n] [--describe] [--markdown] [--json]">
+      <div class="card-top"><span class="verb">bb frames</span><span class="eff reads">reads</span></div>
+      <p class="help">a dataframe over the factory's own data, and the evals that turn a measurement into a finding</p>
+      <code class="usage">bb frames [sources|show|check|eval] [--source x] [--where col:op:value] [--group col] [--agg name:fn:col] [--sort -col] [--cols a,b] [--limit n] [--describe] [--markdown] [--json]</code>
+      <div class="card-foot"><span class="src">src/frames/index.js</span></div>
+    </article>
+    <article class="card" data-verb="failsafe" data-text="failsafe failsafe what is failing now, why, and the operation that closes it (0 model tokens) bb failsafe [status|why|ops|run &lt;op&gt; [--apply]|rerun|check] [--json]">
+      <div class="card-top"><span class="verb">bb failsafe</span><span class="eff reads">reads</span></div>
+      <p class="help">what is failing now, why, and the operation that closes it (0 model tokens)</p>
+      <code class="usage">bb failsafe [status|why|ops|run &lt;op&gt; [--apply]|rerun|check] [--json]</code>
+      <div class="card-foot"><span class="src">src/failsafe/index.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="spend">
+  <div class="ch-head"><span class="ch-id">spend</span><span class="ch-q">What costs money, and how much is left?</span><span class="ch-n">6</span></div>
+  <div class="cards">
+    <article class="card" data-verb="run" data-text="run run execute the routed plan as agent lanes (dry-run by default) bb run [--plan &lt;run_id&gt;|latest] [--apply] [--pr] [--agent &lt;name&gt;] [--max-parallel n] [--json]">
+      <div class="card-top"><span class="verb">bb run</span><span class="eff spends">spends --apply</span></div>
+      <p class="help">execute the routed plan as agent lanes (dry-run by default)</p>
+      <code class="usage">bb run [--plan &lt;run_id&gt;|latest] [--apply] [--pr] [--agent &lt;name&gt;] [--max-parallel N] [--json]</code>
+      <div class="card-foot"><span class="src">src/run/index.js</span></div>
+    </article>
+    <article class="card" data-verb="bridge" data-text="bridge bridge draft a packed call to an agent; send only with --run (and --spend for a paid agent) bb bridge draft "&lt;problem&gt;" [--reason exhausted|assist|complete|asked] [--files a,b] | send &lt;id&gt; [--run] [--spend] [--allow-near] [--agent name] | list | report [--json]">
+      <div class="card-top"><span class="verb">bb bridge</span><span class="eff spends">spends --run --spend</span></div>
+      <p class="help">draft a packed call to an agent; send only with --run (and --spend for a paid agent)</p>
+      <code class="usage">bb bridge draft "&lt;problem&gt;" [--reason exhausted|assist|complete|asked] [--files a,b] | send &lt;id&gt; [--run] [--spend] [--allow-near] [--agent name] | list | report [--json]</code>
+      <div class="card-foot"><span class="src">src/bridge/index.js</span></div>
+    </article>
+    <article class="card" data-verb="monitor" data-text="monitor monitor what this workspace is spending in the current 5-hour block, and how many tokens the box saved it bb monitor [status|savings|blocks|sessions|guard] [--days n] [--plan pro|max5|max20|custom] [--limit n] [--compact] [--json] [--no-color] [--watch --interval 10] [--write-state]">
+      <div class="card-top"><span class="verb">bb monitor</span><span class="eff reads">reads</span></div>
+      <p class="help">what this workspace is spending in the current 5-hour block, and how many tokens the box saved it</p>
+      <code class="usage">bb monitor [status|savings|blocks|sessions|guard] [--days n] [--plan pro|max5|max20|custom] [--limit n] [--compact] [--json] [--no-color] [--watch --interval 10] [--write-state]</code>
+      <div class="card-foot"><span class="src">src/monitor/index.js</span></div>
+    </article>
+    <article class="card" data-verb="session" data-text="session tokens what a session used and saved (measured vs estimate) bb session [id] [--write] | end --session &lt;id&gt; --transcript &lt;path&gt; | list | rm &lt;id&gt; | backfill [--since &lt;date&gt;] [--transcripts n] [--dry-run] [--json]">
+      <div class="card-top"><span class="verb">bb session</span><span class="eff reads">reads</span></div>
+      <p class="help">what a session used and saved (MEASURED vs ESTIMATE)</p>
+      <code class="usage">bb session [id] [--write] | end --session &lt;id&gt; --transcript &lt;path&gt; | list | rm &lt;id&gt; | backfill [--since &lt;date&gt;] [--transcripts N] [--dry-run] [--json]</code>
+      <div class="card-foot"><span class="src">src/tokens/index.js</span></div>
+    </article>
+    <article class="card" data-verb="headroom" data-text="headroom tokens the wire: local compression proxy bb headroom start --apply | status | stop | savings | doctor [--json]">
+      <div class="card-top"><span class="verb">bb headroom</span><span class="eff reads">reads</span></div>
+      <p class="help">the wire: local compression proxy</p>
+      <code class="usage">bb headroom start --apply | status | stop | savings | doctor [--json]</code>
+      <div class="card-foot"><span class="src">src/tokens/index.js</span></div>
+    </article>
+    <article class="card" data-verb="agents" data-text="agents run which agent clis are installed, and the lean flag stack for each bb agents [--json]">
+      <div class="card-top"><span class="verb">bb agents</span><span class="eff reads">reads</span></div>
+      <p class="help">which agent CLIs are installed, and the lean flag stack for each</p>
+      <code class="usage">bb agents [--json]</code>
+      <div class="card-foot"><span class="src">src/run/index.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="ship">
+  <div class="ch-head"><span class="ch-id">ship</span><span class="ch-q">What closes the loop?</span><span class="ch-n">9</span></div>
+  <div class="cards">
+    <article class="card" data-verb="finish" data-text="finish finish the acceptance ledger: derive it from the brief, parse it, run it, re-verify returned work bb finish init [--apply] [--force]   derive gates.md from the active brief and the detected gates">
+      <div class="card-top"><span class="verb">bb finish</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">the acceptance ledger: derive it from the brief, parse it, run it, re-verify returned work</p>
+      <code class="usage">bb finish init [--apply] [--force]   derive GATES.md from the active brief and the detected gates</code>
+      <div class="card-foot"><span class="src">src/finish/index.js</span></div>
+    </article>
+    <article class="card" data-verb="git" data-text="git git commit, push, draft pr, ready, merge and review, with the workspace rules as code bb git commit [--lane l01 | --scope a,b] [--apply] | push [--apply] | pr [--lane l01] [--apply] | ready &lt;n&gt; [--apply] | merge &lt;n&gt; [--override-gate] [--apply] | review &lt;n&gt; [--write] | status   [--cwd &lt;dir&gt;]">
+      <div class="card-top"><span class="verb">bb git</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">commit, push, draft PR, ready, merge and review, with the workspace rules as code</p>
+      <code class="usage">bb git commit [--lane L01 | --scope a,b] [--apply] | push [--apply] | pr [--lane L01] [--apply] | ready &lt;n&gt; [--apply] | merge &lt;n&gt; [--override-gate] [--apply] | review &lt;n&gt; [--write] | status   [--cwd &lt;dir&gt;]</code>
+      <div class="card-foot"><span class="src">src/git/index.js</span></div>
+    </article>
+    <article class="card" data-verb="fix" data-text="fix scan run local actuators over findings that name one (dry run without --apply) bb fix [--apply] [--detector x] [--id id] [--force] [--json]">
+      <div class="card-top"><span class="verb">bb fix</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">run local actuators over findings that name one (dry run without --apply)</p>
+      <code class="usage">bb fix [--apply] [--detector x] [--id id] [--force] [--json]</code>
+      <div class="card-foot"><span class="src">src/scan.js</span></div>
+    </article>
+    <article class="card" data-verb="pipeline" data-text="pipeline pipeline run declared gears (pipelines of local verbs) with gates and freshness bb pipeline run &lt;gear&gt; [--apply] [--verbose] | list | runs [--limit n] | suggest [--json]">
+      <div class="card-top"><span class="verb">bb pipeline</span><span class="eff records">records</span></div>
+      <p class="help">run declared gears (pipelines of local verbs) with gates and freshness</p>
+      <code class="usage">bb pipeline run &lt;gear&gt; [--apply] [--verbose] | list | runs [--limit N] | suggest [--json]</code>
+      <div class="card-foot"><span class="src">src/pipeline/index.js</span></div>
+    </article>
+    <article class="card" data-verb="scripts" data-text="scripts scripts index tagged scripts (@tag/@title/@needs/...) and run them with their needs checked bb scripts scan | list | run &lt;tag&gt; [--apply] | table [--write] [--json]">
+      <div class="card-top"><span class="verb">bb scripts</span><span class="eff records">records</span></div>
+      <p class="help">index tagged scripts (@tag/@title/@needs/...) and run them with their needs checked</p>
+      <code class="usage">bb scripts scan | list | run &lt;tag&gt; [--apply] | table [--write] [--json]</code>
+      <div class="card-foot"><span class="src">src/scripts/index.js</span></div>
+    </article>
+    <article class="card" data-verb="cron" data-text="cron cron the unattended worker: the crontab lines that run the free pipeline bb cron install [--every 30] [--no-gate] [--apply] | status | remove [--apply]">
+      <div class="card-top"><span class="verb">bb cron</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">the unattended worker: the crontab lines that run the free pipeline</p>
+      <code class="usage">bb cron install [--every 30] [--no-gate] [--apply] | status | remove [--apply]</code>
+      <div class="card-foot"><span class="src">src/cron.js</span></div>
+    </article>
+    <article class="card" data-verb="buckmaster" data-text="buckmaster buckmaster signals, rules, graph, model and memory over transcripts and episodes (python3) bb buckmaster episodes | signals [--limit n] | rules | recommend | graph | model [--train] [--weights] | memory | recall --about "&lt;text&gt;" [--tier procedural,semantic,episodic] [--useful] | outcomes [--all] | backlog [--json]">
+      <div class="card-top"><span class="verb">bb buckmaster</span><span class="eff records">records</span></div>
+      <p class="help">signals, rules, graph, model and memory over transcripts and episodes (python3)</p>
+      <code class="usage">bb buckmaster episodes | signals [--limit N] | rules | recommend | graph | model [--train] [--weights] | memory | recall --about "&lt;text&gt;" [--tier procedural,semantic,episodic] [--useful] | outcomes [--all] | backlog [--json]</code>
+      <div class="card-foot"><span class="src">src/buckmaster/index.js</span></div>
+    </article>
+    <article class="card" data-verb="lathe" data-text="lathe lathe the automation engine: what this workspace did by hand more than twice, as scripts, snippets, boilerplate and completions (lathe-1, no tokens) bb lathe                  what the model holds and what it emitted">
+      <div class="card-top"><span class="verb">bb lathe</span><span class="eff records">records</span></div>
+      <p class="help">the automation engine: what this workspace did by hand more than twice, as scripts, snippets, boilerplate and completions (LATHE-1, no tokens)</p>
+      <code class="usage">bb lathe                  what the model holds and what it emitted</code>
+      <div class="card-foot"><span class="src">src/lathe/index.js</span></div>
+    </article>
+    <article class="card" data-verb="console" data-text="console console one page for this workspace: the pipeline, the window, every session and what it saved bb console [serve] [--port 7788] | build [--file out.html] | state [--json]">
+      <div class="card-top"><span class="verb">bb console</span><span class="eff records">records</span></div>
+      <p class="help">one page for this workspace: the pipeline, the window, every session and what it saved</p>
+      <code class="usage">bb console [serve] [--port 7788] | build [--file out.html] | state [--json]</code>
+      <div class="card-foot"><span class="src">src/console/index.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="wire">
+  <div class="ch-head"><span class="ch-id">wire</span><span class="ch-q">How do agents reach it?</span><span class="ch-n">10</span></div>
+  <div class="cards">
+    <article class="card" data-verb="wire" data-text="wire wire install the instructions block, mcp entry and hooks into each agent bb wire [--agents claude,codex,...|auto] [--apply] [--global] [--json] | bb wire status | bb wire trim [--apply]">
+      <div class="card-top"><span class="verb">bb wire</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">install the instructions block, MCP entry and hooks into each agent</p>
+      <code class="usage">bb wire [--agents claude,codex,...|auto] [--apply] [--global] [--json] | bb wire status | bb wire trim [--apply]</code>
+      <div class="card-foot"><span class="src">src/wire/index.js</span></div>
+    </article>
+    <article class="card" data-verb="unwire" data-text="unwire wire remove only bundlebox's blocks, mcp entries and hook rows from each agent bb unwire [--agents a,b|auto] [--apply] [--global]">
+      <div class="card-top"><span class="verb">bb unwire</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">remove only bundlebox's blocks, MCP entries and hook rows from each agent</p>
+      <code class="usage">bb unwire [--agents a,b|auto] [--apply] [--global]</code>
+      <div class="card-foot"><span class="src">src/wire/index.js</span></div>
+    </article>
+    <article class="card" data-verb="uptake" data-text="uptake uptake of everything bb wired in front of the agents, what did the sessions actually reach for (0 tokens) bb uptake [--since &lt;iso&gt;] [--quiet] [--json] | bb uptake sessions">
+      <div class="card-top"><span class="verb">bb uptake</span><span class="eff reads">reads</span></div>
+      <p class="help">of everything bb wired in front of the agents, what did the sessions actually reach for (0 tokens)</p>
+      <code class="usage">bb uptake [--since &lt;iso&gt;] [--quiet] [--json] | bb uptake sessions</code>
+      <div class="card-foot"><span class="src">src/uptake/index.js</span></div>
+    </article>
+    <article class="card" data-verb="hook" data-text="hook wire a claude code hook handler (stdin json in, json out, always exit 0) bb hook session-start|prompt|pre-read|post-tool|pre-compact|session-end">
+      <div class="card-top"><span class="verb">bb hook</span><span class="eff reads">reads</span></div>
+      <p class="help">a Claude Code hook handler (stdin JSON in, JSON out, always exit 0)</p>
+      <code class="usage">bb hook session-start|prompt|pre-read|post-tool|pre-compact|session-end</code>
+      <div class="card-foot"><span class="src">src/wire/index.js</span></div>
+    </article>
+    <article class="card" data-verb="mcp" data-text="mcp wire serve the zero-token verbs as an mcp server over stdio bb mcp">
+      <div class="card-top"><span class="verb">bb mcp</span><span class="eff reads">reads</span></div>
+      <p class="help">serve the zero-token verbs as an MCP server over stdio</p>
+      <code class="usage">bb mcp</code>
+      <div class="card-foot"><span class="src">src/cli.js</span></div>
+    </article>
+    <article class="card" data-verb="kernel" data-text="kernel kernel the rust kernel: status, build from source, or install a release binary bb kernel [status|ops|build|install [--version v]]">
+      <div class="card-top"><span class="verb">bb kernel</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">the Rust kernel: status, build from source, or install a release binary</p>
+      <code class="usage">bb kernel [status|ops|build|install [--version v]]</code>
+      <div class="card-foot"><span class="src">src/kernel-cmd.js</span></div>
+    </article>
+    <article class="card" data-verb="selftest" data-text="selftest selftest the silent-failure checks; each prints its measurement bb selftest [--json]">
+      <div class="card-top"><span class="verb">bb selftest</span><span class="eff reads">reads</span></div>
+      <p class="help">the silent-failure checks; each prints its measurement</p>
+      <code class="usage">bb selftest [--json]</code>
+      <div class="card-foot"><span class="src">src/selftest.js</span></div>
+    </article>
+    <article class="card" data-verb="update" data-text="update meta is there a newer bundlebox, and install it bb update [--apply]">
+      <div class="card-top"><span class="verb">bb update</span><span class="eff writes">writes --apply</span></div>
+      <p class="help">is there a newer bundlebox, and install it</p>
+      <code class="usage">bb update [--apply]</code>
+      <div class="card-foot"><span class="src">src/cli.js</span></div>
+    </article>
+    <article class="card" data-verb="version" data-text="version meta print the version bb version">
+      <div class="card-top"><span class="verb">bb version</span><span class="eff reads">reads</span></div>
+      <p class="help">print the version</p>
+      <code class="usage">bb version</code>
+      <div class="card-foot"><span class="src">src/cli.js</span></div>
+    </article>
+    <article class="card" data-verb="help" data-text="help meta this list bb help [verb]">
+      <div class="card-top"><span class="verb">bb help</span><span class="eff reads">reads</span></div>
+      <p class="help">this list</p>
+      <code class="usage">bb help [verb]</code>
+      <div class="card-foot"><span class="src">src/cli.js</span></div>
+    </article>
+  </div>
+</div>
+<div class="chapter" data-chapter="watch">
+  <div class="ch-head"><span class="ch-id">watch</span><span class="ch-q">Is the work going anywhere, and what can the box not settle alone?</span><span class="ch-n">3</span></div>
+  <div class="cards">
+    <article class="card" data-verb="echos" data-text="echos echos the five agents that watch the work rather than the tree: spin, oscillate, drift, diminishing, converge (0 tokens) bb echos [run] [--only spin,drift] [--limit n] [--json] | bb echos show | bb echos list">
+      <div class="card-top"><span class="verb">bb echos</span><span class="eff reads">reads</span></div>
+      <p class="help">the five agents that watch the work rather than the tree: spin, oscillate, drift, diminishing, converge (0 tokens)</p>
+      <code class="usage">bb echos [run] [--only spin,drift] [--limit N] [--json] | bb echos show | bb echos list</code>
+      <div class="card-foot"><span class="src">src/echos/index.js</span></div>
+    </article>
+    <article class="card" data-verb="grapple" data-text="grapple grapple the handoff layer: what the box cannot settle, asked once and stored (0 tokens) bb grapple [observe|status|ask|ratify|harvest|promote|backfill &lt;rev&gt;|priors] [--json]">
+      <div class="card-top"><span class="verb">bb grapple</span><span class="eff records">records</span></div>
+      <p class="help">the handoff layer: what the box cannot settle, asked once and stored (0 tokens)</p>
+      <code class="usage">bb grapple [observe|status|ask|ratify|harvest|promote|backfill &lt;rev&gt;|priors] [--json]</code>
+      <div class="card-foot"><span class="src">src/grapple/index.js</span></div>
+    </article>
+    <article class="card" data-verb="proxy" data-text="proxy wire the doorway: pack, serve and sieve for an agent that has no hook system (0 model tokens of its own) bb proxy [--agent codex] [--prompt-file f] [--raw] -- &lt;agent command...&gt;">
+      <div class="card-top"><span class="verb">bb proxy</span><span class="eff reads">reads</span></div>
+      <p class="help">the doorway: pack, serve and sieve for an agent that has no hook system (0 model tokens of its own)</p>
+      <code class="usage">bb proxy [--agent codex] [--prompt-file f] [--raw] -- &lt;agent command...&gt;</code>
+      <div class="card-foot"><span class="src">src/wire/index.js</span></div>
+    </article>
+  </div>
+</div>
+
+  <p class="aliases">Aliases the table also answers to: <code>gc</code> and <code>memory</code> for
+  janitor, <code>blackice</code> and <code>audit</code> for auditor, <code>scenarios</code> and
+  <code>corpus</code> for cookbook, <code>board</code> and <code>mb</code> for mainboard,
+  <code>dataframes</code> for frames, <code>cc</code> for console, <code>usage</code> for monitor,
+  <code>sg</code> and <code>switchgear</code> for pipeline, <code>learn</code> and <code>bm</code> for
+  buckmaster, <code>bridgeswap</code> for bridge, <code>scripttag</code> and <code>st</code> for scripts,
+  <code>ctx</code> for context.</p>
+  <p class="note">Every verb takes <code>--json</code>. A module that fails to load is reported by
+  <code>bb help</code> as broken with the first line of its error, and the rest of the table still
+  answers: one bad import must not take the CLI down with it.</p>
+</div></section>
+
+<section id="session"><div class="wrap">
+  <h2>One prompt, end to end</h2>
+  <p class="kicker">nine hooks, in the order they fire</p>
+  <p class="lead">This is what <code>bb wire --apply</code> installs. Every row runs local code against
+  artefacts already on disk, and the only thing it can spend is the few hundred tokens it chooses to
+  put in the window.</p>
+
+  <ol class="tl">
+    <li>
+      <div class="ev"><b>SessionStart</b><span class="t">30s</span><span class="cmd">bb hook session-start</span></div>
+      <p>In a workspace that was never inited, this runs <code>bb init</code> <b>inline</b> — detection
+      over the tree, well inside the budget — and detaches the artefact build, which is minutes of
+      scanning and indexing and is not a hook's to spend. The returned line says it is still building
+      rather than implying the environment is ready.</p>
+      <p>Then the rot notice: which lines in the memory just loaded no longer resolve. The claim is
+      already in the window, stated with the confidence it earned the day it was true, so the
+      correction arrives beside it.</p>
+      <p>Fired again with <code>source: compact</code>, right after a compaction, it is the first
+      observable moment the window can be corrected. The <b>narrative</b> goes back first — the task,
+      the scope, the files already edited, the last commands, the gate still open — read off the record
+      the guards wrote, never off the summary. Then the rules, verbatim. Two caps, because truncating
+      one joined band would cut whichever came second, and neither is the right one to lose.</p>
+      <p><span class="eff in">→ window · ≤600 tok</span> what this box holds, and what no longer exists
+      <span class="eff in">→ after a compaction · ≤1200 + ≤700 tok</span> the record, then the rules</p>
+    </li>
+    <li>
+      <div class="ev"><b>UserPromptSubmit</b><span class="t">15s</span><span class="cmd">bb hook prompt</span></div>
+      <p>If the round before was a compaction and no SessionStart answered it, the same two bands go
+      back here. It fires once per compaction, not once per prompt: the marker records which compaction
+      has already been answered, and on which hook.</p>
+      <p>Otherwise, when the prompt is a task, the hook <b>runs</b> <code>bb pinpoint</code> rather than
+      suggesting it: measured on this tree at 0.47s against a 15s budget, because every input it reads
+      is a stored artefact. A suggestion was measured too, and it loses to the model's own habit about
+      three times in four. A brief already standing for the same prompt is reused, never rebuilt.</p>
+      <p>What enters is the <b>map</b>, about 300 tokens: the files, the symbols, the verdict. The
+      quoted regions stay on disk until a read asks for one.</p>
+      <p><span class="eff in">→ window · ≤1000 tok</span> the located, budgeted brief</p>
+    </li>
+    <li>
+      <div class="ev"><b>PreToolUse · Read</b><span class="t">10s</span><span class="cmd">bb hook pre-read</span></div>
+      <p>If pinpoint already located a region in this file, the read is <b>denied</b> and the reason
+      carries the range to read instead. The model needs a read of a file before it will edit it, so
+      blocking the scope blocks the change — and the denial names the read that is allowed.</p>
+      <p>Otherwise the file is priced against what the window has left, and an oversized open comes back
+      with an offset and a limit.</p>
+      <p><span class="eff deny">✕ denied · ≤900 tok</span> read this range, not the file</p>
+    </li>
+    <li>
+      <div class="ev"><b>PreToolUse · Grep | Bash</b><span class="t">10s</span><span class="cmd">bb hook pre-search</span></div>
+      <p>A declaration search is the case where the answer is not merely cheaper to look up, it is
+      already written down: <code>symbols-*.md</code> is a name / file / line index rebuilt by
+      fingerprint. The denial hands back the matching rows and the search never runs.</p>
+      <p>What is <b>not</b> denied matters as much. A string literal, a call site, a comment, a pattern
+      no declaration index can answer: the tables have no rows for it and the search goes through
+      untouched. And the same words over a <b>different file</b> are a different search: the duplicate
+      key carries the target, because keyed on the words alone it refused a second file as already
+      answered, twice in one afternoon.</p>
+      <p><span class="eff deny">✕ denied · ≤500 tok</span> the rows, instead of the walk</p>
+    </li>
+    <li>
+      <div class="ev"><b>PreToolUse · Write | Edit</b><span class="t">10s</span><span class="cmd">bb hook pre-write</span></div>
+      <p>The one blocking check <b>grapple</b> adds, at the one moment the agent has committed nothing:
+      a write outside the scope list the standing brief declared.</p>
+      <p>In <code>observe</code> phase it records the verdict it would have returned and emits
+      <b>nothing</b> — no decision, no bytes — so the session behaves exactly as it did before grapple
+      existed, and those recorded verdicts are the base rate the <code>enforce</code> phase is gated on.
+      A guard nobody measured is a guard nobody can defend turning on.</p>
+      <p><span class="eff deny">✕ denied · ≤900 tok</span> out of scope — in enforce only</p>
+    </li>
+    <li>
+      <div class="ev"><b>PostToolUse</b><span class="t">15s</span><span class="cmd">bb hook post-tool</span></div>
+      <p><b>bb sieve</b> rewrites an oversized tool result before the window is billed for it twice,
+      keeping the head, the tail and every error-like line, and leaving the full output on disk to grep.</p>
+      <p>The command <b>shape</b> is appended for <code>bb lathe</code> — <code>git commit</code>, never
+      the message. Mining that order out of the transcripts took four minutes of wall clock for 4.8
+      seconds of CPU; this hook is already running on every tool call, so forty bytes here is the
+      cheapest place in the system to learn the same fact. A shape log also cannot carry a secret
+      somebody passed on a command line.</p>
+      <p>Markdown the session writes into the tree is slop-checked, advisory only: a document is the
+      only artefact here that charges rent, and a hook that rewrites your sentence unasked is worse
+      than the sentence. And sixty bytes go to grapple's counters, no decision attached: everything
+      <code>bb grapple</code> scores as drift is read back from this row.</p>
+      <p><span class="eff in">→ window · ≤300 tok</span> a shrunk result, and the rule it broke</p>
+    </li>
+    <li>
+      <div class="ev"><b>PreCompact</b><span class="t">30s</span><span class="cmd">bb hook pre-compact</span></div>
+      <p>Emits nothing, deliberately. Whether this hook's stdout reaches the window after the summary is
+      written cannot be observed from here, and a mitigation built on a guess silently does nothing.</p>
+      <p>What it does instead is <b>freeze the record</b>: the narrative is written now, so what goes
+      back after the summary describes the same moment the summary does and not a later one. Then the
+      marker, and the next observable event — SessionStart with <code>source: compact</code>, or the
+      next prompt — does the work.</p>
+      <p><span class="eff quiet">· silent</span> a frozen page and a marker on disk</p>
+    </li>
+    <li>
+      <div class="ev"><b>Stop</b><span class="t">30s</span><span class="cmd">bb hook stop</span></div>
+      <p>The fourth verification layer, and the only one that is not the work reviewing itself. It
+      executes nothing. What it can say is whether the ledger this work declared is still sitting there
+      with gates unmet — the one question a session about to report "done" cannot answer about itself.
+      Silent where no ledger was declared, because a workspace that never set a bar has not failed to
+      meet one.</p>
+      <p><span class="eff deny">✕ not done</span> the gates still open</p>
+    </li>
+    <li>
+      <div class="ev"><b>SessionEnd</b><span class="t">120s</span><span class="cmd">bb hook session-end</span></div>
+      <p>The transcript is folded into the ledger and the session is priced: tokens billed and turns
+      taken, measured, against what the local path displaced. Saved is reported as two different
+      things — cache reads and wire trims are <b>measured</b>, displaced turns are counted per episode
+      and multiplied out, and the line says which is which.</p>
+      <p>Then <b>sleep-time compute</b>. None of it reaches a window — the session is over — and the
+      session that paid for the turns should not pay for learning from them.</p>
+      <ul class="sub">
+        <li><span class="k">grapple observe</span><span>the open questions, the labels it can attach, and the drift score</span></li>
+        <li><span class="k">lathe learn</span><span>the habits, off the shapes the post-tool hook recorded rather than the transcripts — 1.4s measured. Writing into <code>scripts/</code> stays behind its own flag: a hook that adds files to somebody's repository unasked is a hook they turn off</span></li>
+        <li><span class="k">echos</span><span>spin, oscillate, drift, converge, over the sessions on disk. It files findings, so the <em>next</em> session opens with them in <code>bb findings</code></span></li>
+        <li><span class="k">janitor build</span><span>the memory heap recompiled for whoever opens next. A failed refresh costs the next session a fresher heap, never the session that is ending</span></li>
+      </ul>
+      <p><span class="eff in">→ you</span> tokens used · tokens saved · turns · peak window</p>
+    </li>
+  </ol>
+  <p class="note">The caps are per emission, not per session. Every band declared in
+  <code>src/wire/hooks.js</code> added together is 6,100 tokens, and the two largest fire once per
+  compaction — against reads and searches it routinely denies for more than that on their own.
+  <code>bb wire status</code> reads the hook log for events the <code>bb</code> on PATH did not
+  recognise, because an installed guard that an older binary silently ignores looks exactly like one
+  that is working.</p>
+</div></section>
+
+<section id="artefacts"><div class="wrap">
+  <h2>What the hooks read</h2>
+  <p class="kicker">every answer is already on disk</p>
+  <p class="lead">No hook computes anything expensive. Each one serves a file that a gear built earlier,
+  which is why a 15-second budget is never close to spent.</p>
+  <table>
+    <thead><tr><th>Artefact</th><th>Built by</th><th>Served to</th></tr></thead>
+    <tbody>
+      <tr><td><code>.bundlebox/out/snapgen/</code></td><td><code>bb snapgen build</code></td><td>pre-search — the declaration rows that replace a walk</td></tr>
+      <tr><td><code>.bundlebox/out/arc/</code></td><td><code>bb arc build</code></td><td>pinpoint — every declaration as one binary index</td></tr>
+      <tr><td><code>.bundlebox/out/pinpoint/</code></td><td><code>bb pinpoint</code></td><td>prompt and pre-read — the map, then the quoted regions</td></tr>
+      <tr><td><code>.bundlebox/var/brief.json</code></td><td>the prompt hook</td><td>the standing brief, so a repeated prompt is not re-located; pre-write, for the scope list</td></tr>
+      <tr><td><code>.bundlebox/var/narrative/</code></td><td>the pre-compact hook</td><td>session-start and prompt — the record of the work, put back after a compaction</td></tr>
+      <tr><td><code>.bundlebox/var/findings.json</code></td><td><code>bb scan</code></td><td>prompt and compile — what is open, with evidence</td></tr>
+      <tr><td><code>.bundlebox/var/episodes.jsonl</code></td><td><code>bb buckmaster</code></td><td>session-end — turns displaced per verb</td></tr>
+      <tr><td><code>.bundlebox/var/sessions/</code></td><td><code>bb tokens ledger</code></td><td>session-end and <code>bb monitor</code> — the bill, and the window left</td></tr>
+      <tr><td><code>.bundlebox/var/calls.jsonl</code></td><td>the post-tool hook</td><td><code>bb lathe</code> — the shapes this box repeated</td></tr>
+      <tr><td><code>.bundlebox/grapple/</code></td><td>the post-tool and pre-write hooks</td><td><code>bb grapple</code> — the verdicts it would have returned, and the drift it scores</td></tr>
+      <tr><td><code>.bundlebox/out/janitor/</code></td><td><code>bb janitor</code>, at session end</td><td>session-start and prompt — the rot notice, and the rules restated in full</td></tr>
+      <tr><td><code>.bundlebox/auditor/&lt;area&gt;/</code></td><td><code>bb auditor charter</code></td><td>the bar an area declared, before the work, by hand</td></tr>
+    </tbody>
+  </table>
+</div></section>
+
+<section id="clock"><div class="wrap">
+  <h2>The three on their own clock</h2>
+  <p class="kicker">janitor · auditor · snapgen</p>
+  <p class="lead">Three things here are not stages in the tick. Each has its own trigger, writes its
+  own artefact, and is read back somewhere else entirely — which is the part that is easy to lose.</p>
+
+  <div class="gears">
+    <div class="gear">
+      <h4><code>janitor</code> — the memory compiler · <span class="muted">triggered at SessionEnd</span></h4>
+      <p class="g-d">A compiler, not a cleanup script, for one reason that shows up in every verb: a
+      cleanup script answers "is this tidy", and a compiler answers "does this build", which is a
+      question with a failing answer. A rule whose file no longer exists is an ERROR. Two live rules
+      that contradict each other is an ERROR, and neither is silently dropped.</p>
+      <div class="stages passes">
+        <div><span class="num">1 · parse</span><span class="d">four stores → typed objects</span></div>
+        <div><span class="num">2 · resolve</span><span class="d">every anchor → live, drifted or dead</span></div>
+        <div><span class="num">3 · mark</span><span class="d">transcripts → reachability, promotion</span></div>
+        <div><span class="num">4 · sweep</span><span class="d">contradiction, quarantine, age-out</span></div>
+        <div><span class="num">5 · compact</span><span class="d">type-aware merge; rules never rewritten</span></div>
+        <div><span class="num">6 · place</span><span class="d">rank, deal around the dead zone, pin rules</span></div>
+        <div><span class="num">7 · emit</span><span class="d">WINDOW.md, HEAP.md, heap.jsonl, diagnostics</span></div>
+        <div class="last"><span class="num">one order</span><span class="d">Every pass reads and writes the same IR, and the order is not a preference.</span></div>
+      </div>
+      <table>
+        <thead><tr><th>Touch point</th><th>Reads</th><th>Does</th></tr></thead>
+        <tbody>
+          <tr><td><code>SessionStart</code></td><td><code>diagnostics.json</code></td><td>the rot notice: which lines in the memory just loaded no longer resolve</td></tr>
+          <tr><td><code>SessionStart</code> (compact)</td><td>the narrative, <code>RULES.md</code></td><td>the record of the work goes back, then the rules in full</td></tr>
+          <tr><td><code>UserPromptSubmit</code></td><td>the marker</td><td>the same two bands, when no SessionStart answered the compaction</td></tr>
+          <tr><td><code>PreCompact</code></td><td>the record</td><td>freezes the narrative and writes the marker, so the restate fires once</td></tr>
+          <tr><td><code>SessionEnd</code></td><td>the four stores</td><td>recompiles the heap for the next session, on the sleep-time budget</td></tr>
+        </tbody>
+      </table>
+      <p class="note">Every read is age-capped at <code>janitor.max_age_hours</code>, 168 by default. The
+      stale guard matters more here than anywhere: a hook that quoted a week-old diagnostics file as
+      though it described the tree right now would be making exactly the mistake the resolve pass
+      exists to catch. Exit codes: <code>0</code> clean · <code>10</code> warnings ·
+      <code>11</code> errors · <code>30</code> the compiler itself failed.</p>
+    </div>
+
+    <div class="gear">
+      <h4><code>auditor</code> — the bar, declared first · <span class="muted">triggered by hand</span></h4>
+      <p class="g-d">Every other verb here answers "what is wrong with what was written". This one
+      answers the question that comes before it — what is in scope, what bar it has to meet, who decides
+      when it does not, and what counts as proof — and it answers while changing the code is still cheap.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb auditor drift</span><span class="d">charters that need re-deriving, reviews describing a tree that has moved</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb auditor plan</span><span class="d">areas with no declared bar, and the reviews worth writing, ranked</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb auditor pack</span><span class="d">the briefs. Stops here: sending is a decision</span></div>
+      </div>
+      <p class="note">The <code>audit</code> gear declares <code>on: ["hand"]</code> — it is the one gear
+      no cron line reaches, because a governance bar nobody chose is not a bar. The split everything
+      turns on: a <b>charter</b> is living and is re-derived when the area moves, a <b>review</b> is
+      dated and is never edited. Mixing those two destroys the only thing a review is for.</p>
+    </div>
+
+    <div class="gear">
+      <h4><code>snapgen</code> — the tables · <span class="muted">triggered by fingerprint</span></h4>
+      <p class="g-d">Each table is a set difference, a parse or a count over the workspace, rebuilt only
+      when its inputs change. In the <code>orient</code> gear it carries <code>skip_if_fresh</code>
+      against a walk of the source, so a tick over an untouched tree rebuilds nothing.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb snapgen stale</span><span class="d">which tables are behind their inputs</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb snapgen build</span><span class="d">layout, symbols-*, INDEX.md</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">pre-search</span><span class="d">the rows that replace a walk of the tree</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">pinpoint</span><span class="d">symbolHits: where-is-it, from a table that already exists</span></div>
+      </div>
+      <p class="note">This is the one artefact a session is told to read <em>instead of</em> searching,
+      and the only one the guards will deny a tool call on behalf of. A declaration search is the case
+      where the answer is not merely cheaper to look up — it is already written down.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="gears"><div class="wrap">
+  <h2>The gears running underneath</h2>
+  <p class="kicker">a declared pipeline, as data</p>
+  <p class="lead">A gear is an ordered list of verbs with a gate in front of each stage. Every built-in
+  gear is free and local: <code>run</code> and <code>bridge</code> are refused inside one, checked when
+  the crontab line is written rather than assumed. <code>factory</code> chains five of them, every 30
+  minutes, and stops at lanes.</p>
+
+  <div class="gears">
+    <div class="gear">
+      <h4><code>intake</code> — what is wrong</h4>
+      <p class="g-d">Ends holding lanes: the last point before anything spends.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb scan</span><span class="d">every detector</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb oversight scan</span><span class="d">size and fan-in, only when something was found</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb fix</span><span class="d">what the actuators could close for free. Dry run: a stage gets its own flags, never the gear's <code>--apply</code></span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb compile --write</span><span class="d">findings → units packed to a window</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb route --write</span><span class="d">units → lanes. Stops here: running them is a decision</span></div>
+      </div>
+    </div>
+    <div class="gear">
+      <h4><code>orient</code> — what a session gets handed instead of searching</h4>
+      <p class="g-d">Everything the nine hooks above serve from.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb snapgen build</span><span class="d">the reference tables</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb arc build</span><span class="d">the tables, compiled to one index</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb oversight guidelines</span><span class="d">the guidelines block</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb pinpoint gaps</span><span class="d">each finding as a located brief</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb buckmaster recommend</span><span class="d">the fired rules, as lines you can paste</span></div>
+      </div>
+    </div>
+    <div class="gear">
+      <h4><code>measure</code> — what it all cost</h4>
+      <p class="g-d">The half of the loop that decides whether any of the rest was worth running.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb tokens ledger</span><span class="d">fold the transcripts into the ledger</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb session list</span><span class="d">the sessions measured so far</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb buckmaster episodes</span><span class="d">turns displaced per verb</span></div>
+      </div>
+    </div>
+    <div class="gear">
+      <h4><code>buckmaster</code> — train on all of it</h4>
+      <p class="g-d">The one thing every gear writes is the episode table, which is how the model trains
+      by the factory being used. <b>The one gear here with a runtime dependency:</b> <code>bb
+      buckmaster</code> is the CLI half of the Python expert system in <code>expert/</code>, reached
+      through <code>src/core/expert.js</code>. Without python3 ≥ 3.9 every sub-verb warns and returns 2,
+      and the tick carries on — the zero-token path never touches this module. What is lost is the
+      learning, not the factory.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb buckmaster signals</span><span class="d">per-session signals off the transcripts</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb buckmaster rules</span><span class="d">which signals crossed a threshold</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb buckmaster memory</span><span class="d">what the factory came to believe</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb lathe build</span><span class="d">scripts, snippets and completions for the habits</span></div>
+      </div>
+    </div>
+    <div class="gear">
+      <h4><code>watch</code> — fold what was spent</h4>
+      <p class="g-d">Last in the chain, and it used to be missing: the tick folded the ledger and rebuilt
+      nothing, so the one page this workspace has showed whenever somebody last ran it by hand.</p>
+      <div class="rail">
+        <div class="step"><span class="v">bb tokens ledger</span><span class="d">fold every transcript</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb monitor status</span><span class="d">the block, the burn rate, which clock runs out first</span></div>
+        <div class="arw">→</div>
+        <div class="step"><span class="v">bb console build</span><span class="d">the page, with the state embedded</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><code>full</code> runs on the slower line, every 6 hours, ungated:
+  <code>situation → ops → intake → orient → scenarios → watch → buckmaster</code>. It is the one that
+  needs a service up, so the recom gate — which answers from the tree, the config and the head commit —
+  would not see it coming.</p>
+</div></section>
+
+<section id="triggers"><div class="wrap">
+  <h2>What fires what</h2>
+  <p class="kicker">five triggers · three of them wired</p>
+  <p class="lead">Sixty verbs. Nobody types most of them. Five things can fire a verb, and two of the
+  five are declared in the source and read by nothing.</p>
+
+  <h3>A hook fires it, inside a session</h3>
+  <table>
+    <thead><tr><th>Verb</th><th>Hook</th><th>Condition</th></tr></thead>
+    <tbody>
+      <tr><td><code>init</code></td><td>SessionStart</td><td>no <code>.bundlebox</code> in a dir that looks like a project — detection inline, build detached</td></tr>
+      <tr><td><code>janitor</code> <span class="muted">read</span></td><td>SessionStart</td><td><code>diagnostics.json</code> under 168h → the rot notice</td></tr>
+      <tr><td>the narrative, <code>janitor</code> <span class="muted">read</span></td><td>SessionStart (compact), UserPromptSubmit</td><td>the round after a compaction → the record of the work, then <code>RULES.md</code> in full</td></tr>
+      <tr><td><code>pinpoint</code></td><td>UserPromptSubmit</td><td>the prompt is a task and <code>wire.auto_pinpoint</code></td></tr>
+      <tr><td><code>snapgen</code>, <code>arc</code> <span class="muted">read</span></td><td>PreToolUse · Read, Grep|Bash</td><td>the tables have rows for what the call is asking</td></tr>
+      <tr><td><code>grapple</code></td><td>PreToolUse · Write|Edit</td><td>a write outside the standing brief's scope</td></tr>
+      <tr><td><code>sieve</code></td><td>PostToolUse</td><td>result over the threshold, <code>sieve.enabled</code></td></tr>
+      <tr><td><code>slop</code></td><td>PostToolUse</td><td>a markdown write into the tree</td></tr>
+      <tr><td><code>finish</code></td><td>Stop</td><td>a ledger exists with gates unmet</td></tr>
+      <tr><td><code>tokens</code>, <code>session</code></td><td>SessionEnd</td><td><code>wire.measure_sessions</code></td></tr>
+      <tr><td><code>grapple</code>, <code>lathe</code>, <code>echos</code>, <code>janitor</code> <span class="muted">build</span></td><td>SessionEnd</td><td>each behind its own config flag</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Cron fires it</h3>
+  <table>
+    <thead><tr><th>Line</th><th>Gate</th><th>What it reaches</th></tr></thead>
+    <tbody>
+      <tr><td><code>*/30 * * * *</code></td><td><code>bb recom gate cron/factory</code></td><td>scan, oversight, <b>fix</b>, compile, route, snapgen, arc, pinpoint, buckmaster, tokens, session, bench, triage, echos, lathe, monitor, console</td></tr>
+      <tr><td><code>0 */6 * * *</code></td><td>ungated</td><td>the same, plus runbook, viewport, failsafe, doctor, cookbook, mainboard, frames</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Both under one <code>flock</code>, so they never overlap. Neither can reach
+  <code>run</code> or <code>bridge</code>: <code>unsafeVerbs()</code> walks the chain and refuses to
+  write the crontab line, rather than trusting that a gear stayed free. The gate runs 48 times a day so
+  that the pipeline does not.</p>
+
+  <h3>The agent fires it</h3>
+  <p>Nine MCP tools, and the model decides when: <code>bb_pinpoint</code>, <code>bb_context</code>,
+  <code>bb_snapgen</code>, <code>bb_findings</code>, <code>bb_scan</code>,
+  <code>bb_oversight_brief</code>, <code>bb_explain</code>, <code>bb_tokens_estimate</code>,
+  <code>bb_session</code>.</p>
+
+  <h3>Nothing fires it</h3>
+  <p>Twenty-six verbs wait to be typed. Most should: <code>wire</code>, <code>unwire</code>,
+  <code>kernel</code>, <code>update</code>, <code>cron</code> and <code>init</code> change the box, and
+  a box that reconfigures itself on a timer is worse than one that does not. The ones worth noticing
+  are the free ones nobody is reminded of — <code>env</code>, <code>context</code>, <code>gates</code>,
+  <code>uptake</code>, <code>simulate</code>, <code>dotty</code>, <code>designlabs</code>,
+  <code>scripts</code>, <code>proxy</code>, <code>headroom</code>, <code>agents</code>,
+  <code>explain</code>, <code>findings</code>.</p>
+
+  <div class="stages">
+    <div class="last"><span class="num">the one reader</span><span class="d"><code>src/cron.js:100</code> filters gears for <code>on: "cron"</code>. It is the only code in the tree that reads <code>gear.on</code> at all.</span></div>
+    <div><span class="num">declared</span><span class="t">post-commit</span><span class="d"><code>intake</code> carries it. No git hook is installed, so a commit is scanned by the next half-hour tick and not before.</span></div>
+    <div><span class="num">declared</span><span class="t">session-start</span><span class="d"><code>orient</code> carries it. The hook detaches <code>bb init</code>'s build instead, and never runs a gear.</span></div>
+    <div><span class="num">declared</span><span class="t">session-end</span><span class="d"><code>measure</code> and <code>watch</code> carry it. The hook runs its own list, so <code>monitor status</code> and <code>console build</code> wait for cron.</span></div>
+  </div>
+  <p class="note">A trigger name that nothing dispatches on is a schedule somebody believes in. The
+  factory already learned this once — <code>situation</code>, <code>ops</code> and
+  <code>scenarios</code> declared <code>cron</code> for months while no chain reached them, which is
+  why the reachability check at <code>cron.js:100</code> exists. It checks one of the five names.</p>
+</div></section>
+
+<section id="stages"><div class="wrap">
+  <h2>Is the box ready for any of this</h2>
+  <p class="kicker">bb pipeline · eleven stages, each with an exit criterion</p>
+  <p class="lead">A stage is not done because it ran once. It is done when its output exists, is fresh
+  against its inputs, and asserts something. Every stage before <em>agent</em> is free.</p>
+  <div class="stages">
+    <div><span class="num">01</span><span class="t">Genesis</span><span class="d">is there a world model to work against?</span><span class="fix">bb genesis &lt;doc.md&gt;</span></div>
+    <div><span class="num">02</span><span class="t">Situation</span><span class="d">have the local detectors looked at what is on disk?</span><span class="fix">bb scan</span></div>
+    <div><span class="num">03</span><span class="t">Orient</span><span class="d">is the free context a session opens with built and fresh?</span><span class="fix">bb pipeline run orient</span></div>
+    <div><span class="num">04</span><span class="t">Corpus</span><span class="d">is there a scenario corpus, and does it assert anything?</span><span class="fix">bb genesis pack</span></div>
+    <div><span class="num">05</span><span class="t">Scenarios</span><span class="d">has the corpus been run against the system since it last changed?</span><span class="fix">bb cookbook run</span></div>
+    <div><span class="num">06</span><span class="t">Simulation</span><span class="d">does it still hold at more than one caller?</span><span class="fix">bb simulate run smoke</span></div>
+    <div><span class="num">07</span><span class="t">Pinpoint</span><span class="d">is the worst open finding packed to one window?</span><span class="fix">bb pinpoint "&lt;title&gt;"</span></div>
+    <div><span class="num">08</span><span class="t">Agent</span><span class="d">is the work packed and budgeted before anything opens a session?</span><span class="fix">bb compile --write</span></div>
+    <div><span class="num">09</span><span class="t">Monitor</span><span class="d">does the box know what the current window has left?</span><span class="fix">bb tokens ledger</span></div>
+    <div><span class="num">10</span><span class="t">Echos</span><span class="d">is the work itself going anywhere?</span><span class="fix">bb echos</span></div>
+    <div><span class="num">11</span><span class="t">Ship</span><span class="d">is there a command that proves a change, and a clean way out?</span><span class="fix">bb git status</span></div>
+    <div class="last"><span class="num">cost</span><span class="t">0 tokens</span><span class="d">Every stage on this board is free. The first thing that spends is what stage 08 hands to a session.</span></div>
+  </div>
+  <p class="note">Stage 10 is the only one that asks about the <em>work</em> rather than the artefacts.
+  Every stage above it checks that something was derived and is still fresh; none of them checks whether
+  the sessions are converging.</p>
+</div></section>
+
+<footer><div class="wrap">
+  <p>Generated from the source of record: <code>src/cli.js</code> (the command table and its chapters),
+  <code>src/wire/agents.js</code> (the hook rows), <code>src/wire/hooks.js</code> (what each one does),
+  <code>src/pipeline/gears.js</code> (the gears), <code>src/pipeline/stages.js</code> (the eleven
+  stages) and <code>src/cron.js</code> (the schedule).
+  <a href="../index.html">← back to the docs</a></p>
+</div></footer>
+
+</div></div>
+<script>
+(function(){
+  var shell=document.getElementById('shell'), btn=document.getElementById('menu'), scrim=document.getElementById('scrim');
+  function close(){shell.classList.remove('open')}
+  if(btn) btn.addEventListener('click',function(){shell.classList.toggle('open')});
+  if(scrim) scrim.addEventListener('click',close);
+  var links=[].slice.call(document.querySelectorAll('.side nav a[href^="#"]'));
+  links.forEach(function(a){a.addEventListener('click',close)});
+  var byId={}; links.forEach(function(a){byId[a.getAttribute('href').slice(1)]=a});
+  var targets=Object.keys(byId).map(function(id){return document.getElementById(id)}).filter(Boolean);
+  if(!('IntersectionObserver' in window)||!targets.length) return;
+  var seen={};
+  function mark(){
+    var top=null, best=Infinity;
+    targets.forEach(function(t){var r=t.getBoundingClientRect(); var d=Math.abs(r.top-80); if(r.bottom>80 && d<best){best=d; top=t}});
+    if(!top) return;
+    links.forEach(function(a){a.classList.toggle('on', a===byId[top.id])});
+  }
+  var io=new IntersectionObserver(function(){mark()},{rootMargin:'-20% 0px -60% 0px',threshold:[0,.25,.5,1]});
+  targets.forEach(function(t){io.observe(t)});
+  window.addEventListener('scroll',mark,{passive:true}); mark();
+})();
+</script>
+<script>
+(function(){
+  var q=document.getElementById('q'), chips=document.getElementById('chips'), count=document.getElementById('count');
+  var cards=[].slice.call(document.querySelectorAll('.card')), chapters=[].slice.call(document.querySelectorAll('.chapter'));
+  var ch='';
+  function apply(){
+    var t=(q.value||'').trim().toLowerCase(), n=0;
+    cards.forEach(function(c){
+      var ok=(!t||c.getAttribute('data-text').indexOf(t)>=0)&&(!ch||c.parentNode.parentNode.getAttribute('data-chapter')===ch);
+      c.classList.toggle('hide',!ok); if(ok) n++;
+    });
+    chapters.forEach(function(s){s.classList.toggle('empty',!s.querySelector('.card:not(.hide)'))});
+    count.textContent=n+' of '+cards.length;
+  }
+  q.addEventListener('input',apply);
+  chips.addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    ch=b.getAttribute('data-ch')||'';
+    [].slice.call(chips.querySelectorAll('button')).forEach(function(x){x.classList.toggle('on',x===b)});
+    apply();
+  });
+})();
+</script>
+</body>
+</html>

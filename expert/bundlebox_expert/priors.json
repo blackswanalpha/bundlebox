@@ -1,0 +1,43 @@
+{
+  "at": "2026-09-18T21:59:30.411Z",
+  "from": "bundlebox",
+  "n": 164,
+  "by": {
+    "missing-tests": {
+      "held": 5,
+      "broken": 16,
+      "n": 21,
+      "hold_rate": 0.238
+    },
+    "dead-exports": {
+      "held": 7,
+      "broken": 63,
+      "n": 70,
+      "hold_rate": 0.1
+    },
+    "swallowed-errors": {
+      "held": 3,
+      "broken": 47,
+      "n": 50,
+      "hold_rate": 0.06
+    },
+    "dead-config": {
+      "held": 0,
+      "broken": 1,
+      "n": 1,
+      "hold_rate": 0
+    },
+    "silent-fallback": {
+      "held": 3,
+      "broken": 8,
+      "n": 11,
+      "hold_rate": 0.273
+    },
+    "orphan-files": {
+      "held": 0,
+      "broken": 3,
+      "n": 3,
+      "hold_rate": 0
+    }
+  }
+}

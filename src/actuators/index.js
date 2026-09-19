@@ -486,7 +486,7 @@ export const ACTUATORS = {
   "fix-doc-links": fixDocLinks, "sync-doc-counts": syncDocCounts, "prune-worktrees": pruneWorktrees, "sync-trunk": syncTrunk,
   "drop-dead-export": dropDeadExport, "remove-dead-dep": removeDeadDep, "strip-debug-line": stripDebugLine,
   "relock-npm": relockNpm, "resolve-identical-conflict": resolveIdenticalConflict, "drop-dead-knob": dropDeadKnob,
-  // The eleven that used to name none. Four edit; seven write the plan behind
+  // The twelve that used to name none. Five edit; seven write the plan behind
   // a decision and leave the finding open for the person who makes it.
   "rescan-stale": rescanStale, "ignore-secret-file": ignoreSecretFile,
   "flatten-filter-map": flattenFilterMap, "normalize-todo-marker": normalizeTodoMarker,

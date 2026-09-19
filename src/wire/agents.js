@@ -104,6 +104,10 @@ export const CLAUDE_HOOKS = [
   // handler parses one simple read or one simple search out of a command and
   // leaves everything else alone, so `npm test` is never a candidate.
   { event: "PreToolUse", matcher: "Grep|Bash", cmd: "pre-search", timeout: 10 },
+  // grapple's one blocking check: a write outside the brief's scope list, at
+  // the one moment the agent has committed nothing. Records only while
+  // `grapple.phase` is observe; the handler returns nothing in that phase.
+  { event: "PreToolUse", matcher: "Write|Edit|MultiEdit|NotebookEdit", cmd: "pre-write", timeout: 10 },
   // No matcher: which tools it may touch is an allowlist inside the handler, so
   // a tool added to Claude Code cannot quietly become eligible by matching a
   // pattern here. Off unless `sieve.enabled`, and the handler returns instantly.
