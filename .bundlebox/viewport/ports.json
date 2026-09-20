@@ -1,0 +1,44 @@
+{
+  "root": "/home/mbugua/Documents/CodeBase/bundlebox",
+  "generated": "2026-09-20T15:00:02.461Z",
+  "how": "ss",
+  "why": "",
+  "services": [
+    {
+      "id": "console",
+      "group": "all",
+      "port": 7788,
+      "host": "",
+      "supports": ".",
+      "declared": "node bin/bb.js console serve --port 7788",
+      "health": "http://127.0.0.1:7788/health",
+      "url": "http://127.0.0.1:7788",
+      "listening": false,
+      "pid": null,
+      "proc": "",
+      "process_state": "down",
+      "answering": "down",
+      "http": null,
+      "ms": null,
+      "why": "connect 127.0.0.1:7788: Connection refused (os error 111)",
+      "memory_bytes": null,
+      "cap_bytes": 268435456,
+      "cpu_s": null,
+      "log": "",
+      "held_by_other": false
+    }
+  ],
+  "strays": [
+    {
+      "port": 25463,
+      "host": "127.0.0.1",
+      "proc": ".cline",
+      "pid": 2008543,
+      "cwd": "/home/mbugua/Documents/CodeBase/bundlebox",
+      "supports": "."
+    }
+  ],
+  "observed": 59,
+  "up": 0,
+  "of": 1
+}

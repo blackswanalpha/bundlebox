@@ -205,4 +205,17 @@ export const GEARS = [
       { verb: "run", flags: { pr: true }, description: "the plan as it would run with --pr; nothing spawns without --apply" },
     ],
   }),
+  // The one gear that spends. Hand-only, never on a cron tick: each pack opens
+  // an agent session, and the bridge's ceiling and window guard are the only
+  // things between a tick and a bill. `--run --spend` are the verb's own flags;
+  // without them the loop drafts, verifies nothing new and reports why.
+  gear({
+    name: "practice", description: "fill the corpus: plan, send a pack per gap to an agent, keep what the verifier passes, remember the rest",
+    on: ["hand"],
+    stages: [
+      { verb: "genesis", args: ["plan"], description: "what no scenario touches, ranked" },
+      { verb: "genesis", args: ["practice"], flags: { run: true, spend: true }, description: "broad then deep: one agent session per pack, verified free, lessons to edge-cases.md" },
+      { verb: "pinpoint", args: ["gaps"], when: "open_findings > 0", optional: true, description: "the red steps the kept scenarios found, located and budgeted" },
+    ],
+  }),
 ];

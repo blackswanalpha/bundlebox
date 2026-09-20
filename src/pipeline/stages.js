@@ -94,7 +94,7 @@ export const STAGES = [
   },
   {
     id: "corpus", title: "Corpus", question: "is there a scenario corpus, and does it assert anything?",
-    cost: 0, fix: "bb genesis pack   then   bb genesis send <surface> --run --spend",
+    cost: 0, fix: "bb genesis practice --run --spend   (plan, send, verify, remember; or by hand: bb genesis pack, bb genesis send <surface> --run --spend)",
     exit() {
       const dir = path.join(BB_DIR, "cookbook");
       let ids = []; try { ids = fs.readdirSync(dir).filter((d) => fs.existsSync(path.join(dir, d, "persona.json"))); } catch { /* none */ }
