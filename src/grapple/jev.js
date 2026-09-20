@@ -20,7 +20,7 @@ import { abs } from "../core/paths.js";
 import * as tokens from "../tokens/estimate.js";
 
 export const URL = () => process.env.TYPESAFE_API_URL || "https://api.typesafe.ai/v1/systemone";
-export const MODEL = () => process.env.TYPESAFE_MODEL || "";
+export const MODEL = () => process.env.TYPESAFE_MODEL || "jev-latest";   // required by the API; `jev-<version>` pins one
 export const WINDOW = 6;              // lines each side of a row
 export const ROWS_PER_ITEM = 3;       // example windows per pattern
 export const STATE_TOKENS = 24000;    // under Jev's 32k state ceiling with room for the questions
@@ -78,8 +78,7 @@ process.stdin.on("end", async () => {
 /** POST one system-one request. `{ answers, ms }` or null. */
 export function call({ state, questions }, { timeout = TIMEOUT_MS } = {}) {
   if (!available() || !Object.keys(questions).length) return null;
-  const body = { state, questions };
-  if (MODEL()) body.model = MODEL();
+  const body = { model: MODEL(), state, questions };
   const t0 = Date.now();
   const r = spawnSync(process.execPath, ["-e", CHILD], { input: JSON.stringify({ url: URL(), key: process.env.TYPESAFE_API_KEY, body, timeout }),
     encoding: "utf8", timeout: timeout + 2000, maxBuffer: 16 * 1024 * 1024 });
@@ -94,7 +93,7 @@ export function call({ state, questions }, { timeout = TIMEOUT_MS } = {}) {
 export function probability(a) {
   if (a == null) return null;
   if (typeof a === "number") return a;
-  for (const k of ["probability", "p", "value", "answer"]) if (typeof a[k] === "number") return a[k];
+  for (const k of ["noul", "probability", "p", "value", "answer"]) if (typeof a[k] === "number") return a[k];   // the API answers `{ type: "noul", noul: 0.98 }`
   return null;
 }
 
