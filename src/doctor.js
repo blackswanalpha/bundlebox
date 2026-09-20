@@ -117,6 +117,16 @@ export async function rows() {
   r.push(row("calibration", fittedAt && triageOk ? "ok" : "warn",
     `${fittedAt ? `fitted ${fittedAt}${cal.fit?.code?.samples ? ` (${cal.fit.code.samples} samples)` : ""}` : "shipped coefficients"}; ${triage}`,
     !fittedAt ? "bb tokens calibrate --write (needs transcripts)" : !triageOk ? "bb triage calibrate --apply" : ""));
+  // prompt4.md G2: every fitted head prints with its sample size, and a head
+  // that has not beaten its holdout says so rather than printing a rate.
+  const th = readJson(path.join(VAR, "task-head.json"), null);
+  r.push(row("prompt head", th ? "ok" : "warn",
+    !th ? "never fitted — the regex decides" : th.useful ? `fitted (n=${th.n}, threshold ${th.threshold}, errs ${th.errs})` : `base rate (n=${th.n ?? 0}${th.fires !== undefined ? `, ${th.edited} of ${th.fires} fires led to an edit` : ""}) — the regex decides: ${th.why || "no fit"}`,
+    th ? "" : "written at session-end; `bb wire hook session-end` runs it now"));
+  const ch = readJson(path.join(VAR, "confidence-head.json"), null);
+  r.push(row("confidence head", ch ? "ok" : "warn",
+    !ch ? "never fitted — PRECISION constants decide" : ch.useful ? `beats PRECISION on the holdout (n=${ch.acted_on} acted_on of ${ch.n}, score ${ch.fitted?.score} vs ${ch.shipped?.score})` : `PRECISION stays (n=${ch.acted_on ?? 0} acted_on of ${ch.n ?? 0}): ${ch.why || "no fit"}`,
+    ch ? "" : "written at session-end"));
   const obs = cal.overhead_observed || null;
   const over = cfg.budget.overhead_lean ? `${human(cfg.budget.overhead_lean)} (probed lean)`
     : obs && cfg.budget.overhead_tokens ? `${human(cfg.budget.overhead_tokens)} (observed min of ${obs.n} transcript${obs.n > 1 ? "s" : ""}; upper bound for a lean lane)`

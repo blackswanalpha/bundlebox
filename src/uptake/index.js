@@ -26,7 +26,7 @@
 // Zero tokens: every input is a transcript that already exists on disk.
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, OUT, rel } from "../core/paths.js";
+import { ROOT, OUT, VAR, rel } from "../core/paths.js";
 import { load } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { human, pad, table } from "../core/util.js";
@@ -236,6 +236,22 @@ export function report({ cfg = load(), since = "" } = {}) {
 
 // ── commands ────────────────────────────────────────────────────────────────
 
+/** prompt4.md W1's gate: the prompt hook's fires and the edits they led to,
+ *  per the join `hooks.taskRows` builds, with `n` beside every number. Under
+ *  the sample floor the rate is `unknown`, not a percentage of seven. */
+export const TASK_FLOOR = 12;
+export function taskHeadLines() {
+  let h = null;
+  try { h = JSON.parse(fs.readFileSync(path.join(VAR, "task-head.json"), "utf8")); } catch { /* never fitted */ }
+  if (!h) return ["", "  prompt hook: no fit recorded — the regex decides; a session-end writes `task-head.json` (n, fires, edits)."];
+  const n = Number(h.fires ?? h.n) || 0, edited = Number(h.edited) || 0;
+  const rate = n >= TASK_FLOOR ? `${Math.round((100 * edited) / n)}%` : "unknown";
+  const head = h.useful ? `fitted head decides, threshold ${h.threshold}, errs ${h.errs}, holdout accuracy ${h.accuracy} vs base ${h.base_accuracy}`
+    : `regex decides (${h.why || "no fit"})`;
+  return ["", `  prompt hook: fired ${n}, led to an edit ${edited}, rate ${rate} (n=${n}, floor ${TASK_FLOOR}); ${head}.`,
+    ...(h.unseen ? [`  ${h.unseen} transcript(s) could not be read — those sessions are unlabelled, not negatives.`] : [])];
+}
+
 const rate = (r) => (r.chances ? `${Math.round((100 * r.fired) / r.chances)}%` : "—");
 
 function render(r, flags) {
@@ -248,6 +264,7 @@ function render(r, flags) {
   const observable = r.rows.filter((x) => x.observable);
   out(table(observable.map((x) => [x.id, x.installed ? "yes" : "no", x.chances ? `${x.fired}/${x.chances}` : "—", rate(x), x.what]),
     { header: ["surface", "installed", "fired/chances", "rate", "what it is"] }).split("\n").map((l) => "  " + l).join("\n"));
+  taskHeadLines().forEach((l) => out(l));
   out(`\n  A chance is the moment the surface was for: pinpoint counts sessions that opened >= ${r.read_floor} distinct files,`);
   out("  tables counts sessions that ran a search, cli counts sessions that ran any shell command. A file opened with");
   out("  `sed -n` counts exactly as much as one opened with Read: which tool a session uses is a harness setting.");

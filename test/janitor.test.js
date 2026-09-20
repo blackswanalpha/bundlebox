@@ -558,3 +558,19 @@ test("the status verb computes the window and writes none of it", async () => {
   assert.ok(!fs.existsSync(path.join(d, "diagnostics.json")));
   assert.deepEqual(r.files, {});
 });
+
+test("one similarity: the features are absent rather than zero, and a fit weighs only what both sides carry", async () => {
+  const { features, similarity } = await import("../src/janitor/heap.js");
+  const f = features({ files: ["src/a/x.js"], text: "grow loop" }, { files: ["src/a/y.js"], text: "grow loop fast" });
+  assert.equal(f.files, 0);
+  assert.equal(f.prefix, 1, "same directory");
+  assert.equal(f.title, null, "neither side has a title");
+  assert.ok(f.terms > 0.6 && f.terms < 0.7);
+  // the documented fallback: files overlap wins, else terms, else title
+  assert.equal(similarity({ files: ["a.js", "b.js"] }, { files: ["a.js"] }, null), 0.5);
+  assert.equal(similarity("alpha bravo", "bravo charlie", null), similarity(new Set(["alpha", "bravo"]), new Set(["bravo", "charlie"]), null));
+  // a fit: weights over present features only; an absent one does not average in as zero
+  const fit = { useful: true, weights: { terms: 1, files: 1, prefix: 1, title: 1 } };
+  const s = similarity({ files: ["src/a/x.js"], text: "grow loop" }, { files: ["src/a/y.js"], text: "grow loop" }, fit);
+  assert.equal(Math.round(s * 100) / 100, 0.67, `(0 files + 1 prefix + 1 terms) / 3, got ${s}`);
+});

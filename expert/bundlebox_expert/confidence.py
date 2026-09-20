@@ -17,14 +17,26 @@ WEIGHT = {"info": 0.5, "low": 1.0, "medium": 2.0, "high": 5.0, "critical": 16.0}
 SHRINKAGE = 4
 
 
-def for_rule(precision: str, held: int = 0, weak: int = 0, broken: int = 0) -> dict:
+def for_rule(precision: str, held: int = 0, weak: int = 0, broken: int = 0, prior: dict | None = None) -> dict:
+    """`prior` is the third term (prompt4.md W2): `{"p", "n"}` from the fitted
+    finding head in `model.py`, a per-finding probability with the head's
+    training sample beside it. It moves the METHOD constant toward `p` by
+    `n / (n + SHRINKAGE)` before history is blended on top — the same shrinkage
+    history gets, so a head fitted on nine rows cannot outvote the method. `base`
+    stays the method constant so a reader can see what the prior moved."""
     base = PRECISION.get(precision, PRECISION["heuristic"])
+    start = base
+    out = {"base": base}
+    if prior and isinstance(prior.get("p"), (int, float)) and int(prior.get("n") or 0) > 0:
+        v = int(prior["n"]) / (int(prior["n"]) + SHRINKAGE)
+        start = (1 - v) * base + v * float(prior["p"])
+        out["prior"] = {"p": round(float(prior["p"]), 4), "n": int(prior["n"]), "weight": round(v, 4), "base": round(start, 4)}
     settled = held + weak + broken
     if settled == 0:
-        return {"confidence": base, "base": base, "hold_rate": None, "settled": 0, "weight": 0.0}
+        return {**out, "confidence": round(start, 4), "hold_rate": None, "settled": 0, "weight": 0.0}
     hold = held / settled
     w = settled / (settled + SHRINKAGE)
-    return {"confidence": round((1 - w) * base + w * hold, 4), "base": base, "hold_rate": round(hold, 4), "settled": settled, "weight": round(w, 4)}
+    return {**out, "confidence": round((1 - w) * start + w * hold, 4), "hold_rate": round(hold, 4), "settled": settled, "weight": round(w, 4)}
 
 
 def value(conf: float, severity: str, est_tokens: int, n: int = 1) -> float:

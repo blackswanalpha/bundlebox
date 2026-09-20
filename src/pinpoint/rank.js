@@ -45,9 +45,78 @@
 //
 // Hits within one file decay, so a file cannot win on the sheer number of loose
 // matches it happens to contain.
-import { rel, abs } from "../core/paths.js";
+import fs from "node:fs";
+import path from "node:path";
+import { rel, abs, VAR } from "../core/paths.js";
 import { isTest } from "../detectors/_shared.js";
 import * as graph from "../snapgen/graph.js";
+// A cycle, and a deliberate one, for the same reason `bench/gate.js` has one:
+// `index.js` owns the tokenizer the problem statement was cut with, and a
+// distance between two vocabularies is only a distance if both were cut the
+// same way. Nothing below runs at module scope.
+import { terms as cutTerms } from "./index.js";
+
+// ── the symbol space (prompt4.md W3) ────────────────────────────────────────
+//
+// `expert/bundlebox_expert/space.py` builds a truncated SVD over the symbol ×
+// term matrix of the five `symbols-*.md` tables and writes every term's vector
+// to `symbol-space.json`. This side only reads it: the cosine between the
+// statement's terms and a file's terms is a GRADED distance where the symbol
+// index gives a boolean, and it is what tells `hooks.js` (0.83 on this tree)
+// from `heap.js` (0.07) for a statement about the pre-read guard when both
+// carry a symbol called `read`. No table on disk, no term: the rank is the
+// rank it always was.
+export const SPACE = () => path.join(VAR, "symbol-space.json");
+let _space;
+export function space() {
+  if (_space !== undefined) return _space;
+  try {
+    const j = JSON.parse(fs.readFileSync(SPACE(), "utf8"));
+    _space = j && j.useful && j.terms && j.k ? j : null;
+  } catch { _space = null; }
+  return _space;
+}
+export const resetSpace = () => { _space = undefined; };
+/** The terms a FILE carries: its path segments and stem, plus the names of
+ *  the symbols the locate matched in it. Cut with the statement's tokenizer. */
+export function fileTerms(file, hits = []) {
+  const parts = rel(file).split(/[\\/]/);
+  const stem = (parts.pop() || "").replace(/\.[a-z0-9]+$/i, "");
+  return cutTerms([...parts, stem].join(" ").replace(/\./g, " ") + " " + hits.map((h) => h.symbol || "").join(" "));
+}
+/** (summed vector, known, of) — unknown terms are skipped and counted. */
+function vec(ts, sp) {
+  const acc = new Array(sp.k).fill(0);
+  const seen = new Set();
+  let known = 0;
+  for (const t of ts) {
+    const l = String(t).toLowerCase();
+    if (seen.has(l)) continue;
+    seen.add(l);
+    const v = sp.terms[l];
+    if (!v) continue;
+    known++;
+    for (let i = 0; i < v.length; i++) acc[i] += v[i];
+  }
+  return { acc, known, of: seen.size };
+}
+/** Under this share of terms known to the space, the pair is not measured. */
+export const MIN_COVERAGE = 0.5;
+/** Cosine in [0, 1] between two term lists, or null when either side is too
+ *  little known to the space — an unmeasured pair is not a far one. */
+export function distance(a, b, sp = space()) {
+  if (!sp) return null;
+  const A = vec(a, sp), B = vec(b, sp);
+  if (!A.of || !B.of || A.known / A.of < MIN_COVERAGE || B.known / B.of < MIN_COVERAGE) return null;
+  let dot = 0, la = 0, lb = 0;
+  for (let i = 0; i < sp.k; i++) { dot += A.acc[i] * B.acc[i]; la += A.acc[i] ** 2; lb += B.acc[i] ** 2; }
+  if (la < 1e-12 || lb < 1e-12) return null;
+  return Math.round(Math.max(0, Math.min(1, dot / Math.sqrt(la * lb))) * 10000) / 10000;
+}
+/** What a cosine of 1 is worth against the hit scores: a third of one exact
+ *  match. Enough to order two files the lexical evidence tied; not enough to
+ *  lift a file no term reached over one a symbol named. */
+export const SPACE_WEIGHT = 3;
 
 /** How strongly one symbol hit argues that its file is the subject. */
 export function quality(h) {
@@ -188,7 +257,12 @@ export function rank(problem, { explicit = [], sym = [], grep = [], terms = [], 
     const { hits, w } = pathWeights(terms, universe);
     for (const [t, files] of hits) for (const f of files) bump(f, PATH_TERM * w.get(t));
   }
-  for (const f of [...score.keys()]) score.set(f, score.get(f) + centrality(f));
+  const sp = terms.length ? space() : null;
+  for (const f of [...score.keys()]) {
+    let d = 0;
+    if (sp) { const c = distance(terms, fileTerms(f, byFile.get(f) || []), sp); if (c !== null) d = SPACE_WEIGHT * c; }
+    score.set(f, score.get(f) + centrality(f) + d);
+  }
   const pinned = [...new Set(explicit)];
   const pin = new Set(pinned);
   return [...pinned, ...[...score].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).map(([f]) => f).filter((f) => !pin.has(f))];

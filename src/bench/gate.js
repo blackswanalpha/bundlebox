@@ -28,6 +28,7 @@ import { load } from "../core/config.js";
 // put the same constant in two places. Nothing below runs at module scope, so
 // the bindings are live by the time any of it is called.
 import { latest, history } from "./index.js";
+import { similarity as oneSimilarity } from "../janitor/heap.js";
 
 const pct = (r) => Number(r.saved_pct) || 0;
 
@@ -62,26 +63,11 @@ export function losers({ cfg = load(), at = Date.now() } = {}) {
   };
 }
 
-const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const words = (s) => new Set(norm(s).split(" ").filter((w) => w.length >= 4));
-
-/** How much two tasks are the same task. Files first, because a bench task and
- *  a unit that touch the same files are about the same code whatever they are
+/** How much two tasks are the same task. One scorer for the whole box now
+ *  (`janitor/heap.js`, prompt4.md W4): files first, because a bench task and a
+ *  unit that touch the same files are about the same code whatever they are
  *  called; the title is the fallback for a unit with no scope yet. */
-export function similarity(a, b) {
-  const fa = new Set((a.files || []).map(String)), fb = new Set((b.files || []).map(String));
-  if (fa.size && fb.size) {
-    let hit = 0;
-    for (const f of fa) if (fb.has(f)) hit++;
-    const j = hit / (fa.size + fb.size - hit);
-    if (j > 0) return j;
-  }
-  const wa = words(a.title), wb = words(b.title);
-  if (!wa.size || !wb.size) return 0;
-  let hit = 0;
-  for (const w of wa) if (wb.has(w)) hit++;
-  return hit / (wa.size + wb.size - hit);
-}
+export const similarity = (a, b) => oneSimilarity({ files: a.files || [], title: a.title || "" }, { files: b.files || [], title: b.title || "" });
 
 /** Two tasks are the same task past this overlap. Deliberately high: opting a
  *  unit out of packing on a loose match costs the window the brief would have

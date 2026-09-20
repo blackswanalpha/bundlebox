@@ -293,3 +293,26 @@ test("locate: windows are per brief and start at the brief, not at the session",
   assert.deepEqual(wins[0].edits.map((e) => e.file), ["one.js"], "edits before the first brief have nothing to have missed");
   assert.deepEqual(wins[1].edits.map((e) => e.file), ["k.js"], "a shell write carries no path and counts on neither side");
 });
+
+test("symbol space: the distance is graded, symmetric, and unmeasured when the terms are unknown", async () => {
+  const rank = await import("../src/pinpoint/rank.js");
+  const sp = { useful: true, k: 2, terms: { hooks: [1, 0], wire: [0.9, 0.1], guard: [0.8, 0.2], heap: [0, 1], janitor: [0.1, 0.9] } };
+  const near = rank.distance(["wire", "guard"], ["hooks", "wire"], sp);
+  const far = rank.distance(["wire", "guard"], ["heap", "janitor"], sp);
+  assert.ok(near > 0.9 && far < 0.3, `near ${near}, far ${far}`);
+  assert.equal(rank.distance(["wire", "guard"], ["heap", "janitor"], sp), rank.distance(["heap", "janitor"], ["wire", "guard"], sp));
+  assert.equal(rank.distance(["zebra", "quux"], ["hooks"], sp), null, "under half the terms known is not a measurement");
+  assert.equal(rank.distance(["wire"], ["hooks"], null), null, "no table, no distance");
+  const ft = rank.fileTerms("src/wire/hooks.js", [{ symbol: "preRead" }]);
+  assert.ok(ft.map((t) => t.toLowerCase()).includes("wire") && ft.map((t) => t.toLowerCase()).includes("hooks") && ft.includes("preRead"), JSON.stringify(ft));
+});
+
+test("far-scope: a brief with unknown terms is not far, and the signal is a row in SIGNALS", async () => {
+  const { ambiguity, SIGNALS, FAR, scopeDistance } = await import("../src/pinpoint/ambiguity.js");
+  assert.ok(SIGNALS.some((s) => s.id === "far-scope"));
+  assert.ok(FAR > 0 && FAR < 0.5);
+  const b = { gates: { quick: "npm test" }, symbols: [{}], grep: [], anchors: [{}], evidence: [{}], scope: ["a.js"], cut: [], terms: ["zzqx", "qqzx"], verdict: "FITS" };
+  assert.equal(scopeDistance(b), null);
+  assert.equal(ambiguity(b).reasons.filter((r) => r.id === "far-scope").length, 0);
+  assert.equal(scopeDistance({ ...b, terms: ["one"] }), null, "a thin statement is not measured");
+});

@@ -6,9 +6,11 @@ different places and they drifted.
 """
 from __future__ import annotations
 import math
+import re
 from collections import Counter
 
-FEATURE_BUCKETS = {"inputs": (0, 5, 50, 500), "open_findings": (0, 5, 25, 100)}
+FEATURE_BUCKETS = {"inputs": (0, 5, 50, 500), "open_findings": (0, 5, 25, 100),
+                   "est_tokens": (0, 2000, 10000, 50000), "n_files": (0, 1, 4, 12)}
 
 
 def _bucket(name, v):
@@ -41,6 +43,22 @@ def _sigmoid(z):
     return 1 / (1 + math.exp(-max(-30, min(30, z))))
 
 
+def _sgd(xs: list, ys: list, epochs: int = 60, lr: float = 0.1, l2: float = 0.01) -> dict:
+    """One pass of plain SGD over sparse feature dicts. Every head in this file
+    trains through here, so a change to the optimiser is one change."""
+    w: dict = {}
+    for _ in range(epochs):
+        for x, y in zip(xs, ys):
+            g = _sigmoid(sum(w.get(k, 0.0) * v for k, v in x.items())) - y
+            for k, v in x.items():
+                w[k] = w.get(k, 0.0) - lr * (g * v + l2 * w.get(k, 0.0))
+    return w
+
+
+def _score(w: dict, x: dict) -> float:
+    return _sigmoid(sum(w.get(k, 0.0) * v for k, v in x.items()))
+
+
 def _auc(scores, labels):
     pos = [s for s, y in zip(scores, labels) if y == 1]
     neg = [s for s, y in zip(scores, labels) if y == 0]
@@ -59,17 +77,9 @@ def train(episodes: list, lift: dict | None = None, epochs: int = 60, lr: float 
     cut = max(1, int(n * 0.8))
     tr, ho = rows[:cut], rows[cut:]
     base_p = sum(e["useful"] for e in tr) / len(tr)
-    w: dict = {}
-    for _ in range(epochs):
-        for e in tr:
-            x = featurize(e, lift)
-            z = sum(w.get(k, 0.0) * v for k, v in x.items())
-            g = _sigmoid(z) - e["useful"]
-            for k, v in x.items():
-                w[k] = w.get(k, 0.0) - lr * (g * v + l2 * w.get(k, 0.0))
+    w = _sgd([featurize(e, lift) for e in tr], [e["useful"] for e in tr], epochs, lr, l2)
     def score(e):
-        x = featurize(e, lift)
-        return _sigmoid(sum(w.get(k, 0.0) * v for k, v in x.items()))
+        return _score(w, featurize(e, lift))
     ho_scores = [score(e) for e in ho]
     ho_labels = [e["useful"] for e in ho]
     acc = sum(1 for s, y in zip(ho_scores, ho_labels) if (s >= 0.5) == (y == 1)) / len(ho) if ho else 0.0
@@ -112,3 +122,151 @@ def predict(model: dict, ep: dict, lift: dict | None = None) -> dict:
     x = featurize(ep, lift)
     w = model.get("weights", {})
     return {"p": round(_sigmoid(sum(w.get(k, 0.0) * v for k, v in x.items())), 3), "source": "model"}
+
+
+# ── the second and third heads ──────────────────────────────────────────────
+#
+# prompt4.md: a fitted coefficient table is not a model dependency. The head
+# above scores a pipeline stage; the two below score a PROMPT (is this worth a
+# locate?) and a FINDING (how much is this detector's verdict worth here?).
+# Same contract as `train`: one feature function each, SGD, a holdout by time,
+# and a refusal to steer until the fit beats the base rate on that holdout.
+
+MIN_ROWS = 12
+
+
+def fit_head(rows: list, featurize_fn, label_fn, time_fn, epochs: int = 60, lr: float = 0.1, l2: float = 0.01) -> dict:
+    """Generic: label 0/1 per row, 80/20 split by time, accuracy and AUC on the
+    holdout against the majority guess. `useful` is the only field a caller may
+    steer on; everything else is provenance."""
+    rows = sorted([r for r in rows if label_fn(r) in (0, 1)], key=time_fn)
+    n = len(rows)
+    if n < MIN_ROWS:
+        return {"useful": False, "why": f"{n} labelled rows; need {MIN_ROWS}", "n": n, "weights": {}, "base_rate": None}
+    cut = max(1, int(n * 0.8))
+    tr, ho = rows[:cut], rows[cut:]
+    ys = [label_fn(r) for r in tr]
+    base_p = sum(ys) / len(tr)
+    w = _sgd([featurize_fn(r) for r in tr], ys, epochs, lr, l2)
+    ho_scores = [_score(w, featurize_fn(r)) for r in ho]
+    ho_labels = [label_fn(r) for r in ho]
+    acc = sum(1 for s, y in zip(ho_scores, ho_labels) if (s >= 0.5) == (y == 1)) / len(ho) if ho else 0.0
+    majority = 1 if base_p >= 0.5 else 0
+    base_acc = sum(1 for y in ho_labels if y == majority) / len(ho) if ho else 0.0
+    auc = _auc(ho_scores, ho_labels)
+    beats = acc > base_acc + 0.02 and (auc is None or auc > 0.55)
+    return {"useful": beats, "n": n, "train": len(tr), "holdout": len(ho), "accuracy": round(acc, 3),
+            "base_accuracy": round(base_acc, 3), "auc": round(auc, 3) if auc is not None else None,
+            "base_rate": round(base_p, 3),
+            "weights": {k: round(v, 4) for k, v in sorted(w.items(), key=lambda kv: -abs(kv[1]))},
+            "holdout_scores": [round(x, 4) for x in ho_scores], "holdout_labels": ho_labels,
+            "why": "" if beats else "does not beat the base rate on the time-split holdout"}
+
+
+# ── prompt head: is this prompt a task worth a locate? ──────────────────────
+
+TASK_VERBS = ("fix", "add", "implement", "refactor", "change", "update", "write", "remove", "migrate", "debug",
+              "investigate", "make", "build", "wire", "optimise", "optimize", "ensure", "analyse", "analyze",
+              "audit", "port", "rename")
+_TASK_RE = re.compile(r"\b(" + "|".join(TASK_VERBS) + r")\b", re.I)
+_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_PATH_RE = re.compile(r"[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+|\b[A-Za-z0-9_-]+\.(js|py|rs|md|json|ts)\b")
+_SYMBOL_RE = re.compile(r"`[^`]+`|\b[a-z]+[A-Z][A-Za-z0-9]*\b|\b[a-z]+_[a-z0-9_]+\b")
+_BB_RE = re.compile(r"\bbb [a-z]+")
+#: Three prompts every table carries with their features, so the JS mirror of
+#: `prompt_featurize` can prove it agrees before it trusts the weights.
+PROBES = ("fix the pre-read guard in src/wire/hooks.js so `isTask` returns nothing below the threshold",
+          "what does this design imply for the similarity() in heap.js?",
+          "ok")
+
+
+def prompt_featurize(prompt) -> dict:
+    """Cheap, ASCII-only, and mirrored line for line by `promptFeatures` in
+    `src/wire/hooks.js`. Keep both in step: the table carries PROBES so a drift
+    is detected, not guessed at."""
+    s = str(prompt or "").strip()
+    words = _WORD_RE.findall(s)
+    first = words[0].lower() if words else ""
+    return {
+        "@bias": 1.0,
+        "len~log": round(math.log1p(len(s)) / 10, 4),
+        "task_shaped": 1.0 if _TASK_RE.search(s) else 0.0,
+        "imperative": 1.0 if first in TASK_VERBS else 0.0,
+        "question": 1.0 if "?" in s else 0.0,
+        "path": 1.0 if _PATH_RE.search(s) else 0.0,
+        "symbol": 1.0 if _SYMBOL_RE.search(s) else 0.0,
+        "bb_verb": 1.0 if _BB_RE.search(s) else 0.0,
+        "pasted": 1.0 if "<pasted_content" in s else 0.0,
+    }
+
+
+#: The side the threshold errs on. A suppressed fire on a real task costs the
+#: session its locate; a fire on a question costs one band of context. So the
+#: threshold is the HIGHEST value that still catches 90% of the edited prompts
+#: on the holdout, floored at 0.2, and never above 0.5.
+RECALL_FLOOR = 0.9
+
+
+def train_prompts(rows: list, **kw) -> dict:
+    """rows: [{prompt, edited: 0|1, at}] — the prompt the hook fired on, joined
+    to whether that session went on to edit a file."""
+    m = fit_head(rows, lambda r: prompt_featurize(r.get("prompt")), lambda r: r.get("edited"), lambda r: str(r.get("at") or ""), **kw)
+    m["errs"] = "toward firing"
+    m["probes"] = [{"prompt": p, "features": prompt_featurize(p)} for p in PROBES]
+    thr = 0.2
+    if m.get("useful"):
+        pos = [s for s, y in zip(m["holdout_scores"], m["holdout_labels"]) if y == 1]
+        for t in (0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2):
+            if pos and sum(1 for s in pos if s >= t) / len(pos) >= RECALL_FLOOR:
+                thr = t
+                break
+    m["threshold"] = thr
+    m["fires"] = len([r for r in rows if r.get("edited") in (0, 1)])
+    m["edited"] = sum(1 for r in rows if r.get("edited") == 1)
+    return m
+
+
+def predict_prompt(model: dict, prompt) -> dict:
+    if not model or not model.get("useful"):
+        return {"p": model.get("base_rate") if model else None, "fire": None, "source": "base-rate", "why": (model or {}).get("why", "no model")}
+    p = _score(model.get("weights", {}), prompt_featurize(prompt))
+    return {"p": round(p, 3), "fire": p >= float(model.get("threshold", 0.2)), "source": "model"}
+
+
+# ── finding head: a per-finding prior for `confidence.for_rule` ─────────────
+
+_TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)(/|$)|[._-](test|spec)\.[a-z]+$|^test_")
+
+
+def finding_featurize(f: dict) -> dict:
+    files = [str(x) for x in (f.get("files") or [])]
+    x = {"@bias": 1.0,
+         f"detector={f.get('detector') or '?'}": 1.0,
+         f"severity={f.get('severity') or '?'}": 1.0,
+         f"precision={f.get('precision') or 'heuristic'}": 1.0,
+         _bucket("est_tokens", f.get("est_tokens")): 1.0,
+         _bucket("n_files", len(files)): 1.0,
+         "auto_fix": 1.0 if f.get("auto_fix") else 0.0,
+         "tests": 1.0 if any(_TEST_PATH.search(p) for p in files) else 0.0,
+         "seen~log": round(math.log1p(float(f.get("seen_count") or 0)) / 5, 4)}
+    return x
+
+
+def finding_time(f: dict) -> str:
+    return str(f.get("resolved_at") or f.get("last_seen") or f.get("first_seen") or "")
+
+
+def finding_label(f: dict):
+    if f.get("status") == "open" or f.get("closed_by") in ("unknown", "", None):
+        return None
+    return 1 if f.get("closed_by") == "acted_on" else 0
+
+
+def train_findings(findings: list, **kw) -> dict:
+    return fit_head(findings, finding_featurize, finding_label, finding_time, **kw)
+
+
+def predict_finding(model: dict, f: dict) -> float | None:
+    if not model or not model.get("useful"):
+        return None
+    return round(_score(model.get("weights", {}), finding_featurize(f)), 4)

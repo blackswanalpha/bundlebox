@@ -311,3 +311,72 @@ class Triage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FittedHeads(unittest.TestCase):
+    """prompt4.md: a coefficient table is not a model dependency, and every
+    head refuses to steer until it beats its base rate on a time-split holdout."""
+
+    def test_prompt_head_refuses_below_the_floor_and_carries_probes(self):
+        m = model.train_prompts([{"prompt": "fix x in a/b.js", "edited": 1, "at": "2026-01-0%dT00:00:00Z" % i} for i in range(1, 8)])
+        self.assertFalse(m["useful"])
+        self.assertIn("need 12", m["why"])
+        self.assertEqual(len(m["probes"]), 3)
+        self.assertEqual(m["errs"], "toward firing")
+        p = model.predict_prompt(m, "fix x")
+        self.assertEqual(p["source"], "base-rate")
+        self.assertIsNone(p["fire"])
+
+    def test_prompt_head_fits_a_separable_join_and_thresholds_toward_firing(self):
+        rows = []
+        for i in range(40):
+            at = "2026-01-01T%02d:%02d:00Z" % (i // 60, i % 60)
+            if i % 2:
+                rows.append({"prompt": "fix the %d guard in src/wire/hooks.js so `isTask` returns nothing" % i, "edited": 1, "at": at})
+            else:
+                rows.append({"prompt": "what does this design imply for the %d rule?" % i, "edited": 0, "at": at})
+        m = model.train_prompts(rows)
+        self.assertTrue(m["useful"], m)
+        self.assertLessEqual(m["threshold"], 0.5)
+        self.assertGreaterEqual(m["threshold"], 0.2)
+        self.assertTrue(model.predict_prompt(m, "fix the read guard in src/x.js so `y` returns nothing")["fire"])
+        self.assertFalse(model.predict_prompt(m, "what does this imply for the rule?")["fire"])
+        self.assertEqual(m["fires"], 40)
+        self.assertEqual(m["edited"], 20)
+
+    def test_prior_moves_the_method_by_its_own_shrinkage_and_history_still_blends_on_top(self):
+        plain = confidence.for_rule("heuristic")
+        primed = confidence.for_rule("heuristic", prior={"p": 1.0, "n": 4})
+        self.assertEqual(plain["confidence"], 0.6)
+        self.assertEqual(primed["base"], 0.6, "the method constant is still reported")
+        self.assertEqual(primed["prior"]["weight"], 0.5)
+        self.assertEqual(primed["confidence"], 0.8)
+        self.assertEqual(confidence.for_rule("heuristic", prior={"p": 1.0, "n": 0})["confidence"], 0.6, "a head with no sample says nothing")
+        with_hist = confidence.for_rule("heuristic", held=0, weak=0, broken=4, prior={"p": 1.0, "n": 4})
+        self.assertEqual(with_hist["confidence"], 0.4, "(1-0.5)*0.8 + 0.5*0")
+
+    def test_head_replay_needs_labels_and_does_not_replace_precision_without_beating_it(self):
+        r = triage.head_replay([{"status": "closed", "closed_by": "acted_on", "detector": "d", "severity": "high", "precision": "exact", "est_tokens": 100, "resolved_at": "2026-01-01"}] * 3)
+        self.assertFalse(r["useful"])
+        self.assertEqual(r["acted_on"], 3)
+        self.assertEqual(r["need"], triage.MIN_ACTED - 3)
+        # the shipped path is byte-identical when no useful head is passed
+        f = {"detector": "d", "severity": "high", "precision": "exact", "est_tokens": 100, "files": []}
+        self.assertEqual(triage.triage(f)["confidence"], triage.triage(f, head={"useful": False, "weights": {"@bias": 9}})["confidence"])
+
+    def test_space_builds_a_graded_distance_from_the_symbol_tables(self):
+        from bundlebox_expert import space
+        table = "\n".join(["%s  src/%s/%s.js:%d" % (n, d, f, i) for i, (n, d, f) in enumerate([
+            ("preRead", "wire", "hooks"), ("preWrite", "wire", "hooks"), ("guardReads", "wire", "hooks"), ("restateRules", "wire", "hooks"),
+            ("similarity", "janitor", "heap"), ("terms", "janitor", "heap"), ("normalize", "janitor", "heap"), ("make", "janitor", "heap"),
+            ("rank", "pinpoint", "rank"), ("quality", "pinpoint", "rank"), ("centrality", "pinpoint", "rank"), ("termWeights", "pinpoint", "rank"),
+            ("wireGuard", "wire", "agents"), ("hooksFor", "wire", "agents"), ("heapOf", "janitor", "emit"), ("rankOf", "pinpoint", "index")])])
+        sp = space.build({"symbols-src.md": table}, k=4, iters=12)
+        self.assertTrue(sp["useful"], sp)
+        self.assertEqual(sp["k"], 4)
+        near = space.distance(sp, ["wire", "guard"], space.path_terms("src/wire/hooks.js"))
+        far = space.distance(sp, ["wire", "guard"], space.path_terms("src/janitor/heap.js"))
+        self.assertIsNotNone(near)
+        self.assertGreater(near, far)
+        self.assertIsNone(space.distance(sp, ["zzqx", "qqzx"], ["wire"]), "unknown terms are unmeasured, not far")
+        self.assertFalse(space.build({"x": "a  b:1"})["useful"])
