@@ -21,7 +21,9 @@ import { out, warn, emit, hr } from "../core/log.js";
 import { pad, table, human } from "../core/util.js";
 import { DIR, PACKS, worldPath, ids, world, current, derive, seed, plan } from "./world.js";
 import { packText, pack, send } from "./packs.js";
+import { practice } from "./practice.js";
 
+export { practice, verify, remember, lessons, snapshot, newFiles } from "./practice.js";
 export { DIR, PACKS, worldPath, ids, world, current, derive, seed, plan } from "./world.js";
 export { packText, pack, send } from "./packs.js";
 
@@ -38,7 +40,7 @@ function showWorld(w) {
 
 async function genesisCmd({ _, flags }) {
   const sub = _[0] || "";
-  const known = new Set(["show", "list", "plan", "pack", "send", "seed", "status"]);
+  const known = new Set(["show", "list", "plan", "pack", "send", "seed", "status", "practice"]);
 
   if (!sub || !known.has(sub)) {
     // `bb genesis <doc>` is the whole point: no sub-verb, one argument.
@@ -110,6 +112,21 @@ async function genesisCmd({ _, flags }) {
     return 0;
   }
 
+  if (sub === "practice") {
+    const r = await practice(id, { rounds: Number(flags.rounds) || 3, batch: Number(flags.batch) || 4, maxPacks: Number(flags.max) || 0,
+      agent: String(flags.agent || ""), run: !!flags.run, spend: !!flags.spend, base: String(flags.base || ""), verifyRun: flags["no-run"] ? false : true });
+    if (r.rc) { warn(r.why); return r.rc; }
+    if (flags.json) { emit(r); return 0; }
+    for (const x of r.rounds) {
+      out(`  round ${x.round} (${x.phase})  ${x.packs} pack(s) → wrote ${x.wrote}, kept ${x.kept.length}, rejected ${x.rejected.length}${x.lessons ? `, ${x.lessons.added} new lesson(s)` : ""}`);
+      for (const s of x.sent) if (s.state !== "done" && s.state !== "sent") out(`    ${pad(s.surface, 16)} ${pad(s.state, 9)} ${s.why}`);
+      for (const k of x.rejected) out(`    ✗ ${k.file}: ${k.why.slice(0, 100)}`);
+    }
+    out(`  ${r.stopped}. coverage ${r.coverage_before ?? "?"}% → ${r.coverage_after ?? "?"}%; ${r.file}`);
+    if (!r.rounds.some((x) => x.wrote)) out(`  Nothing was written. \`--run --spend\` opens an agent per pack; bridge.enabled must be true.`);
+    return 0;
+  }
+
   if (sub === "send") {
     const r = await send(id, _[1] || String(flags.surface || ""), { run: !!flags.run, spend: !!flags.spend, agent: String(flags.agent || "") });
     if (r.rc) { warn(r.why); return r.rc; }
@@ -123,13 +140,14 @@ async function genesisCmd({ _, flags }) {
 export const commands = {
   genesis: {
     help: "a document or a prompt becomes a world model, a corpus and the briefs that fill it (0 tokens until send)",
-    usage: "bb genesis <doc.md|-|--prompt \"...\"> [--base url] [--name id] | show | plan | pack [--batch 4] | send [surface] [--run --spend] | seed | list",
+    usage: "bb genesis <doc.md|-|--prompt \"...\"> [--base url] [--name id] | show | plan | pack [--batch 4] | send [surface] [--run --spend] | practice [--rounds 3] [--run --spend] | seed | list",
     long: [
       "  bb genesis docs/PRD.md          surfaces, actors, rules, capabilities — and a corpus seeded from them",
       "  bb genesis plan                 of everything that world can do, what no scenario touches, ranked",
       "  bb genesis pack                 one brief per surface, carrying the derived half already done",
       "  bb genesis send calendar --run --spend    the only step that costs anything",
       "  bb cookbook run                 what the agent wrote, executed by the kernel, in seconds",
+      "  bb genesis practice --run --spend    plan, send, verify, remember, again: broad then deep, unattended",
       "",
       "Nothing here calls a model. `send` hands a packed file to whichever agent `bb bridge` is configured for.",
     ].join("\n"),

@@ -1,0 +1,62 @@
+{
+ "id": "start-cookbook-check-then-run",
+ "surface": "start-here",
+ "severity": "medium",
+ "title": "`bb cookbook check && bb cookbook run` — the check gates the run, and the run needs no URL",
+ "question": "does `check` exit non-zero for a corpus it refuses, so the `&&` stops before anything is driven, and does `run` resolve its base from persona.json rather than guessing one? Not settled here: what a driving `cookbook run` prints, because running it inside a board re-enters the corpus that holds this step — the assertion below uses `--plan`, which returns before `runCorpus` and drives nothing. The base is asserted as the literal persona.json declares, not `{{base}}`, because `--plan` with no `--base` reads the persona and not the board's base.",
+ "rule": [
+  "The document states no rule for this surface. README `## Start here` declares the pair as one line: `bb cookbook check && bb cookbook run                  # the kernel executes what came back`, and lists cookbook at `0 tokens`.",
+  "Source, `src/cookbook/index.js` sub-verb `check`: `return all.every((a) => a.ok) ? 0 : 1;` — a refused corpus is rc 1, which is what makes the `&&` a gate.",
+  "Source, `src/cookbook/index.js` sub-verb `check`: it prints `${pad(a.id, 16)} ${a.ok ? \"ok\" : \"REFUSED\"}  ${counts.scenarios} scenarios, ${counts.steps} steps, ${counts.surfaces} surfaces  (${a.engine} engine)`.",
+  "Source, `src/cookbook/corpus.js` `spec()`: `const resolved = base || p.base || \"\";` and `rpm: rpm == null ? (p.rpm ?? 55) : Number(rpm)` — with no `--base` and no `--rpm` the persona supplies both, and `runCorpus` refuses with `no base: pass --base, or put one in persona.json. Nothing is guessed` when neither does.",
+  "Source, `src/cookbook/index.js` sub-verb `run` under `flags.plan`: prints `${n} steps against ${input.base || \"(no base)\"}` and `engine ${p.engine}` / `${input.rpm ? ... : \"unpaced\"}`, then returns 0 without calling `runCorpus`."
+ ],
+ "steps": [
+  {
+   "name": "STATIC: the README declares the pair, and declares it as free",
+   "static": {
+    "file": "README.md",
+    "contains": [
+     "bb cookbook check && bb cookbook run",
+     "what the RUNNING system does, run by the kernel 0 tokens"
+    ]
+   }
+  },
+  {
+   "name": "check validates this corpus with no server and no requests",
+   "run": "node bin/bb.js cookbook check --persona bb",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": [
+     " scenarios, ",
+     " steps, ",
+     " surfaces  (",
+     " engine)"
+    ]
+   }
+  },
+  {
+   "name": "check exits non-zero on a corpus it refuses, so the && never reaches run",
+   "run": "node bin/bb.js cookbook check --persona no-such-corpus-here; test $? -ne 0 && echo check-gates-the-run",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": [
+     "REFUSED",
+     "check-gates-the-run"
+    ]
+   }
+  },
+  {
+   "name": "run takes its base and its pace from persona.json, picks an engine, and drives nothing",
+   "run": "node bin/bb.js cookbook run --persona bb --plan",
+   "expect": {
+    "rc": 0,
+    "stdout_contains": [
+     "steps against http://127.0.0.1:7788",
+     "engine ",
+     "unpaced"
+    ]
+   }
+  }
+ ]
+}

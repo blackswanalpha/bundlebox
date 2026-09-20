@@ -24,6 +24,7 @@ import { human, now, stamp, table } from "../core/util.js";
 import * as store from "../core/store.js";
 import * as suite from "./suite.js";
 import { bare, packed, BARE_READ_CAP } from "./arms.js";
+import { MAX_FILES } from "../pinpoint/index.js";
 import * as arms from "./arms.js";
 import * as swebench from "./swebench.js";
 import * as gate from "./gate.js";
@@ -37,7 +38,7 @@ const pct = (saved, from) => (from > 0 ? Math.round((saved / from) * 1000) / 10 
 
 /** One task, both arms. Never throws: a task that cannot be measured is a row
  *  saying so, because a bench that dies on task four loses tasks one to three. */
-export async function runTask(t, { cap = BARE_READ_CAP, maxFiles = 6 } = {}) {
+export async function runTask(t, { cap = BARE_READ_CAP, maxFiles = MAX_FILES } = {}) {
   const row = { id: t.id, title: t.title || t.problem, from: t.from || "" };
   try {
     const a = bare(t.problem, { files: t.files || [], cap });
@@ -55,7 +56,7 @@ export async function runTask(t, { cap = BARE_READ_CAP, maxFiles = 6 } = {}) {
   }
 }
 
-export async function run(id = "default", { cap = BARE_READ_CAP, maxFiles = 6, write = true } = {}) {
+export async function run(id = "default", { cap = BARE_READ_CAP, maxFiles = MAX_FILES, write = true } = {}) {
   let spec = suite.load(id);
   if (!spec && id === "default") {
     const tasks = suite.derive();
@@ -123,7 +124,7 @@ export function report(r) {
 async function cmd({ _, flags }) {
   const sub = _[0] && !_[0].startsWith("-") ? _[0] : "run";
   const cap = Number(flags.cap) || BARE_READ_CAP;
-  const maxFiles = Number(flags.maxFiles) || 6;
+  const maxFiles = Number(flags.maxFiles) || MAX_FILES;
 
   if (sub === "suites") {
     const all = suite.ids();
@@ -166,7 +167,7 @@ async function cmd({ _, flags }) {
       // dearer one. `packed_files` is the scope a session may edit; `named`
       // also counts the ranked pointers the brief hands it for free.
       packed_named: [...new Set([...(b.scope || []), ...((b.candidates || []).map((c) => c.file))])],
-      bare_considered: a.considered, verdict: b.verdict, terms: a.terms,
+      bare_considered: a.considered, verdict: b.verdict, terms: a.terms, space: b.space || null,
       seconds: Math.round((Date.now() - t0) / 100) / 10 };
     emit(payload);
     return 0;

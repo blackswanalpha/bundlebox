@@ -18,5 +18,8 @@
     "throttle": {
       "per_detector_open": 40
     }
+  },
+  "bridge": {
+    "enabled": true
   }
 }

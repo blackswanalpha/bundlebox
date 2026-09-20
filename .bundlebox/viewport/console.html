@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>viewport — console</title><style>
+:root{--bg:#fbfbfa;--fg:#1a1a18;--dim:#6b6b66;--line:#e3e3df;--card:#fff;--ok:#1a7f4b;--bad:#b3261e;--warn:#9a6700;--accent:#2f6feb}
+@media (prefers-color-scheme:dark){:root{--bg:#131314;--fg:#e8e8e6;--dim:#96968f;--line:#2b2b2d;--card:#1b1b1d;--ok:#4ac48a;--bad:#f2837b;--warn:#e0b341;--accent:#7aa5ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:24px 16px}
+main{max-width:1100px;margin:0 auto}
+h1{font-size:18px;margin:0 0 2px;font-weight:600}
+h2{font-size:14px;margin:28px 0 8px;font-weight:600}
+.sub{color:var(--dim);margin:0 0 20px}
+.sub a{color:var(--accent)}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:600;color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+td.wide{white-space:normal;word-break:break-all;color:var(--dim)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:12px;border:1px solid currentColor}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.port{font-weight:600}
+.note{color:var(--dim);margin:8px 0 0;white-space:normal}
+footer{color:var(--dim);margin-top:32px;font-size:12px}
+</style></head>
+<body><main>
+<h1>console</h1>
+<p class="sub"><a href="index.html">← every port</a> · /home/mbugua/Documents/CodeBase/bundlebox · 2026-09-20T15:00:02.461Z</p>
+<table><tbody><tr><th>port</th><td class="wide">7788</td></tr>
+<tr><th>group</th><td class="wide">all</td></tr>
+<tr><th>supports</th><td class="wide">.</td></tr>
+<tr><th>command</th><td class="wide">node bin/bb.js console serve --port 7788</td></tr>
+<tr><th>health</th><td class="wide">http://127.0.0.1:7788/health</td></tr>
+<tr><th>process</th><td class="wide">down</td></tr>
+<tr><th>socket</th><td class="wide">nothing is listening</td></tr>
+<tr><th>answering</th><td class="wide">down</td></tr>
+<tr><th>http</th><td class="wide">—</td></tr>
+<tr><th>latency</th><td class="wide">—</td></tr>
+<tr><th>memory</th><td class="wide">—</td></tr>
+<tr><th>cap</th><td class="wide">268.4Mb</td></tr>
+<tr><th>cpu</th><td class="wide">—</td></tr>
+<tr><th>log</th><td class="wide">—</td></tr>
+<tr><th>why</th><td class="wide">connect 127.0.0.1:7788: Connection refused (os error 111)</td></tr></tbody></table>
+<p class="note"><a href="http://127.0.0.1:7788" target="_blank" rel="noreferrer">http://127.0.0.1:7788</a></p>
+<footer>Written by <code>bb viewport build</code>.</footer></main></body></html>

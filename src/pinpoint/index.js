@@ -31,7 +31,8 @@ import * as aim from "./locate.js";
 export { ambiguity } from "./ambiguity.js";
 
 export const DIR = path.join(OUT, "pinpoint");
-const EDGE = () => [path.join(ROOT, ".bundlebox", "edge-cases.md"), path.join(ROOT, "docs", "edge-cases.md")].find((p) => fs.existsSync(p)) || null;
+// Both, when both exist: `bb genesis practice` writes the first and a person writes the second.
+const EDGE = () => [path.join(ROOT, ".bundlebox", "edge-cases.md"), path.join(ROOT, "docs", "edge-cases.md")].filter((p) => fs.existsSync(p));
 const RECS = () => path.join(OUT, "buckmaster", "recommendations.md");
 
 // Glue plus the verbs every task statement carries; neither names a file.
@@ -70,20 +71,72 @@ export function terms(problem) {
 }
 const pathHits = (ts) => ts.filter((t) => t.includes("/") || /\.[a-z]{1,4}$/.test(t)).map((t) => abs(t)).filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } }).map(rel);
 
-/** A bounded content search for the longest terms, only when the tables were
- *  nearly silent: at most `cap` files, first hit per file. */
-export function grepHits(ts, { cap = 12 } = {}) {
-  const long = ts.filter((t) => t.length >= 6 && !t.includes("/")).sort((p, q) => q.length - p.length).slice(0, 4);
+/** How many files the content search names. */
+export const GREP_CAP = 12;
+/** Long terms it searches for. All of them, not the four longest: the score
+ *  below is how many DISTINCT terms a file carries, so dropping terms drops
+ *  the only signal that separates one match from another. */
+export const GREP_TERMS = 24;
+/** A ceiling on the bytes one search reads, so a repository nobody measured
+ *  cannot turn a 15s hook budget into a tree walk. The search reports when it
+ *  stopped early rather than pretending it saw the whole tree. */
+export const GREP_MAX_BYTES = 32 * 1024 * 1024;
+
+/** A bounded content search for the problem's long terms: the `cap` files
+ *  carrying the MOST of them, not the first `cap` the walk happened to reach.
+ *
+ *  The difference is the whole value of this function. It used to take the
+ *  first twelve files matching any of the four longest terms and stop, which on
+ *  a tree of thousands of files is an arbitrary twelve in directory order.
+ *  Measured on SWE-bench Verified, that is exactly how two instances were lost:
+ *  `astropy-7166` wants `astropy/utils/misc.py`, which carries nine of the
+ *  statement's terms including `InheritDocstrings`, the class the issue is
+ *  about, and the old walk stopped before reaching it. Scored by distinct
+ *  terms it is the FIRST file of 175 that match. On `django-12325` the two gold
+ *  files score 17 and 15 and rank 4th and 11th of 2,005.
+ *
+ *  Cost measured at the same time: 62ms over astropy's 706 files, 284ms over
+ *  django's 2,624. That is affordable inside a locate already measured under a
+ *  second, and it is why this now runs on every locate rather than only when
+ *  the symbol tables went quiet. */
+export function grepHits(ts, { cap = GREP_CAP, maxBytes = GREP_MAX_BYTES } = {}) {
+  // Longest first. A long term is a rarer term, and when the cap bites it is
+  // the rare ones that carry the localisation: `InheritDocstrings` says which
+  // file, `related` does not.
+  const long = [...new Set(ts.filter((t) => t.length >= 6 && !t.includes("/")).map((t) => t.toLowerCase()))]
+    .sort((x, y) => y.length - x.length).slice(0, GREP_TERMS);
   if (!long.length) return [];
-  const rx = new RegExp(long.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i");
-  const hits = [];
+  const idx = new Map(long.map((t, i) => [t, i]));
+  // One case-insensitive alternation, one pass per file. The obvious
+  // implementation lowercases each file and calls indexOf per term, which
+  // allocates a second copy of the whole tree and measured 1.5s on this
+  // workspace against a locate that has to stay under a second.
+  const rx = new RegExp(long.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  const scored = [];
+  let bytes = 0, truncated = false;
   for (const p of codeFiles()) {
-    const lines = readText(p).split("\n");
-    const i = lines.findIndex((l) => rx.test(l));
-    if (i >= 0) hits.push({ file: rel(p), line: i + 1, text: lines[i].trim().slice(0, 100) });
-    if (hits.length >= cap) break;
+    let text;
+    try { text = readText(p); } catch { continue; }          // one unreadable file is not a failed locate
+    bytes += text.length;
+    rx.lastIndex = 0;
+    let seen = 0, n = 0, first = -1, m;
+    while ((m = rx.exec(text)) !== null) {
+      const bit = 1 << idx.get(m[0].toLowerCase());
+      if (!(seen & bit)) { seen |= bit; n++; if (first < 0) first = m.index; }
+      if (n === long.length) break;                          // nothing left to learn about this file
+    }
+    if (n) scored.push({ path: p, n, first });
+    if (bytes > maxBytes) { truncated = true; break; }
   }
-  return hits;
+  // Most distinct terms first, earliest match breaking the tie.
+  scored.sort((a, b) => b.n - a.n || a.first - b.first);
+  return scored.slice(0, cap).map((h) => {
+    // The line is computed for the named files only. Splitting every file in
+    // the tree to display twelve of them is the cost this avoids.
+    const lines = readText(h.path).split("\n");
+    const i = lines.findIndex((l) => { rx.lastIndex = 0; return rx.test(l); });
+    return { file: rel(h.path), line: i + 1, text: (lines[i] || "").trim().slice(0, 100), terms: h.n, truncated };
+  });
 }
 
 /** Kernel `anchor` first, anchors.locate second. Both return the same shape;
@@ -99,11 +152,11 @@ export function locate(file, symbol) {
 }
 
 function traps(scope, ts) {
-  const p = EDGE();
-  if (!p) return [];
+  const files = EDGE();
+  if (!files.length) return [];
   const want = new Set([...ts.map((t) => t.toLowerCase()), ...scope.flatMap((f) => [path.basename(f).toLowerCase(), f.split("/")[0].toLowerCase()])]);
   const rows = [];
-  for (const line of readText(p).split("\n")) {
+  for (const line of files.flatMap((p) => readText(p).split("\n"))) {
     if (!/^\|\s*E\d+\s*\|/.test(line)) continue;
     const cells = line.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
     if (cells.length < 2) continue;
@@ -146,18 +199,42 @@ function oversight(scope) {
   return { at: String(doc.at || "").slice(0, 10), guidelines, notes: notes.slice(0, 5) };
 }
 
+/** How many ranked files the scope STARTS with, before the cut loop trims it to
+ *  FITS and the grow loop fills the headroom.
+ *
+ *  Twelve, not six, and the reason is cost rather than recall. Measured on the
+ *  same 100 SWE-bench Verified instances, the same day, everything else equal:
+ *
+ *    max_files  in scope        named      packed     ratio
+ *    6          82/126 65.1%    83.3%      336.3k     2.6x
+ *    12         81/126 64.3%    83.3%      283.3k     3.1x
+ *
+ *  Recall is flat, one gold file of 126 apart, and the prompt is 16% smaller.
+ *  The slice is not what decides the scope — the cut and grow loops are, and a
+ *  larger starting slice reaches FITS without the grow loop spending its tries
+ *  on files it then has to drop. Three instances gained a gold file and four
+ *  lost one, which is the noise this sample can resolve, so this is a cost
+ *  change and it is not evidence that a bigger slice localises better. */
+export const MAX_FILES = 12;
+
 /** The whole plan for one problem. `files` are explicit paths (rel or abs). */
-export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } = {}) {
+export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = "fix" } = {}) {
   const ts = terms(problem);
   const explicit = [...files.map((f) => rel(abs(f))), ...pathHits(ts)];
   const sym = await snapgen.symbolHits(ts);
-  // Not `sym.length < 3`. A statement whose words are common symbol names here
-  // ("read", "wire", "guard", "brief") returns dozens of hits and answers
-  // nothing, and the count alone cannot tell that case from a real localisation.
-  // `informative` counts only the hits whose term is rare enough to be about
-  // WHICH file, so the bounded content grep now fires on a NOISY index as well
-  // as on a silent one — which is where it was always needed most.
-  const grep = informative(sym) < 3 ? grepHits(ts) : [];
+  // Always, not only when the symbol index went quiet.
+  //
+  // The gate used to be `informative(sym) < 3`, which was written to catch a
+  // silent index and then widened to catch a noisy one. It catches neither of
+  // the cases that lost files on SWE-bench Verified: `django-12325` returns 661
+  // informative symbol hits and still never names the file the fix belongs in,
+  // because every one of those hits is a symbol whose name the statement
+  // happens to share. An index can be loud and wrong, and a count of its hits
+  // cannot tell you which it is.
+  //
+  // So the content search runs every time and the ranker weighs it against the
+  // symbol evidence rather than a gate deciding in advance which one to trust.
+  const grep = grepHits(ts);
   const ranked = rank(problem, { explicit, sym, grep, terms: ts, universe: codeFiles().map(rel) });
   let scope = ranked.slice(0, maxFiles);
   let anchors = [];
@@ -413,7 +490,7 @@ export const commands = {
       }
       const problem = _.join(" ").trim();
       if (!problem) { warn(commands.pinpoint.usage); return 2; }
-      const b = await build(problem, { files: list(flags.files), maxFiles: Number(flags.maxFiles) || 6, kind: flags.kind ? String(flags.kind) : "fix" });
+      const b = await build(problem, { files: list(flags.files), maxFiles: Number(flags.maxFiles) || MAX_FILES, kind: flags.kind ? String(flags.kind) : "fix" });
       if (flags.json) { emit(b); return 0; }
       out(report(b));
       if (flags.print) out("", b.prompt.trimEnd());

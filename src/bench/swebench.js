@@ -34,6 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { BB_DIR, HOME, PKG_ROOT, rel } from "../core/paths.js";
+import { MAX_FILES } from "../pinpoint/index.js";
 import { readJson, writeJson } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { human, now, stamp, table } from "../core/util.js";
@@ -145,7 +146,7 @@ export function score(found, gold) {
     missed: [...g].filter((x) => !f.has(x)) };
 }
 
-export async function run({ n = 12, offset = 0, repos = "", cap = 10, maxFiles = 6, write = true, log = out } = {}) {
+export async function run({ n = 12, offset = 0, repos = "", cap = 10, maxFiles = MAX_FILES, write = true, log = out } = {}) {
   const all = await fetchInstances({ limit: Math.max(n * 4, 100), offset });
   if (all.rc) return all;
   let rows = all.rows.slice(offset);
@@ -166,8 +167,12 @@ export async function run({ n = 12, offset = 0, repos = "", cap = 10, maxFiles =
     const bare = score(a.bare_files || [], inst.gold_files);
     results.push({ ...meta(inst), bare: a.bare, packed: a.packed,
       saved: a.bare - a.packed, saved_pct: pct(a.bare - a.packed, a.bare),
-      localisation: packed, named_localisation: named, bare_localisation: bare, seconds: a.seconds });
-    log(`    packed ${human(a.packed)} tok · bare ${human(a.bare)} tok · gold ${packed.hit}/${packed.gold} in scope, ${named.hit}/${named.gold} named`);
+      localisation: packed, named_localisation: named, bare_localisation: bare, seconds: a.seconds,
+      // prompt4.md W3: was the target's symbol space built before pinpoint ranked
+      // it? A run where it was not is the baseline, and the two must not be
+      // averaged together as one number.
+      space: a.space || null });
+    log(`    packed ${human(a.packed)} tok · bare ${human(a.bare)} tok · gold ${packed.hit}/${packed.gold} in scope, ${named.hit}/${named.gold} named${a.space?.built ? ` · space ${a.space.rows} rows` : a.space?.why ? ` · no space (${a.space.why})` : ""}`);
   }
 
   const ok = results.filter((r) => !r.error);
@@ -180,6 +185,7 @@ export async function run({ n = 12, offset = 0, repos = "", cap = 10, maxFiles =
     named_all: ok.filter((r) => r.localisation.gold && r.named_localisation.hit === r.localisation.gold).length,
     any: ok.filter((r) => r.localisation.hit > 0).length,
     all: ok.filter((r) => r.localisation.gold && r.localisation.hit === r.localisation.gold).length,
+    space_built: ok.filter((r) => r.space?.built).length,
   };
   totals.saved = totals.bare - totals.packed;
   totals.saved_pct = pct(totals.saved, totals.bare);
@@ -238,6 +244,7 @@ export function report(r) {
   L.push(`                bare   (top ${r.bare_read_cap} files read whole):  ${t.bare_hit} of ${t.gold} — ${t.bare_recall}%`);
   L.push(`                ${t.all} instance(s) had every gold file in scope; ${t.named_all} had every one named`);
   L.push(`  CONTEXT       ${human(t.packed)} packed against ${human(t.bare)} bare — ${t.saved_pct}% less${t.ratio ? `, ${t.ratio}x` : ""}`);
+  L.push(`  SPACE         symbol space built in ${t.space_built ?? 0} of ${t.measured} target(s) before ranking${(t.space_built ?? 0) === 0 ? " — this run is the baseline arm" : (t.space_built ?? 0) < t.measured ? " — a mixed run, not comparable to either arm" : ""}`);
   if (t.errors) L.push(`  ${t.errors} instance(s) could not be measured; they are in the table with the reason.`);
   L.push("", `  ${r.measures}`);
   if (r.localisation_note) L.push(`  ${r.localisation_note}`);

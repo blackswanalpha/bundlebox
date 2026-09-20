@@ -67,3 +67,4 @@ expert/**/__pycache__/
 # committing it hands everyone else's agent a set of approvals they never gave.
 .claude/settings.local.json
 arc/target
+repo/
