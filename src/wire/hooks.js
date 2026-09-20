@@ -15,6 +15,7 @@ import { text as estimateText, file as estimateFile } from "../tokens/estimate.j
 import { now, human } from "../core/util.js";
 import * as brief from "./brief.js";
 import * as narrative from "./narrative.js";
+import * as expert from "../core/expert.js";
 
 // A cap is what a band may cost, not what it should. `pre-read` and
 // `pre-search` are the two that carry an ANSWER rather than a pointer, so they
@@ -270,8 +271,157 @@ const restateRules = (payload, cfg) => restateAfterCompaction(payload, cfg, "Use
 
 const TASK_SHAPED = /\b(fix|add|implement|refactor|change|update|write|remove|migrate|debug|investigate|make|build|wire|optimi[sz]e|ensure|analyse|analyze|audit|port|rename)\b/i;
 /** A prompt worth locating. A question, an acknowledgement or a one-word reply
- *  is not, and running the locator on one spends a turn's budget on nothing. */
-export const isTask = (p) => String(p).length >= 40 && TASK_SHAPED.test(String(p));
+ *  is not, and running the locator on one spends a turn's budget on nothing.
+ *
+ *  prompt4.md F1: the regex above fired 3 times in one session and all 3 were
+ *  questions about a design, each costing the window an edit scope and a gate
+ *  it had no use for. So the regex is now ONE feature of a fitted head, not
+ *  the decision. `task-head.json` is a coefficient table `model.py` fitted on
+ *  this workspace's own join — the prompt the hook fired on, against whether
+ *  that session went on to edit a file — held out by time, and it carries
+ *  `useful` only when it beat the base rate on that holdout. Below the head's
+ *  threshold the hook emits nothing. With no head, or a head that did not beat
+ *  the base rate, or a head whose features this file no longer computes the
+ *  same way, the regex decides exactly as before. */
+export const TASK_HEAD = () => path.join(VAR, "task-head.json");
+const TASK_VERBS = new Set(["fix", "add", "implement", "refactor", "change", "update", "write", "remove", "migrate", "debug",
+  "investigate", "make", "build", "wire", "optimise", "optimize", "ensure", "analyse", "analyze", "audit", "port", "rename"]);
+/** Mirrors `prompt_featurize` in `expert/bundlebox_expert/model.py` line for
+ *  line. The table carries three probe prompts with their features so a drift
+ *  between the two is detected at load, not guessed at. */
+export function promptFeatures(prompt) {
+  const s = String(prompt || "").trim();
+  const words = s.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+  const first = words.length ? words[0].toLowerCase() : "";
+  return {
+    "@bias": 1,
+    "len~log": Math.round(Math.log1p(s.length) / 10 * 10000) / 10000,
+    task_shaped: TASK_SHAPED.test(s) ? 1 : 0,
+    imperative: TASK_VERBS.has(first) ? 1 : 0,
+    question: s.includes("?") ? 1 : 0,
+    path: /[A-Za-z0-9_-]+\/[A-Za-z0-9_./-]+|\b[A-Za-z0-9_-]+\.(js|py|rs|md|json|ts)\b/.test(s) ? 1 : 0,
+    symbol: /`[^`]+`|\b[a-z]+[A-Z][A-Za-z0-9]*\b|\b[a-z]+_[a-z0-9_]+\b/.test(s) ? 1 : 0,
+    bb_verb: /\bbb [a-z]+/.test(s) ? 1 : 0,
+    pasted: s.includes("<pasted_content") ? 1 : 0,
+  };
+}
+const same = (a, b) => Object.keys({ ...a, ...b }).every((k) => Math.abs(Number(a[k] || 0) - Number(b[k] || 0)) < 1e-6);
+let _head;
+/** The fitted head, with `drift` set when its probes disagree with
+ *  `promptFeatures`. Cached per process; a hook is one process. */
+export function taskHead() {
+  if (_head !== undefined) return _head;
+  try {
+    const h = JSON.parse(fs.readFileSync(TASK_HEAD(), "utf8"));
+    if (h && typeof h === "object") h.drift = (h.probes || []).some((pr) => !same(pr.features || {}, promptFeatures(pr.prompt)));
+    _head = h && typeof h === "object" ? h : null;
+  } catch { _head = null; }
+  return _head;
+}
+export const resetTaskHead = () => { _head = undefined; };
+const sigmoid = (z) => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
+/** P(this prompt is a task) under the head. */
+export function taskScore(prompt, head = taskHead()) {
+  const x = promptFeatures(prompt), w = (head && head.weights) || {};
+  return sigmoid(Object.entries(x).reduce((a, [k, v]) => a + (Number(w[k]) || 0) * v, 0));
+}
+export const isTask = (p) => {
+  const s = String(p);
+  const h = taskHead();
+  if (h && h.useful && !h.drift) return taskScore(s, h) >= Number(h.threshold ?? 0.2);
+  return s.length >= 40 && TASK_SHAPED.test(s);
+};
+
+/** The join the head trains on (prompt4.md W1): every prompt the hook located,
+ *  against whether the SAME session later wrote a file. Both sides are already
+ *  on disk — the brief log carries the prompt, the transcripts carry the
+ *  edits — and a session whose transcript this box cannot see is not a
+ *  negative, it is unlabelled, so it is not a row. */
+export async function taskRows() {
+  const echos = await import("../echos/index.js");
+  const t = echos.transcriptEvents({});
+  const seen = new Set(), edits = new Map();
+  for (const e of t.events) {
+    if (!e.session) continue;
+    seen.add(e.session);
+    if (e.kind === "edit") { if (!edits.has(e.session)) edits.set(e.session, []); edits.get(e.session).push(e.at || 0); }
+  }
+  const rows = [];
+  for (const r of brief.logged({})) {
+    const sid = String(r.session_id || "");
+    if (!sid || !r.problem || !seen.has(sid)) continue;
+    const at = Date.parse(r.at || "") || 0;
+    rows.push({ prompt: String(r.problem), at: r.at || "", session: sid,
+      edited: (edits.get(sid) || []).some((x) => x >= at - 60000) ? 1 : 0 });
+  }
+  return { rows, unseen: t.unseen || [] };
+}
+/** Fit the head and write the table, useful or not: a table that says
+ *  "n=7, base rate, need 12" is what `bb uptake` and `bb doctor` print, and
+ *  the regex keeps deciding until the table says otherwise. */
+export async function fitTaskHead({ write = true } = {}) {
+  const { rows, unseen } = await taskRows();
+  const m = expert.call("model-train-prompts", { rows });
+  if (!m) return { useful: false, n: rows.length, why: expert.lastError || "python3 required", fires: rows.length, edited: rows.filter((r) => r.edited).length };
+  m.fitted_at = now();
+  m.unseen = unseen.length;
+  m.sessions = new Set(rows.map((r) => r.session)).size;
+  if (write) { try { fs.writeFileSync(TASK_HEAD(), JSON.stringify(m)); } catch { /* the next session-end writes it */ } }
+  resetTaskHead();
+  return m;
+}
+
+/** The symbol space (prompt4.md W3), rebuilt when any `symbols-*.md` is newer
+ *  than the table. 1.6s measured on this tree for 2,945 rows; a sleep-time
+ *  cost, never a prompt-time one. */
+export async function buildSpace({ force = false } = {}) {
+  const rank = await import("../pinpoint/rank.js");
+  const dir = path.join(OUT, "snapgen");
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)); } catch { return { built: false, why: "no symbol tables" }; }
+  if (!names.length) return { built: false, why: "no symbol tables" };
+  const newest = Math.max(...names.map((n) => { try { return fs.statSync(path.join(dir, n)).mtimeMs; } catch { return 0; } }));
+  let have = 0; try { have = fs.statSync(rank.SPACE()).mtimeMs; } catch { /* none yet */ }
+  if (!force && have >= newest) return { built: false, why: "current", tables: names.length };
+  const tables = {}; for (const n of names) { try { tables[n] = fs.readFileSync(path.join(dir, n), "utf8"); } catch { /* one table */ } }
+  const t0 = Date.now();
+  const sp = expert.call("space-build", { tables });
+  if (!sp) return { built: false, why: expert.lastError || "python3 required" };
+  sp.built_at = now(); sp.tables = names;
+  try { fs.writeFileSync(rank.SPACE(), JSON.stringify(sp)); } catch (e) { return { built: false, why: e.message }; }
+  rank.resetSpace();
+  return { built: true, rows: sp.n_rows, terms: sp.n_terms, k: sp.k, ms: Date.now() - t0, useful: sp.useful };
+}
+
+/** The finding head (prompt4.md W2): fit on the older 80% of the labelled
+ *  findings, replayed against `PRECISION` on the newer 20%. Written with its
+ *  sample size either way; `useful` only when it beat the constant. */
+export const CONFIDENCE_HEAD = () => path.join(VAR, "confidence-head.json");
+export function fitConfidenceHead({ write = true } = {}) {
+  let findings = [];
+  try { const j = JSON.parse(fs.readFileSync(path.join(VAR, "findings.json"), "utf8")); findings = Array.isArray(j) ? j : (j.findings || []); } catch { return { useful: false, why: "no findings" }; }
+  const r = expert.call("confidence-fit", { findings });
+  if (!r) return { useful: false, why: expert.lastError || "python3 required" };
+  r.fitted_at = now();
+  if (write) { try { fs.writeFileSync(CONFIDENCE_HEAD(), JSON.stringify(r)); } catch { /* next time */ } }
+  return r;
+}
+
+/** Sleep-time fits, on the session-end budget with the lathe and the echos:
+ *  the session that produced the rows does not pay for learning from them,
+ *  and nothing here reaches a window. Each is a coefficient table, not a
+ *  model dependency; each refuses to steer until it beats its base rate. */
+export async function fits({ cfg = load() } = {}) {
+  const out = {};
+  if (cfg.wire?.fit_heads === false) return out;
+  try { const h = await fitTaskHead(); out.task = h; log("session-end", `task head n=${h.n ?? 0} ${h.useful ? `fitted, threshold ${h.threshold}` : `base rate (${h.why})`}`); }
+  catch (e) { log("session-end", `task head ${String(e && e.message || e).slice(0, 160)}`); }
+  try { const sp = await buildSpace(); out.space = sp; if (sp.built) log("session-end", `symbol space ${sp.rows} rows, ${sp.terms} terms, k=${sp.k} in ${sp.ms}ms`); }
+  catch (e) { log("session-end", `symbol space ${String(e && e.message || e).slice(0, 160)}`); }
+  try { const c = fitConfidenceHead(); out.confidence = c; log("session-end", `confidence head n=${c.acted_on ?? 0} acted_on ${c.useful ? "beats PRECISION" : `(${c.why})`}`); }
+  catch (e) { log("session-end", `confidence head ${String(e && e.message || e).slice(0, 160)}`); }
+  return out;
+}
 
 /** The turn this whole box was waiting for.
  *
@@ -612,6 +762,8 @@ async function sessionEnd(payload) {
       log("session-end", `echos ${r.hits} hit(s) over ${r.sessions} session(s), ${filed} filed (${r.engine})`);
     } catch (e) { log("session-end", `echos ${String(e && e.message || e).slice(0, 160)}`); }
   }
+  // The three fitted heads of prompt4.md, on the same sleep-time budget.
+  await fits({ cfg });
   if (!cfg.janitor?.refresh) return;
   try {
     const { build } = await import("../janitor/index.js");

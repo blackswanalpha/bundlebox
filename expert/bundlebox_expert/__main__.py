@@ -4,7 +4,7 @@ import json
 import sys
 import time
 
-from . import __version__, confidence, coverage, grapple, graph, locate, memory, model, rules, scenarios, sequences, signals, throttle, triage, world
+from . import __version__, confidence, coverage, grapple, graph, locate, memory, model, rules, scenarios, sequences, signals, space, throttle, triage, world
 
 
 def main(argv: list) -> int:
@@ -16,7 +16,21 @@ def main(argv: list) -> int:
     inp = json.loads(raw) if raw.strip() else {}
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     if verb == "triage":
-        out = [triage.triage(f, inp.get("cfg"), inp.get("history")) for f in inp.get("findings", [])]
+        out = [triage.triage(f, inp.get("cfg"), inp.get("history"), head=inp.get("head")) for f in inp.get("findings", [])]
+    elif verb == "confidence-fit":
+        out = triage.head_replay(inp.get("findings") or [], inp.get("cfg"), inp.get("history"),
+                                 float(inp.get("cost_penalty", triage.TRIAGE_COST)), int(inp.get("min_acted", triage.MIN_ACTED)))
+    elif verb == "model-train-prompts":
+        out = model.train_prompts(inp.get("rows") or [])
+    elif verb == "model-predict-prompt":
+        out = model.predict_prompt(inp.get("model") or {}, inp.get("prompt") or "")
+    elif verb == "space-build":
+        out = space.build(inp.get("tables") or {}, int(inp.get("k", space.K)), int(inp.get("iters", space.ITERS)))
+    elif verb == "space-distance":
+        out = {"distance": space.distance(inp.get("space") or {}, inp.get("a") or [], inp.get("b") or [])}
+    elif verb == "similarity-fit":
+        out = model.fit_head(inp.get("pairs") or [], lambda r: dict({"@bias": 1.0}, **{k: float(v) for k, v in (r.get("f") or {}).items() if v is not None}),
+                             lambda r: r.get("same"), lambda r: str(r.get("at") or ""))
     elif verb == "triage-replay":
         out = triage.replay(triage.scorable(inp.get("findings") or []), inp.get("policy"), inp.get("cfg"),
                             inp.get("history"), float(inp.get("cost_penalty", triage.TRIAGE_COST)))
@@ -79,7 +93,7 @@ def main(argv: list) -> int:
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS, "locate": locate.thresholds(inp.get("cfg"))}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "triage-replay", "triage-calibrate", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
         return 2
     print(json.dumps(out))
     return 0

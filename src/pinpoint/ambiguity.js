@@ -7,6 +7,8 @@
 // the factory — this file only reads them and refuses to average them into one
 // number without saying which ones fired.
 //
+import { distance, fileTerms, space } from "./rank.js";
+
 // The score is a fraction of the weight that fired, so it is comparable across
 // briefs; the reasons are the part worth acting on. A brief with a score of 0
 // still prints "nothing unresolved", because a silent section reads as "not
@@ -47,12 +49,36 @@ export const SIGNALS = [
   { id: "weak-locate", weight: 2,
     test: (b) => b.locate?.verdict === "measured" && Number.isFinite(b.locate.confidence) && b.locate.confidence < b.locate.blend?.base,
     say: (b) => `the locate's measured recall is ${b.locate.blend?.hold_rate} over ${b.locate.n} exception row(s) in ${b.locate.windows_scored} brief(s), under the ${b.locate.blend?.base} this method is credited with. The scope below is where it looked, not where the work has been landing.` },
+  // The tenth (prompt4.md W3), and the second that is not a presence test. A
+  // scope whose files were matched on a shared WORD but sit nowhere near the
+  // statement in the symbol space is a lexical coincidence: `read` names a
+  // symbol in eleven files here. It fires only when the space exists and
+  // enough of the statement's terms are known to it, so a fresh checkout with
+  // no table, or a statement in a vocabulary the tree never uses, is
+  // unmeasured rather than far.
+  { id: "far-scope", weight: 2,
+    test: (b) => { const d = scopeDistance(b); return d !== null && d < FAR; },
+    say: (b) => `the scope's cosine to the statement in the symbol space is ${scopeDistance(b)}, under ${FAR}: the files were matched on words the statement shares, not on the neighbourhood it names.` },
   { id: "wide-scope", weight: 1,
     test: (b) => (b.scope?.length || 0) > 4,
     say: (b) => `${b.scope.length} files are in scope; a change that touches more than a handful is usually two changes.` },
 ];
 
 const TOTAL = SIGNALS.reduce((a, s) => a + s.weight, 0);
+
+/** Under this cosine the scope is far from the statement. */
+export const FAR = 0.15;
+/** Mean cosine between the statement's terms and each scope file's terms, or
+ *  null when the space is missing, the statement is thin, or no file could be
+ *  measured. */
+export function scopeDistance(b) {
+  if (!space() || (b.terms?.length || 0) < 2 || !(b.scope?.length)) return null;
+  const hits = new Map();
+  for (const h of b.symbols || []) { if (!hits.has(h.file)) hits.set(h.file, []); hits.get(h.file).push(h); }
+  const ds = b.scope.map((f) => distance(b.terms, fileTerms(f, hits.get(f) || []))).filter((d) => d !== null);
+  if (!ds.length) return null;
+  return Math.round((ds.reduce((a, d) => a + d, 0) / ds.length) * 10000) / 10000;
+}
 
 /** { score, band, reasons: [{id, why}] }. Never throws: a brief that cannot be
  *  scored is reported unscored, not scored zero — a zero here reads as "nothing

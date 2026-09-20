@@ -31,7 +31,10 @@
 // old did something inexplicable. Contradicted objects are retracted, never
 // deleted, because a deleted fact is re-learned from the same bad source next
 // week and a retracted one is not.
+import fs from "node:fs";
+import path from "node:path";
 import { sha1, now } from "../core/util.js";
+import { VAR } from "../core/paths.js";
 
 export const KINDS = ["rule", "fact", "pointer", "note", "episode"];
 
@@ -83,17 +86,72 @@ export const normalize = (s) =>
  *  pair of objects look related. */
 export const terms = (s) => new Set(normalize(s).split(/[\s/]+/).filter((w) => w.length > 2));
 
-/** Jaccard over term sets. No dependency, no embedding, no token spent. It is
- *  a weaker signal than a model would give and it is the right one here: a
- *  merge decision that costs an API call is a merge decision that never runs on
- *  a cron at 3am. */
-export function similarity(a, b) {
-  const A = a instanceof Set ? a : terms(a);
-  const B = b instanceof Set ? b : terms(b);
-  if (!A.size || !B.size) return 0;
+/** The one similarity (prompt4.md W4). Three implementations used to hand-weight
+ *  their own Jaccard — this file over term sets, `bench/gate.js` over files then
+ *  title words, `arc/src/echos/converge.rs` over scope lists. The two JS call
+ *  sites now compute the same four features here and score them once; the Rust
+ *  copy stays, because the arc is the independent second opinion and importing
+ *  this would make it agree by construction.
+ *
+ *  No dependency, no embedding, no token spent: a merge decision that costs an
+ *  API call is a merge decision that never runs on a cron at 3am. With no fit on
+ *  disk the fallback is the documented Jaccard each site always had: files first
+ *  when both sides have files and they overlap, then text terms, then title
+ *  words. With a fit (`similarity.json`, written only when it beat the base rate
+ *  on its holdout) the score is the weighted mean over the features both sides
+ *  carry. */
+export const SIMILARITY = () => path.join(VAR, "similarity.json");
+export const FEATURES = ["terms", "files", "prefix", "title"];
+let _fit;
+/** The fitted weights, or null. Cached per process; a hook is one process. */
+export function fitted() {
+  if (_fit !== undefined) return _fit;
+  try {
+    const j = JSON.parse(fs.readFileSync(SIMILARITY(), "utf8"));
+    _fit = j && j.useful && j.weights ? j : null;
+  } catch { _fit = null; }
+  return _fit;
+}
+export const resetFitted = () => { _fit = undefined; };
+
+const titleWords = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter((w) => w.length >= 4));
+const prefixes = (files) => new Set([...files].map((f) => String(f).split("/").slice(0, -1).join("/")).filter(Boolean));
+/** Normalise either side to the bags the features read. A Set or a string is
+ *  a bag of terms; an object carries `files`, `title` and optionally `text`. */
+function bags(x) {
+  if (x instanceof Set) return { terms: x, files: new Set(), prefix: new Set(), title: new Set() };
+  if (typeof x === "string") return { terms: terms(x), files: new Set(), prefix: new Set(), title: new Set() };
+  const o = x || {};
+  const files = new Set((o.files || []).map(String).filter(Boolean));
+  return { terms: o.text ? terms(o.text) : new Set(), files, prefix: prefixes(files), title: titleWords(o.title) };
+}
+/** Jaccard, or null when either side has nothing of this kind: an absent
+ *  feature is not a zero, and the weighted mean must not average it as one. */
+const jaccard = (A, B) => {
+  if (!A.size || !B.size) return null;
   let hit = 0;
   for (const t of A) if (B.has(t)) hit++;
   return hit / (A.size + B.size - hit);
+};
+/** { terms, files, prefix, title } — each in [0, 1] or null. */
+export function features(a, b) {
+  const A = bags(a), B = bags(b);
+  return { terms: jaccard(A.terms, B.terms), files: jaccard(A.files, B.files), prefix: jaccard(A.prefix, B.prefix), title: jaccard(A.title, B.title) };
+}
+export function similarity(a, b, weights = fitted()) {
+  const f = features(a, b);
+  if (weights && weights.weights) {
+    let num = 0, den = 0;
+    for (const k of FEATURES) {
+      const w = Number(weights.weights[k]);
+      if (f[k] === null || !Number.isFinite(w) || w <= 0) continue;
+      num += w * f[k]; den += w;
+    }
+    if (den > 0) return Math.max(0, Math.min(1, num / den));
+  }
+  if (f.files !== null && f.files > 0) return f.files;
+  if (f.terms !== null) return f.terms;
+  return f.title ?? 0;
 }
 
 /** Build an object. Every field has a defined value, because a pass that has to

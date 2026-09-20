@@ -8,6 +8,7 @@ critical → severity floor → expected-value floor → model tier.
 """
 from __future__ import annotations
 from . import confidence as C
+from . import model as M
 from .engine import RuleSet, infer
 
 SEVERITY = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
@@ -56,11 +57,20 @@ def _default(f):
     return {"promote": True, "reason": "above floor and worth the tokens", "model": "sonnet", "kind": f.get("kind") or "fix", "priority": 3, "decided": True}
 
 
-def triage(finding: dict, cfg: dict | None = None, history: dict | None = None, ev_mult: float = None) -> dict:
+def triage(finding: dict, cfg: dict | None = None, history: dict | None = None, ev_mult: float = None, head: dict | None = None) -> dict:
     cfg = cfg or {}
     promote_at = (cfg.get("detectors") or {}).get("promote_at", "medium")
     hist = (history or {}).get(finding.get("detector"), {})
-    conf = C.for_rule(finding.get("precision", "heuristic"), hist.get("held", 0), hist.get("weak", 0), hist.get("broken", 0))
+    # `head` is the fitted finding head (prompt4.md W2). Only a head that beat
+    # the shipped constant on its holdout carries `useful`, and only then does
+    # it become the third term; otherwise the line below is byte-identical to
+    # the shipped path.
+    prior = None
+    if head and head.get("useful"):
+        p = M.predict_finding(head, finding)
+        if p is not None:
+            prior = {"p": p, "n": int(head.get("train") or head.get("n") or 0)}
+    conf = C.for_rule(finding.get("precision", "heuristic"), hist.get("held", 0), hist.get("weak", 0), hist.get("broken", 0), prior=prior)
     n = finding.get("evidence", {}).get("count") if isinstance(finding.get("evidence"), dict) else None
     n = n if isinstance(n, (int, float)) and n > 0 else 1
     facts = {
@@ -111,7 +121,7 @@ def scorable(findings: list) -> list:
 
 
 def replay(findings: list, policy: dict = None, cfg: dict = None,
-           history: dict = None, cost_penalty: float = TRIAGE_COST) -> dict:
+           history: dict = None, cost_penalty: float = TRIAGE_COST, head: dict | None = None) -> dict:
     """What this policy would have promoted, against what was acted on. Runs
     the real rule engine — a replay that approximates the policy is measuring
     an approximation."""
@@ -130,7 +140,7 @@ def replay(findings: list, policy: dict = None, cfg: dict = None,
     for f in findings:
         worked = f.get("closed_by") == "acted_on"
         acted += 1 if worked else 0
-        d = triage(f, base, history, ev_mult=p["ev_mult"])
+        d = triage(f, base, history, ev_mult=p["ev_mult"], head=head)
         if not d.get("promote"):
             continue
         promoted += 1
@@ -149,6 +159,34 @@ def replay(findings: list, policy: dict = None, cfg: dict = None,
         "score": None if recall is None else round(recall - cost_penalty * waste, 4),
         "why": "recall %s − %g×waste %.2f" % ("n/a" if recall is None else "%.2f" % recall, cost_penalty, waste),
     }
+
+
+def head_replay(findings: list, cfg: dict = None, history: dict = None,
+                cost_penalty: float = TRIAGE_COST, min_acted: int = MIN_ACTED) -> dict:
+    """prompt4.md W2: fit the finding head on the older 80% of the labelled
+    findings, then replay the SHIPPED policy on the newer 20% twice — once with
+    `PRECISION` alone, once with the head as the third term. The head ships
+    with its sample size and it does not replace the constant unless the fitted
+    replay scores higher on that holdout. Same labels as `calibrate`, same
+    independence: promoting a finding does not change whether it was fixed."""
+    rows = sorted(scorable(findings), key=M.finding_time)
+    acted = sum(1 for f in rows if f.get("closed_by") == "acted_on")
+    out = {"n": len(rows), "acted_on": acted, "useful": False}
+    if acted < min_acted:
+        return {**out, "why": f"{acted} acted_on findings; need {min_acted}", "need": min_acted - acted}
+    fit = M.train_findings(rows)
+    if not fit.get("useful"):
+        return {**out, "fit": {k: fit.get(k) for k in ("n", "train", "holdout", "accuracy", "base_accuracy", "auc", "base_rate", "why")},
+                "why": fit.get("why") or "the head did not beat the base rate"}
+    cut = max(1, int(len(rows) * 0.8))
+    ho = rows[cut:]
+    shipped = replay(ho, None, cfg, history, cost_penalty)
+    fitted = replay(ho, None, cfg, history, cost_penalty, head=fit)
+    beats = shipped.get("score") is not None and fitted.get("score") is not None and fitted["score"] > shipped["score"]
+    head = {k: fit.get(k) for k in ("useful", "n", "train", "holdout", "accuracy", "base_accuracy", "auc", "base_rate", "weights")}
+    head["useful"] = bool(beats)
+    return {**out, "useful": bool(beats), "holdout": len(ho), "shipped": shipped, "fitted": fitted, "head": head,
+            "why": "" if beats else "the fitted head does not beat PRECISION on the time-split holdout; the constant stays"}
 
 
 def _neighbours(p: dict) -> list:
