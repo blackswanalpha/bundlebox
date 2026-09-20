@@ -195,6 +195,12 @@ export function termWeights(sym) {
  *  so "src" (every file) collapses to MIN_TERM and contributes nothing, while
  *  "wire" (four files) keeps almost all of it. */
 export const PATH_TERM = 8;
+/** What one distinct long term found in a file's CONTENT is worth. Below
+ *  `quality()`'s exact-symbol 9 on purpose: content is weaker evidence than a
+ *  declaration, and it earns its place by counting rather than by weight. */
+export const GREP_TERM = 1.5;
+/** The most distinct terms one file may be credited with. */
+export const GREP_CAP_SCORE = 8;
 
 /** The components a term can name: each directory on the way down, and the
  *  basename without its extension. */
@@ -249,7 +255,13 @@ export function rank(problem, { explicit = [], sym = [], grep = [], terms = [], 
     hits.sort((a, b) => evidence(b) - evidence(a));
     hits.forEach((h, i) => bump(f, evidence(h) * Math.pow(DECAY, i)));
   }
-  for (const h of grep) bump(h.file, 1);
+  // A grep hit used to score a flat 1 whatever it matched, which made the
+  // content search unable to argue with the symbol tables even when it was
+  // right. `terms` is how many DISTINCT long terms of the statement that file
+  // carries, so a file holding nine of them outranks one holding two. Capped at
+  // GREP_CAP_SCORE so a file that happens to mention every word in a long issue
+  // cannot beat a symbol the statement names outright.
+  for (const h of grep) bump(h.file, GREP_TERM * Math.min(Number(h.terms) || 1, GREP_CAP_SCORE));
   // A file the path evidence names enters the ranking whether or not a symbol
   // matched: "wire the pre-read guard" is about `src/wire/`, and requiring a
   // symbol hit first is what kept the answer out of the candidate set.

@@ -23,11 +23,12 @@
 // cap widened the strawman. A real agent greps and reads ranges, and delivered
 // 1.36x. This arm models the agent that was measured, and widening `cap` now
 // adds ranges, not files.
+import fs from "node:fs";
 import { readText } from "../core/fs.js";
 import { rel, abs } from "../core/paths.js";
 import { codeFiles } from "../snapgen/tables.js";
 import * as estimate from "../tokens/estimate.js";
-import { terms as termsOf } from "../pinpoint/index.js";
+import { terms as termsOf, MAX_FILES as PINPOINT_MAX_FILES } from "../pinpoint/index.js";
 
 /** How many files a bare session opens before it starts editing. Ten is the
  *  measured median over this box's own transcripts; it is a parameter and the
@@ -101,9 +102,26 @@ export function bare(problem, { files = [], cap = BARE_READ_CAP, range = BARE_RA
 
 /** The packed arm: what pinpoint writes for the same problem. Measured off the
  *  prompt it produces, not off a description of it. */
-export async function packed(problem, { files = [], maxFiles = 6 } = {}) {
+export async function packed(problem, { files = [], maxFiles = PINPOINT_MAX_FILES, space: wantSpace = true } = {}) {
   const pinpoint = await import("../pinpoint/index.js");
+  // prompt4.md W3: the target's symbol space, built before the rank reads it.
+  // The space is an SVD over the target's own `symbols-*.md`, so those tables
+  // come first — `pinpoint.build` would write them anyway, but after it had
+  // already ranked. No python3, or too few rows to factor, is reported and the
+  // rank runs as it always did; a bench that silently measured a mixed arm
+  // would be reporting one number for two methods.
+  let space = null;
+  if (wantSpace) {
+    try {
+      const snapgen = await import("../snapgen/index.js");
+      const reg = snapgen.registry();
+      const missing = reg.names("symbols").filter((n) => reg.has(n) && !fs.existsSync(reg.path(n)));
+      if (missing.length) await snapgen.build({ only: missing });
+      const hooks = await import("../wire/hooks.js");
+      space = await hooks.buildSpace({ force: true });
+    } catch (e) { space = { built: false, why: String(e && e.message || e).slice(0, 120) }; }
+  }
   const b = await pinpoint.build(problem, { files, maxFiles, kind: "fix" });
   return { tokens: estimate.text(b.prompt, "prose"), scope: b.scope, candidates: b.candidates || [],
-    anchors: b.anchors.length, verdict: b.verdict, projected: b.projected, path: b.path };
+    anchors: b.anchors.length, verdict: b.verdict, projected: b.projected, path: b.path, space };
 }
