@@ -11,12 +11,19 @@
 // The order is the expert's `rank` when an interpreter is there. Without one
 // the queue is still ordered, by the documented fallback: severity, then rework
 // cost, then key. Nothing here refuses to run.
+//
+// Before either ranks, Jev (`jev.js`) gives each pattern item one calibrated
+// probability that its shape is deliberate. That probability replaces the
+// per-detector prior as the item's uncertainty: a shape Jev is sure about sinks
+// below the floor, a shape it cannot call is asked first. It is a ranking input
+// only. No answer, label or event of record comes from it.
 import fs from "node:fs";
 import { sha1 } from "../core/util.js";
 import * as core from "../core/store.js";
 import * as expert from "../core/expert.js";
 import { similarity } from "../bench/gate.js";
 import * as gs from "./store.js";
+import * as jev from "./jev.js";
 import { priors as priorsOf } from "./harvest.js";
 
 export const ASK_TOKENS = 1000;            // a question inside an open session is under 1k
@@ -79,7 +86,8 @@ export function items({ rec = null, rows = core.get("findings", []) } = {}) {
         text: `${u.id}: ${u.why}`, severity: AMBIGUITY_SEVERITY[u.weight] || "low", precision: "heuristic", est_tokens: Number(rec.projected) || 0, n: 1, reaches: 1, brief: rec.path || "" });
     }
   }
-  for (const p of patterns(contested(rows))) out.push({ key: p.key, shape: "pattern", detector: p.detector, text: p.text, severity: p.severity, precision: "heuristic", est_tokens: p.est_tokens, n: p.n, reaches: p.reaches, paths: p.paths });
+  for (const p of patterns(contested(rows))) out.push({ key: p.key, shape: "pattern", detector: p.detector, text: p.text, severity: p.severity, precision: "heuristic", est_tokens: p.est_tokens, n: p.n, reaches: p.reaches, paths: p.paths,
+    rows: p.rows.slice(0, jev.ROWS_PER_ITEM).map((r) => ({ path: r.path || "", key: r.key || "" })) });   // where Jev reads its window; stripped before the queue is written
   return out;
 }
 
@@ -88,16 +96,25 @@ export function items({ rec = null, rows = core.get("findings", []) } = {}) {
  *  instance answer, or a pattern answer that covers the item. */
 export function fallbackRank(list, answers = gs.answers()) {
   const live = (it) => Boolean(gs.lookup({ instance: it.shape === "instance" ? it.key : "", pattern: it.shape === "pattern" ? it.key : (it.pattern || ""), fingerprint: it.fingerprint || "" }, answers));
-  const asked = list.filter((it) => !live(it)).map((it) => ({ ...it, ev: Math.round(((1 - (PRIOR[it.precision] ?? PRIOR.heuristic)) * (SEV[it.severity] || 1) * Math.max(it.n || 1, 1) * 100000 / Math.max(Number(it.est_tokens) || 0, ASK_TOKENS)) * 100) / 100 }));
-  asked.sort((a, b) => (SEV[b.severity] || 0) - (SEV[a.severity] || 0) || (Number(b.est_tokens) || 0) - (Number(a.est_tokens) || 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const uncertainty = (it) => (it.jev && typeof it.jev.uncertainty === "number" ? it.jev.uncertainty : 1 - (PRIOR[it.precision] ?? PRIOR.heuristic));
+  const asked = list.filter((it) => !live(it)).map((it) => ({ ...it, ev: Math.round((uncertainty(it) * (SEV[it.severity] || 1) * Math.max(it.n || 1, 1) * 100000 / Math.max(Number(it.est_tokens) || 0, ASK_TOKENS)) * 100) / 100 }));
+  // With a Jev opinion on any item the per-item value is a measurement and
+  // leads; without one it is severity by another name, so the documented
+  // order stands unchanged.
+  const measured = asked.some((it) => it.jev);
+  asked.sort((a, b) => (measured ? b.ev - a.ev : 0) || (SEV[b.severity] || 0) - (SEV[a.severity] || 0) || (Number(b.est_tokens) || 0) - (Number(a.est_tokens) || 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   return { asked, dropped: list.filter(live).map((it) => ({ key: it.key, why: "answered" })), via: "fallback" };
 }
 
-/** Order the queue, expert first. */
-export function rank(list, { answers = gs.answers(), priors = priorsOf() } = {}) {
-  const r = expert.call("grapple", { op: "rank", items: list, answers, ask_tokens: ASK_TOKENS, priors: priors.by || {} });
-  if (r && Array.isArray(r.asked)) return { ...r, via: "expert", priors: priors.via };
-  return { ...fallbackRank(list, answers), priors: "none" };
+/** Order the queue, expert first. `opinions` is Jev's word on the pattern
+ *  items, fetched here unless the caller brought its own; null when Jev is off
+ *  or did not answer, and then nothing about the order changes. */
+export function rank(list, { answers = gs.answers(), priors = priorsOf(), opinions = jev.opinions(list) } = {}) {
+  const items = opinions ? list.map((it) => (opinions.by[it.key] ? { ...it, jev: opinions.by[it.key] } : it)) : list;
+  const j = opinions ? { asked: opinions.asked, answered: opinions.answered, tokens: opinions.tokens, ms: opinions.ms } : null;
+  const r = expert.call("grapple", { op: "rank", items, answers, ask_tokens: ASK_TOKENS, priors: priors.by || {} });
+  if (r && Array.isArray(r.asked)) return { ...r, via: "expert", priors: priors.via, jev: j };
+  return { ...fallbackRank(items, answers), priors: "none", jev: j };
 }
 
 /** Emit the queue for this brief. Pattern questions first when the ranks tie,
@@ -115,9 +132,10 @@ export function emit({ rec = null, rows = core.get("findings", []), cap = 2, ses
   const expired = ranked.asked.filter((it) => stored[it.key]?.state === "expired-unanswered");
   const asked = ranked.asked.filter((it) => stored[it.key]?.state !== "expired-unanswered");
   const put = [];
-  for (const it of asked) put.push(gs.putQuestion({ ...it, ev: it.ev }));
+  for (const { rows: _rows, ...it } of asked) put.push(gs.putQuestion({ ...it, ev: it.ev }));
   const head = asked.slice(0, cap);
-  gs.record("would_ask", { session_id: session, keys: head.map((q) => q.key), of: asked.length, via: ranked.via });
+  if (ranked.jev) gs.record("jev", { session_id: session, ...ranked.jev });
+  gs.record("would_ask", { session_id: session, keys: head.map((q) => q.key), of: asked.length, via: ranked.via, jev: ranked.jev ? ranked.jev.answered : 0 });
   return { asked, head, dropped: [...ranked.dropped, ...expired.map((it) => ({ key: it.key, why: "expired-unanswered" }))], via: ranked.via, put: put.length };
 }
 

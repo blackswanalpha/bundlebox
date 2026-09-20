@@ -57,13 +57,23 @@ def _prior(item: dict, priors: dict) -> float:
     return confidence.for_rule(str(item.get("precision") or "heuristic"), int(p.get("held") or 0), 0, int(p.get("broken") or 0))["confidence"]
 
 
+def _uncertainty(item: dict, priors: dict) -> float:
+    """How far the item is from settled. Jev's calibrated probability, when JS
+    attached one, is per item and wins over the per-detector prior; it arrives
+    already folded to 2*min(p, 1-p), so 0 is sure either way and 1 is a coin."""
+    j = item.get("jev") or {}
+    u = j.get("uncertainty")
+    if isinstance(u, (int, float)) and not isinstance(u, bool):
+        return min(max(float(u), 0.0), 1.0)
+    return 1.0 - _prior(item, priors)
+
+
 def _ev(item: dict, ask_tokens: int, priors: dict) -> float:
     """Disambiguation value per token of asking: what is at stake times how
     uncertain the method is about it, in `value()`'s unit, over the cost of
     the question rather than the cost of the unit."""
-    prior = _prior(item, priors)
     at_stake = confidence.value(1.0, str(item.get("severity") or "low"), int(item.get("est_tokens") or 0), int(item.get("n") or 1))
-    return round((1.0 - prior) * at_stake * 1000.0 / max(ask_tokens, 1), 2)
+    return round(_uncertainty(item, priors) * at_stake * 1000.0 / max(ask_tokens, 1), 2)
 
 
 def rank(items: list, answers: dict, ask_tokens: int = ASK_TOKENS, priors: dict = None) -> dict:

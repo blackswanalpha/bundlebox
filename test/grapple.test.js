@@ -321,3 +321,62 @@ test("priors are held/broken counts per detector, local beats shipped, and the e
     assert.ok(q.asked[0].prior > 0.4);
   }
 });
+
+test("jev: a calibrated opinion on a pattern replaces its prior as the item's uncertainty, and a sure shape ranks below an unsure one", async () => {
+  const { spawn } = await import("node:child_process");
+  const jev = await import("../src/grapple/jev.js");
+  const sure = gs.patternKey("swallowed-errors", "src/a.js:1 swallows an error");
+  const unsure = gs.patternKey("silent-fallback", "src/b.js:1 falls back to a default silently");
+  // The fake endpoint is its own process: `jev.call` blocks this one while it
+  // waits, so a server here would never get to answer.
+  const log = path.join(root, "jev-seen.json");
+  w("jev-server.mjs", `import http from "node:http"; import fs from "node:fs";
+    const srv = http.createServer((req, res) => { let b = ""; req.on("data", (c) => b += c); req.on("end", () => {
+      const body = JSON.parse(b); fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({ auth: req.headers.authorization, body }));
+      const answers = {}; for (const k of Object.keys(body.questions)) answers[k] = { probability: k === ${JSON.stringify(sure)} ? 0.98 : 0.5 };
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ answers })); }); });
+    srv.listen(0, "127.0.0.1", () => process.stdout.write(String(srv.address().port) + "\\n"));`);
+  const child = spawn(process.execPath, [path.join(root, "jev-server.mjs")], { stdio: ["ignore", "pipe", "inherit"] });
+  const port = await new Promise((r) => child.stdout.once("data", (d) => r(String(d).trim())));
+  const items = [
+    { key: sure, shape: "pattern", detector: "swallowed-errors", severity: "high", precision: "heuristic", est_tokens: 1000, n: 1, text: "swallowed-errors: is this deliberate?", rows: [{ path: "src/a.js", key: "src/a.js:1" }] },
+    { key: unsure, shape: "pattern", detector: "silent-fallback", severity: "medium", precision: "heuristic", est_tokens: 1000, n: 1, text: "silent-fallback: is this deliberate?", rows: [{ path: "src/b.js", key: "src/b.js:1" }] },
+  ];
+  try {
+    // off: no key, nothing changes
+    delete process.env.TYPESAFE_API_KEY;
+    assert.equal(jev.available(), false);
+    assert.equal(jev.opinions(items), null);
+    const plain = ask.rank(items, { answers: {} });
+    assert.equal(plain.jev, null);
+    assert.equal(plain.asked[0].key, sure, "without Jev the high-severity shape leads");
+    // on: one call, one noul per pattern item, the window in the state
+    process.env.TYPESAFE_API_KEY = "test-key";
+    process.env.TYPESAFE_API_URL = `http://127.0.0.1:${port}/v1/systemone`;
+    const o = jev.opinions(items);
+    const seen = JSON.parse(fs.readFileSync(log, "utf8"));
+    assert.equal(seen.auth, "Bearer test-key");
+    assert.deepEqual(Object.keys(seen.body.questions).sort(), [sure, unsure].sort());
+    assert.equal(seen.body.questions[sure].type, "noul");
+    assert.ok(seen.body.state.includes("1> export const a = 1;"), "the row's code window is the state");
+    assert.deepEqual(o.by[sure], { p: 0.98, uncertainty: 0.04 });
+    assert.deepEqual(o.by[unsure], { p: 0.5, uncertainty: 1 });
+    assert.equal(o.answered, 2);
+    const q = ask.rank(items, { answers: {}, opinions: o });
+    assert.equal(q.jev.answered, 2);
+    const byKey = Object.fromEntries([...q.asked, ...q.dropped].map((it) => [it.key, it]));
+    assert.ok(byKey[sure] && byKey[unsure]);
+    assert.equal(q.asked[0].key, unsure, `the coin-flip shape is asked first (${q.via})`);
+    assert.ok(byKey[unsure].ev > byKey[sure].ev, "a sure high beats an unsure medium on stake alone; uncertainty is what reverses it");
+    // the queue file never carries the rows Jev read
+    ask.emit({ rows: [] });
+    for (const st of Object.values(gs.questions())) assert.equal(st.rows, undefined);
+    // a dead endpoint is a null, not a throw, and the order is the plain one
+    process.env.TYPESAFE_API_URL = "http://127.0.0.1:9/";
+    assert.equal(jev.opinions(items), null);
+    assert.equal(ask.rank(items, { answers: {} }).asked[0].key, sure);
+  } finally {
+    delete process.env.TYPESAFE_API_KEY; delete process.env.TYPESAFE_API_URL;
+    child.kill();
+  }
+});
