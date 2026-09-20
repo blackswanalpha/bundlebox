@@ -197,3 +197,37 @@ test("compileUnits: an oversized group is split into parts that name their index
   assert.ok(units.every((u) => u.brief.includes(`This is part ${u.part[0]} of ${u.part[1]}`)));
   assert.deepEqual(units.flatMap((u) => u.scope).sort(), ["big/a/one.js", "big/a/two.js", "big/b/three.js"]);
 });
+
+test("throttle: a detector over the board cap reports as a count, and the count is in the result", async () => {
+  const throttle = await import("../src/compile/throttle.js");
+  const decisions = [
+    { id: "a", detector: "duplicate-blocks", promote: true, priority: 2, ev: 40, est_tokens: 6000, auto_fix: "plan-block-lift" },
+    { id: "b", detector: "duplicate-blocks", promote: true, priority: 2, ev: 39, est_tokens: 6000, auto_fix: "strip-debug-line" },
+    { id: "c", detector: "doc-links", promote: true, priority: 1, ev: 50, est_tokens: 500 },
+  ];
+  const r = throttle.apply(decisions, {}, { "duplicate-blocks": { cooldown: 0, open: 285 } });
+  assert.deepEqual(r.promoted.map((d) => d.id).sort(), ["b", "c"], "a closing actuator is the close path the cap is about");
+  assert.deepEqual(r.deferred.map((d) => d.id), ["a"], "a plan- actuator leaves the finding open, so it does not exempt");
+  assert.match(r.deferred[0].throttle_reason, /holds 285 open finding\(s\), at or over per_detector_open=40/);
+  assert.deepEqual(r.suppressed["duplicate-blocks"], { open: 285, limit: 40, deferred: 1 });
+  assert.match(r.summary, /1 board-suppressed/);
+  assert.match(r.summary, /duplicate-blocks suppressed at 285 open/);
+  // Under the cap nothing changes, and the old limits still decide.
+  const quiet = throttle.apply(decisions, {}, { "duplicate-blocks": { cooldown: 0, open: 39 } });
+  assert.equal(quiet.deferred.length, 0);
+  assert.deepEqual(quiet.suppressed, {});
+  // The limit is a parameter, and 0 turns it off.
+  const off = throttle.apply(decisions, { expert: { throttle: { per_detector_open: 0 } } }, { "duplicate-blocks": { open: 285 } });
+  assert.equal(off.deferred.length, 0);
+});
+
+test("throttle: open counts come off the board, and a closed row is not on it", async () => {
+  const throttle = await import("../src/compile/throttle.js");
+  assert.deepEqual(throttle.openCounts([
+    { detector: "a", status: "open" }, { detector: "a" }, { detector: "a", status: "fixed" },
+    { detector: "b", status: "open" }, { detector: "" },
+  ]), { a: 2, b: 1 });
+  assert.equal(throttle.closes("strip-debug-line"), true);
+  assert.equal(throttle.closes("plan-block-lift"), false);
+  assert.equal(throttle.closes(""), false);
+});

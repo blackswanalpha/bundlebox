@@ -9,7 +9,8 @@ import path from "node:path";
 import { load } from "../core/config.js";
 import * as throttle from "./throttle.js";
 import { ROOT, abs } from "../core/paths.js";
-import { git, gitOk } from "../core/exec.js";
+import { git, gitOk, run as exec, shellCmd } from "../core/exec.js";
+import * as kernel from "../core/kernel.js";
 import { human, sha1 } from "../core/util.js";
 import * as anc from "./anchors.js";
 import * as context from "./context.js";
@@ -107,6 +108,23 @@ export function detectGates(root = ROOT, scope = ".") {
   return { ...g, ...user, scope: user.quick || user.full ? pick : from };
 }
 
+/** Run one gate command and report the verdict, the tail and the seconds.
+ *
+ *  One implementation, because a gate that runs one way for a lane and another
+ *  way for `bb gates run` is two gates. The kernel enforces the timeout itself
+ *  and caps the output, so a gate that hangs before its first byte is still
+ *  killed and a failing build cannot eat the window explaining that it failed;
+ *  without the kernel it is the platform's own shell, chosen in the one place
+ *  that owns that choice. */
+export function runGate(cmd, { cwd = ROOT, timeout = 1800, capBytes = 4000, tail = 400 } = {}) {
+  const k = kernel.call("gate", { cmd, cwd, timeout, cap_bytes: capBytes });
+  if (k && k.verdict) return { cmd, rc: k.rc ?? 1, tail: String(k.output_tail || "").slice(-tail), seconds: k.seconds, timed_out: k.timed_out, via: "kernel" };
+  const t0 = Date.now();
+  const r = exec(shellCmd(cmd, { merge: true }), { cwd, timeout: timeout * 1000 });
+  return { cmd, rc: r.rc, tail: (r.out + r.err).slice(-tail), seconds: Math.round((Date.now() - t0) / 100) / 10,
+    timed_out: r.rc === 124, via: "js" };
+}
+
 /** The re-check that proves THESE findings are gone: the scan must succeed AND
  *  none of the ids may reappear. Written as two commands, not one pipeline,
  *  because `! scan | grep` passes when the scan itself crashes. */
@@ -140,6 +158,23 @@ const uid = (s) => `u-${sha1(s).slice(0, 8)}`;
 let lastDeferred = [];
 export const deferred = () => lastDeferred;
 
+/** The detectors a board-level limit silenced, and how many open rows each is
+ *  holding. Printed rather than dropped: a finding that stops being promoted
+ *  must still be countable, or the board shrinks by forgetting. */
+let lastSuppressed = {};
+export const suppressed = () => lastSuppressed;
+
+/** Cooldown history, widened with each detector's open row count. The two are
+ *  merged here because `throttle.apply` reads one map. */
+function openHistory(findings) {
+  const open = throttle.openCounts(findings || []);
+  const out = {};
+  for (const [det, n] of Object.entries(open)) out[det] = { cooldown: 0, open: n };
+  const cool = throttle.cooldowns();
+  for (const [det, v] of Object.entries(cool)) out[det] = { ...(out[det] || { open: 0 }), ...v };
+  return out;
+}
+
 /** Group, triage, throttle, pack, split. Returns units ready for the router. */
 export async function compileUnits(findings, { maxUnits = 0 } = {}) {
   const cfg = load();
@@ -152,13 +187,20 @@ export async function compileUnits(findings, { maxUnits = 0 } = {}) {
     if (f.status && f.status !== "open") continue;
     let d;
     try { d = triage(f, cfg) || {}; } catch { d = {}; }
-    decisions.push({ id: f.id, detector: f.detector, promote: !!d.promote, priority: d.priority, ev: d.ev, est_tokens: f.est_tokens, _f: f, _t: d });
+    decisions.push({ id: f.id, detector: f.detector, promote: !!d.promote, priority: d.priority, ev: d.ev, est_tokens: f.est_tokens, auto_fix: f.auto_fix || "", _f: f, _t: d });
   }
   // The throttle sees the whole run: how many promotions, whose, and at what
   // estimated cost. A deferred finding is not declined, it is next in line.
-  const gate = throttle.apply(decisions, cfg);
+  //
+  // It also sees the BOARD, which is the part it was missing. A per-run limit
+  // cannot tell four rows a run from four hundred rows over a hundred runs, and
+  // the second is a rule producing work nobody closes. The open counts come off
+  // the findings in hand, so the number the limit reads is the number
+  // `bb findings` prints.
+  const gate = throttle.apply(decisions, cfg, openHistory(findings));
   const triaged = gate.promoted.map((d) => ({ ...d._f, _t: d._t }));
   lastDeferred = gate.deferred.map((d) => ({ id: d.id, detector: d.detector, reason: d.throttle_reason }));
+  lastSuppressed = gate.suppressed || {};
 
   const groups = new Map();
   for (const f of triaged) {

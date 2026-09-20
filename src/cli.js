@@ -48,6 +48,7 @@ export const MODULES = [
   ["buckmaster", "./buckmaster/index.js"],
   ["lathe", "./lathe/index.js"],
   ["echos", "./echos/index.js"],
+  ["situation", "./situation/index.js"],
   ["bridge", "./bridge/index.js"],
   ["scripts", "./scripts/index.js"],
   ["wire", "./wire/index.js"],

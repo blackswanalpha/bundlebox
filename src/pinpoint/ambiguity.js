@@ -36,6 +36,17 @@ export const SIGNALS = [
   { id: "thin-statement", weight: 2,
     test: (b) => (b.terms?.length || 0) < 2,
     say: (b) => `the problem statement carries ${b.terms?.length || 0} usable term(s) after the stoplist, which is not enough to locate anything.` },
+  // The ninth, and the only one that is not a presence test. The eight above
+  // ask whether something is THERE; a locate that matched three irrelevant
+  // symbols passes every one of them, because three is not zero. This one reads
+  // the measured recall of the locate itself — how often the file the work went
+  // to was one this ranker had already found — and fires only when that has
+  // been measured and came back under the method's own prior. An unmeasured
+  // locate does not fire: `unknown` is not a hit, and reporting it as one would
+  // make every fresh checkout look ambiguous.
+  { id: "weak-locate", weight: 2,
+    test: (b) => b.locate?.verdict === "measured" && Number.isFinite(b.locate.confidence) && b.locate.confidence < b.locate.blend?.base,
+    say: (b) => `the locate's measured recall is ${b.locate.blend?.hold_rate} over ${b.locate.n} exception row(s) in ${b.locate.windows_scored} brief(s), under the ${b.locate.blend?.base} this method is credited with. The scope below is where it looked, not where the work has been landing.` },
   { id: "wide-scope", weight: 1,
     test: (b) => (b.scope?.length || 0) > 4,
     say: (b) => `${b.scope.length} files are in scope; a change that touches more than a handful is usually two changes.` },

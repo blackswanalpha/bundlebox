@@ -19,12 +19,11 @@
 // merges `process.env` under whatever env it is handed, which is exactly the
 // inheritance the allowlist exists to prevent. The local spawn also carries a
 // hard timer that escalates SIGTERM to SIGKILL, independent of output.
-import * as kernel from "../core/kernel.js";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { load } from "../core/config.js";
-import { run, which, git, shellCmd } from "../core/exec.js";
+import { run, which, git } from "../core/exec.js";
 import { VAR, ROOT, rel } from "../core/paths.js";
 import * as store from "../core/store.js";
 import { now, sha1, human } from "../core/util.js";
@@ -33,6 +32,7 @@ import { pick, get, num } from "../adapters/index.js";
 import * as ledger from "../tokens/ledger.js";
 import * as prices from "../tokens/prices.js";
 import * as headroom from "../tokens/headroom.js";
+import { runGate } from "../compile/compiler.js";
 
 // Matched case-INSENSITIVELY, and Windows' own names are in the list.
 // `Object.entries(process.env)` hands back the spellings the OS uses: Windows
@@ -269,16 +269,7 @@ export async function executeLane(lane, { apply = false, adapter, wire = {}, pr 
     // The kernel enforces the timeout itself and caps the output, so a gate that
     // hangs before its first byte is still killed and a failing build cannot
     // eat the window explaining that it failed. Without the kernel: bash + timer.
-    result.acceptance = acc.map((cmd) => {
-      const k = kernel.call("gate", { cmd, cwd, timeout: num(cfg.kernel?.gate_timeout || 1800), cap_bytes: 4000 });
-      if (k && k.verdict) return { cmd, rc: k.rc ?? 1, tail: String(k.output_tail || "").slice(-400), seconds: k.seconds, timed_out: k.timed_out, via: "kernel" };
-      // Without the kernel: the platform's own shell, chosen in ONE place
-      // (`exec.shellCmd`) so this can never drift from what the kernel does.
-      // The output cap moved into JS, where `run` already holds a 64MB ceiling
-      // and only the tail is kept.
-      const r = run(shellCmd(cmd, { merge: true }), { cwd, timeout: num(cfg.kernel?.gate_timeout || 1800) * 1000 });
-      return { cmd, rc: r.rc, tail: (r.out + r.err).slice(-400), via: "js" };
-    });
+    result.acceptance = acc.map((cmd) => runGate(cmd, { cwd, timeout: num(cfg.kernel?.gate_timeout || 1800) }));
     if (result.acceptance.some((a) => a.rc !== 0)) { result.rc = 1; result.why = "acceptance failed"; }
   }
   // Named, never silent: a unit with no acceptance skipped a check, and that must not read like passing one.
