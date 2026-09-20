@@ -102,15 +102,44 @@ check("expert == js on throttle", async () => {
     ...Array.from({ length: 9 }, (_, i) => ({ id: `d${i}`, detector: "dead-exports", promote: true, priority: 3, ev: 10, est_tokens: 5000 })),
     { id: "g", detector: "god-file", promote: true, priority: 0, ev: 90, est_tokens: 4000 },
     { id: "h", detector: "orphan-files", promote: false, priority: 3, ev: 1, est_tokens: 100 },
+    // Two rows from a detector over the board cap: the one with a `plan-`
+    // actuator is still suppressed, because a plan leaves the finding open.
+    { id: "p", detector: "duplicate-blocks", promote: true, priority: 2, ev: 40, est_tokens: 6000, auto_fix: "plan-block-lift" },
+    { id: "q", detector: "duplicate-blocks", promote: true, priority: 2, ev: 39, est_tokens: 6000, auto_fix: "strip-debug-line" },
   ];
-  const js = throttle.apply(decisions, {}, {});
+  const history = { "duplicate-blocks": { cooldown: 0, open: 285 } };
+  const js = throttle.apply(decisions, {}, history);
   if (!expert.available()) return [true, `python3 absent, js throttle only: ${js.summary}`];
-  const py = expert.call("throttle", { decisions, cfg: {}, history: {} });
+  const py = expert.call("throttle", { decisions, cfg: {}, history });
   if (!py) return [false, expert.lastError];
   const same = py.summary === js.summary
     && py.promoted.map((d) => d.id).join() === js.promoted.map((d) => d.id).join()
     && py.deferred.map((d) => d.throttle_reason).join() === js.deferred.map((d) => d.throttle_reason).join();
   return [same, same ? js.summary : `js "${js.summary}" vs py "${py.summary}"`];
+});
+
+check("expert == js on locate-replay", async () => {
+  const expert = await import("./core/expert.js");
+  const aim = await import("./pinpoint/locate.js");
+  // Four briefs, each with one edit the ranker had already offered and two it
+  // never named, plus an in-scope edit that must not be scored and a file
+  // edited back to a value it held, which must not be scored either.
+  const windows = Array.from({ length: 4 }, (_, i) => ({
+    session: `s${i}`, at: i + 1, brief: `b${i}`,
+    scope: [`in${i}.js`], cut: [`cut${i}.js`], candidates: [`cand${i}.js`],
+    edits: [
+      { file: `in${i}.js`, hash: "a" }, { file: `cut${i}.js`, hash: "b" },
+      { file: `miss${i}.js`, hash: "c" }, { file: `other${i}.js`, hash: "d" },
+      { file: `flip${i}.js`, hash: "e" }, { file: `flip${i}.js`, hash: "e" },
+    ],
+  }));
+  const js = aim.score(windows, {});
+  if (!expert.available()) return [true, `python3 absent, js locate only: ${js.verdict} n=${js.n}`];
+  const py = expert.call("locate-replay", { windows, cfg: {} });
+  if (!py) return [false, expert.lastError];
+  const same = py.verdict === js.verdict && py.n === js.n && py.recall === js.recall
+    && py.precision === js.precision && py.confidence === js.confidence && py.detail === js.detail;
+  return [same, same ? `${js.verdict}: recall ${js.recall} over n=${js.n}` : `js "${js.detail}" vs py "${py.detail}"`];
 });
 
 check("expert == js on triage", async () => {

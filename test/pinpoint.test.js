@@ -244,3 +244,52 @@ test("an explicit file stays first even when the path evidence names another", (
   });
   assert.deepEqual(order, ["src/auth.js", "src/session.js"]);
 });
+
+test("weak-locate fires on a measured locate under its own prior and stays quiet on an unmeasured one", async () => {
+  const { ambiguity } = await import("../src/pinpoint/ambiguity.js");
+  const base = { gates: { quick: "npm test" }, symbols: [{}], grep: [], anchors: [{}], evidence: [{}], scope: ["a.js"], cut: [], terms: ["a", "b"], verdict: "FITS" };
+  const weak = { verdict: "measured", confidence: 0.375, n: 12, windows_scored: 4, blend: { base: 0.5, hold_rate: 0.3333 } };
+  assert.ok(ambiguity({ ...base, locate: weak }).reasons.some((r) => r.id === "weak-locate"));
+  // Unknown is not a hit, and neither is a locate nobody has measured: either
+  // would make every fresh checkout read as ambiguous.
+  for (const l of [null, undefined, { verdict: "unknown", confidence: null, blend: undefined },
+    { verdict: "measured", confidence: 0.61, blend: { base: 0.5 } }]) {
+    assert.equal(ambiguity({ ...base, locate: l }).reasons.filter((r) => r.id === "weak-locate").length, 0,
+      `weak-locate fired on ${JSON.stringify(l)}`);
+  }
+});
+
+test("locate: only the exception rows are scored, and a reverted file is not one", async () => {
+  const aim = await import("../src/pinpoint/locate.js");
+  const win = { session: "s", at: 1, scope: ["in.js"], cut: ["cut.js"], candidates: ["cand.js"],
+    edits: [{ file: "in.js", hash: "a" }, { file: "cut.js", hash: "b" }, { file: "cand.js", hash: "c" },
+      { file: "miss.js", hash: "d" }, { file: "flip.js", hash: "e" }, { file: "flip.js", hash: "f" }, { file: "flip.js", hash: "e" },
+      { file: "", hash: "" }] };
+  const c = aim.classify(win);
+  assert.deepEqual(c.in_scope, ["in.js"], "an in-scope edit is obedience, not evidence");
+  assert.deepEqual(c.from_cut, ["cut.js"]);
+  assert.deepEqual(c.from_candidates, ["cand.js"]);
+  assert.deepEqual(c.unnamed, ["miss.js"]);
+  assert.deepEqual(c.reverted, ["flip.js"], "a file changed and changed back is a wrong turn, not a target");
+  assert.equal(c.rows, 3);
+  // Under the floor the answer is unknown, with n beside it, never a figure.
+  const thin = aim.score([win], {});
+  assert.equal(thin.verdict, "unknown");
+  assert.equal(thin.precision, null);
+  assert.match(thin.detail, /3 exception row\(s\) over 1 brief\(s\); 12 rows over 4 brief\(s\) are needed/);
+});
+
+test("locate: windows are per brief and start at the brief, not at the session", async () => {
+  const aim = await import("../src/pinpoint/locate.js");
+  const wins = aim.windows([
+    { at: 1, session: "s", kind: "edit", file: "before.js", hash: "x" },
+    { at: 2, session: "s", kind: "brief", scope: ["one.js"], cut: [], candidates: ["c.js"] },
+    { at: 3, session: "s", kind: "edit", file: "one.js", hash: "a" },
+    { at: 4, session: "s", kind: "brief", scope: ["two.js"], cut: ["k.js"], candidates: [] },
+    { at: 5, session: "s", kind: "edit", file: "k.js", hash: "b" },
+    { at: 6, session: "s", kind: "edit", file: "", hash: "" },
+  ]);
+  assert.equal(wins.length, 2, "one window per brief: pooling lets a good locate pay for a bad one");
+  assert.deepEqual(wins[0].edits.map((e) => e.file), ["one.js"], "edits before the first brief have nothing to have missed");
+  assert.deepEqual(wins[1].edits.map((e) => e.file), ["k.js"], "a shell write carries no path and counts on neither side");
+});

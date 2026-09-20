@@ -163,6 +163,11 @@ export function log(rec) {
     fs.appendFileSync(LOG(), JSON.stringify({
       at: rec.at, session_id: rec.session_id, problem: rec.problem, path: rec.path,
       verdict: rec.verdict, projected: rec.projected, scope: rec.scope, cut: rec.cut,
+      // The candidates too, because the locate is scored against them: a file
+      // named below the scope line and then edited is the ranker having been
+      // right under a budget that was wrong, and dropping the list here would
+      // make that indistinguishable from never having found the file at all.
+      candidates: rec.candidates,
     }) + "\n");
     rotateLog({});
     return true;

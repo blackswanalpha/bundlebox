@@ -40,6 +40,7 @@ import * as ledger from "../tokens/ledger.js";
 import * as record from "../lathe/record.js";
 import { BIN } from "../arc/index.js";
 import * as wire from "../wire/brief.js";
+import * as locate from "../pinpoint/locate.js";
 
 export const DIR = () => path.join(OUT, "echos");
 export const LATEST = () => path.join(DIR(), "latest.json");
@@ -209,7 +210,8 @@ export function briefEvents() {
     if (!scope.length) continue;
     const session = String(rec.session_id || "");
     seen.add(session);
-    out.push({ at: ms(rec.at), session, kind: "brief", scope });
+    out.push({ at: ms(rec.at), session, kind: "brief", scope, path: String(rec.path || ""),
+      cut: (rec.cut || []).map(String), candidates: (rec.candidates || []).map(String) });
   }
   const dir = path.join(VAR, "brief");
   let names = [];
@@ -220,7 +222,8 @@ export function briefEvents() {
     const scope = (rec.scope || []).map(String).filter(Boolean);
     const session = String(rec.session_id || n.replace(/[.]json$/, ""));
     if (!scope.length || seen.has(session)) continue;
-    out.push({ at: ms(rec.at || rec.recorded), session, kind: "brief", scope });
+    out.push({ at: ms(rec.at || rec.recorded), session, kind: "brief", scope, path: String(rec.path || ""),
+      cut: (rec.cut || []).map(String), candidates: (rec.candidates || []).map(String) });
   }
   return out;
 }
@@ -265,12 +268,27 @@ export function viaArc(payload) {
   try { return { ...JSON.parse(r.out), engine: "arc" }; } catch { return null; }  // a binary from another version: fall back
 }
 
+/** The JS mirror, not the Python one, for the same reason `bb compile` uses the
+ *  JS throttle: this runs at session end inside a hook budget, and the selftest
+ *  pins the two to the same answers. Never throws — a baseline that failed to
+ *  compute costs one signal in the next brief, and failing the echos over it
+ *  would cost every other one. */
+function locateOf(events, cfg) {
+  try { return locate.measure(events, { cfg }); } catch { return null; }
+}
+
 export async function run({ cfg = load(), limit = 0, only = [] } = {}) {
   const th = thresholds(cfg);
   const { events: evs, unseen } = events({ limit });
   const payload = { events: evs, thresholds: th, only };
   const got = viaArc(payload) || (await import("./fallback.js")).run(payload);
-  return { at: now(), ...got, unseen, registry: got.registry || IDS };
+  // The same stream answers one more question, and it is the question none of
+  // the echos could: was the LOCATE right. `stray` measures the share that fell
+  // outside the scope, which an obedient agent drives to zero by construction;
+  // this scores the exception rows against the files the ranker offered and did
+  // not scope. Free here, because the events are already in hand.
+  const locate = locateOf(evs, cfg);
+  return { at: now(), ...got, locate, unseen, registry: got.registry || IDS };
 }
 
 // ── findings ────────────────────────────────────────────────────────────────
@@ -355,6 +373,12 @@ export function report(r) {
   if (unknown.length) {
     L.push("", "  could not look — unknown, not zero:");
     for (const e of unknown) L.push(`    ${e.id.padEnd(12)} ${e.detail}`);
+  }
+  // The locate's own aim, printed with its sample size whatever it says. A
+  // baseline that only appears once it is flattering is not a baseline.
+  if (r.locate) {
+    L.push("", `  locate — ${r.locate.verdict}: ${r.locate.detail}`);
+    L.push(`    n=${r.locate.n} briefs=${r.locate.windows_scored}/${r.locate.windows_seen} named=${r.locate.named} missed=${r.locate.missed} offered=${r.locate.offered} reverted=${r.locate.reverted} (${r.locate.engine})`);
   }
   if (r.unseen?.length) L.push(`\n  could not read: ${r.unseen.join(", ")}.`);
   return L.join("\n");

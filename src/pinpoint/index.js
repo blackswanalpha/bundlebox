@@ -26,6 +26,7 @@ import { clean } from "../slop/index.js";
 import { PREAMBLE } from "../wire/brief.js";
 import { rank, informative } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
+import * as aim from "./locate.js";
 
 export { ambiguity } from "./ambiguity.js";
 
@@ -245,6 +246,12 @@ export async function build(problem, { files = [], maxFiles = 6, kind = "fix" } 
     tables: await tablesFor(),
     via: { symbols: snapgen.symbolIndex().via, anchors: anchors.length ? (anchors.every((a) => a.via === "kernel") ? "kernel" : anchors.some((a) => a.via === "kernel") ? "mixed" : "js") : null },
   };
+  // What the last `bb echos` measured about this locate's own aim, read from
+  // one stat rather than recomputed: building the join here would put a walk
+  // over every transcript inside a 15s hook budget, and the number does not
+  // move between two briefs. Null until something has measured it, and the
+  // signal that reads it stays quiet on null.
+  b.locate = aim.cached();
   // Scored after the cut loop, because cutting for budget is itself one of the
   // things the brief does not settle.
   b.ambiguity = ambiguity(b);

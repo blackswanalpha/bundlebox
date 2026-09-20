@@ -4,7 +4,7 @@ import json
 import sys
 import time
 
-from . import __version__, confidence, coverage, grapple, graph, memory, model, rules, scenarios, sequences, signals, throttle, triage, world
+from . import __version__, confidence, coverage, grapple, graph, locate, memory, model, rules, scenarios, sequences, signals, throttle, triage, world
 
 
 def main(argv: list) -> int:
@@ -24,6 +24,8 @@ def main(argv: list) -> int:
         out = triage.calibrate(inp.get("findings") or [], inp.get("cfg"), inp.get("history"),
                                float(inp.get("cost_penalty", triage.TRIAGE_COST)),
                                int(inp.get("min_acted", triage.MIN_ACTED)))
+    elif verb == "locate-replay":
+        out = locate.replay(inp.get("windows") or [], inp.get("cfg"))
     elif verb == "confidence":
         out = {k: confidence.for_rule(v.get("precision", "heuristic"), v.get("held", 0), v.get("weak", 0), v.get("broken", 0)) for k, v in inp.get("rules", {}).items()}
     elif verb == "signals":
@@ -75,9 +77,9 @@ def main(argv: list) -> int:
     elif verb == "grapple":
         out = grapple.dispatch(inp)
     elif verb == "thresholds":
-        out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS}
+        out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS, "locate": locate.thresholds(inp.get("cfg"))}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "triage-replay", "triage-calibrate", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "triage-replay", "triage-calibrate", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
         return 2
     print(json.dumps(out))
     return 0

@@ -116,6 +116,19 @@ export const TOOLS = [
     },
   },
   {
+    // Five separate calls, answered in one. `bb echos` measured 1.04 tool calls
+    // per turn over 26 sessions here: every turn re-sends the whole window
+    // before the next fact arrives, so this verb exists to be the one call.
+    name: "bb_situation",
+    description: "Where this work stands, in one call: branch and what is uncommitted, what proves a change here, which artefacts are missing or stale, the work already packed, and what the last echos run saw. Call this instead of git status + git diff + bb env + bb findings + bb echos.",
+    inputSchema: { type: "object", properties: {} },
+    async run() {
+      const m = await lazy("../situation/index.js");
+      if (m.__missing) return missing(m, "bb situation");
+      return m.report(await m.situation({}));
+    },
+  },
+  {
     name: "bb_session",
     description: "What the current or last session used (measured from the transcript) and what it was spared (cache: measured; automation: estimate range).",
     inputSchema: { type: "object", properties: { session_id: { type: "string" } } },
