@@ -24,8 +24,9 @@ import fs from "node:fs";
 import path from "node:path";
 import * as kernel from "../core/kernel.js";
 import { run as execRun, shellCmd } from "../core/exec.js";
-import { check, checkCmd, asserts, stdoutBody } from "./expect.js";
+import { check, checkCmd, asserts, stdoutBody, parseUi } from "./expect.js";
 import { subst, clockOf, at, show } from "./tokens.js";
+import { byId as driverById, ids as driverIds } from "./drivers/index.js";
 
 const RED = new Set(["failed", "error"]);
 const tail = (s, cap) => (String(s).length <= cap ? String(s) : `…${String(s).slice(-cap)}`);
@@ -180,8 +181,38 @@ function cmdStep(spec, step, vars, name) {
   return { name, kind: "cmd", state: why.length ? "failed" : n === 0 ? "empty" : "passed", status: r.rc, ms, why, request: cmd, evidence };
 }
 
+/** One `ui` step, executed by the driver the corpus declared. The session is
+ *  held for the whole scenario, so `click` follows `type` on the same page. */
+async function uiStep(spec, step, vars, name, ui) {
+  const missing = [];
+  const line = show(subst(String(step.ui || ""), spec.clock, vars, missing));
+  const request = `ui ${line}`;
+  const evidence = { ui: line, driver: spec.driver || "" };
+  if (missing.length) return { name, kind: "ui", state: "error", status: null, ms: 0, why: [`unresolved token(s): ${[...new Set(missing)].join(", ")}`], request, evidence };
+  const a = parseUi(line);
+  if (a.why) return { name, kind: "ui", state: "error", status: null, ms: 0, why: [a.why], request, evidence };
+  const drv = driverById(spec.driver);
+  if (!drv) return { name, kind: "ui", state: "error", status: null, ms: 0, request, evidence,
+    why: [spec.driver ? `no driver \`${spec.driver}\`; persona.driver is one of ${driverIds().join(", ")}` : `this scenario has \`ui\` steps and persona.json declares no \`driver\` (${driverIds().join(", ")})`] };
+  const ready = await drv.available();
+  if (!ready.ok) return { name, kind: "ui", state: "blocked", status: null, ms: 0, why: [ready.why], request, evidence };
+  const t0 = Date.now();
+  try {
+    if (!ui.session) ui.session = await drv.open({ root: spec.root, base: spec.base }, "");
+    const r = await drv.act(ui.session, a);
+    Object.assign(evidence, r.got || {});
+    // A drive step is a bare `run`: `click #submit` claims the element is there
+    // and takes a click, and a click on nothing is a red step, not a no-op.
+    return { name, kind: "ui", state: r.ok ? "passed" : "failed", status: null,
+      ms: Date.now() - t0, why: r.ok ? [] : [r.why], request, evidence };
+  } catch (e) {
+    return { name, kind: "ui", state: "error", status: null, ms: Date.now() - t0, why: [String(e.message || e).split("\n")[0]], request, evidence };
+  }
+}
+
 async function runSteps(spec, steps, vars) {
   const out = [];
+  const ui = { session: null, opened: "" };
   let blocked = null;
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i] || {};
@@ -190,11 +221,13 @@ async function runSteps(spec, steps, vars) {
     let r;
     if (step.static) r = staticStep(spec, step, vars, name);
     else if (step.run) r = cmdStep(spec, step, vars, name);
+    else if (step.ui) r = await uiStep(spec, step, vars, name, ui);
     else if (step.do) r = await httpStep(spec, step, vars, name);
-    else r = { name, kind: "none", state: "empty", status: null, ms: 0, why: ["a step must have `do`, `run` or `static`"], request: "", evidence: {} };
+    else r = { name, kind: "none", state: "empty", status: null, ms: 0, why: ["a step must have `do`, `run`, `static` or `ui`"], request: "", evidence: {} };
     if (step.precondition && r.state !== "passed") blocked = `blocked by precondition \`${r.name}\`: ${r.why[0] || ""}`;
     out.push(r);
   }
+  if (ui.session) { const drv = driverById(spec.driver); try { await drv?.close(ui.session); } catch { /* the scenario is over either way */ } }
   return { steps: out, blocked };
 }
 
@@ -219,6 +252,7 @@ export async function runJs(input) {
     timeoutMs: Number(input.timeout_ms) || 20000,
     cap: Number(input.cap_bytes) || 1200,
     root: input.root || process.cwd(),
+    driver: String(input.driver || ""),
     max429: Number(input.max_429) ?? 6,
     requests: 0, throttled: 0,
   };
@@ -259,9 +293,15 @@ export async function runJs(input) {
 }
 
 /** Which engine can run this corpus, and why not the other one. */
+export const hasUi = (input) => (input.setup || []).some((s) => s && s.ui)
+  || (input.scenarios || []).some((sc) => (sc.steps || []).some((s) => s && s.ui));
+
 export function pick(input, { engine = "auto" } = {}) {
   const https = /^https:/i.test(String(input.base || ""));
   if (engine === "js") return { engine: "js", why: "asked for" };
+  // The drivers live in this engine and the kernel has no `ui` step at all, so
+  // `--engine kernel` over a ui corpus would be a green board about nothing.
+  if (hasUi(input)) return { engine: "js", why: "the corpus has `ui` steps and the drivers are node-side" };
   if (engine === "kernel") return kernel.available() ? { engine: "kernel", why: "asked for" } : { engine: "js", why: "no kernel binary on this box" };
   if (!kernel.available()) return { engine: "js", why: "no kernel binary on this box (`bb kernel build`)" };
   if (https) return { engine: "js", why: "the base is https and the kernel speaks http only" };

@@ -110,12 +110,35 @@ async function tokensCmd({ _, flags }) {
   }
   if (sub === "prices") { if (flags.json) emit(prices.PER_MTOK); else out(prices.table()); return 0; }
   if (sub === "budget") {
-    const cfg = load().lanes;
+    const cfg = load();
     const s = spentToday();
-    const limit = num(cfg.daily_budget_usd);
-    if (flags.json) { emit({ kind: "MEASURED", ...s, limit_usd: limit, ok: !limit || s.usd < limit }); return 0; }
+    // Both ceilings, because they are two clocks over two different sets of
+    // rows: `lanes` is every priced row today, `bridge` is only the rows the
+    // factory attributed. A loop running unattended stops at whichever one it
+    // reaches first, and reading one of them tells you nothing about the other.
+    const { dailyBudget } = await import("../run/runner.js");
+    const { ceiling } = await import("../bridge/index.js");
+    // `fallback` is the number to print when the guard had no cap to measure
+    // against. `dailyBudget` short-circuits and reports 0, which beside a day's
+    // real total reads as a second and more authoritative zero, so the day's own
+    // number goes there. `ceiling` always measures, and what it measures is a
+    // different set — attributed rows only — so its zero is a fact and stands.
+    const guards = [["lanes.daily_budget_usd", dailyBudget(cfg), "bb run --apply refuses", s.usd],
+                    ["bridge.daily_budget_usd", ceiling(cfg), "bb bridge send refuses", null]];
+    const rows = guards.map(([name, g, refuses, fallback]) => ({
+      ceiling: name, limit: num(g.limit), spent: num(g.limit) || fallback === null ? g.spent : fallback, over_by: num(g.over_by),
+      // `over_by` is a column and not a footnote because it is the only number
+      // here that says the ceiling did not hold. Both guards are measured off
+      // FOLDED transcripts, so a call or a lane that landed between two folds is
+      // invisible to the check in front of the next one — and the first evidence
+      // of it is a spend already past the limit rather than at it.
+      verdict: !num(g.limit) ? "no cap" : g.ok ? "under" : num(g.over_by) ? `PAST IT — ${refuses}` : `REACHED — ${refuses}`,
+    }));
+    if (flags.json) { emit({ kind: "MEASURED", ...s, ceilings: rows, ok: rows.every((r) => !r.limit || r.verdict === "under") }); return 0; }
     out(`  today ${s.date}: ${usd(s.usd)} over ${human(s.tokens)} tokens MEASURED${s.unpriced_rows ? ` (${s.unpriced_rows} rows unpriced)` : ""}`);
-    out(limit ? `  lanes.daily_budget_usd ${usd(limit)} — ${s.usd < limit ? "under" : "REACHED, bb run --apply will refuse"}` : "  lanes.daily_budget_usd 0 — no cap");
+    out(table(rows.map((r) => [r.ceiling, r.limit ? usd(r.limit) : "none", r.spent == null ? "n/a" : usd(r.spent), r.over_by ? usd(r.over_by) : "-", r.verdict]),
+      { header: ["ceiling", "limit", "spent", "over_by", ""] }).split("\n").map((l) => "  " + l).join("\n"));
+    if (rows.some((r) => r.over_by)) out("  over_by is the fold gap: the ceiling is measured at the next ledger fold, not at spawn, so one call or lane can land past it. Reported, not closed.");
     return 0;
   }
   warn(`unknown sub-verb: ${sub}`);

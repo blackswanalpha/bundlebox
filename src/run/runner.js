@@ -197,7 +197,14 @@ export function dailyBudget(cfg = load()) {
       const c = prices.cost(r.model, { inp: num(r.input), out: num(r.output), cache_write: num(r.cache_write), cache_read: num(r.cache_read) });
       if (c) spent += c.total;
     }
-    return spent >= limit ? { ok: false, limit, spent, why: `daily budget $${limit} reached ($${spent.toFixed(2)} spent today)` } : { ok: true, limit, spent };
+    // `over_by`: the same fold gap the bridge ceiling reports. A lane that
+    // spawned between two folds is not in the ledger the next check reads, so
+    // the ceiling can be found already passed rather than reached. Reported, not
+    // closed — closing it means pricing a session before it has run.
+    const over = spent > limit ? Math.round((spent - limit) * 100) / 100 : 0;
+    return spent >= limit
+      ? { ok: false, limit, spent, over_by: over, why: `daily budget $${limit} reached ($${spent.toFixed(2)} spent today${over ? `, $${over.toFixed(2)} past it: one lane landed inside the fold gap` : ""})` }
+      : { ok: true, limit, spent, over_by: 0 };
   } catch (e) { return { ok: false, limit, spent: null, why: `budget check failed (${e.message}); refusing to spawn` }; }
 }
 

@@ -44,7 +44,9 @@ async function genesisCmd({ _, flags }) {
 
   if (!sub || !known.has(sub)) {
     // `bb genesis <doc>` is the whole point: no sub-verb, one argument.
-    const r = derive({ doc: sub || String(flags.doc || ""), prompt: String(flags.prompt || ""), name: String(flags.name || ""), base: String(flags.base || "") });
+    const r = derive({ doc: sub || String(flags.doc || ""), prompt: String(flags.prompt || ""),
+      finding: String(flags.finding || ""), ticket: String(flags.ticket || ""),
+      name: String(flags.name || ""), base: String(flags.base || "") });
     if (r.rc) { warn(r.why); return r.rc; }
     const s = seed(r.id, { base: String(flags.base || ""), corpusId: String(flags.persona || "") });
     if (flags.json) { emit({ world: r.world, seed: s }); return 0; }
@@ -140,9 +142,12 @@ async function genesisCmd({ _, flags }) {
 export const commands = {
   genesis: {
     help: "a document or a prompt becomes a world model, a corpus and the briefs that fill it (0 tokens until send)",
-    usage: "bb genesis <doc.md|-|--prompt \"...\"> [--base url] [--name id] | show | plan | pack [--batch 4] | send [surface] [--run --spend] | practice [--rounds 3] [--run --spend] | seed | list",
+    usage: "bb genesis <doc.md|-|--prompt \"...\"|--finding id|--ticket file> [--base url] [--name id] | show | plan | pack [--batch 4] | send [surface] [--run --spend] | practice [--rounds 3] [--run --spend] | seed | list",
     long: [
       "  bb genesis docs/PRD.md          surfaces, actors, rules, capabilities — and a corpus seeded from them",
+      "  bb genesis --finding 19cc2375a2 the same, from a row the detectors already filed: its path is the surface,",
+      "                                  its detail is the rule, and a scenario asserting that rule is what the plan then wants",
+      "  bb genesis --ticket issue.md    the same, from a pasted issue or crash report",
       "  bb genesis plan                 of everything that world can do, what no scenario touches, ranked",
       "  bb genesis pack                 one brief per surface, carrying the derived half already done",
       "  bb genesis send calendar --run --spend    the only step that costs anything",

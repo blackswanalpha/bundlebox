@@ -164,8 +164,26 @@ export function stage(d) {
     skip_if_fresh: !!d.skip_if_fresh,
     inputs: typeof d.inputs === "function" ? d.inputs : Array.isArray(d.inputs) ? pathsFn(d.inputs) : null,
     optional: !!d.optional,
+    spends: !!d.spends,
     description: d.description || "",
   };
+}
+
+/** The three keys that ARE the permission for a stage declared `spends: true`.
+ *
+ *  Every built-in gear is free, and the rule at the top of gears.js is that a
+ *  tick cannot do anything it would need permission for. `spends` does not
+ *  weaken that rule, it names where the permission is kept: the bridge switched
+ *  on, a ceiling on what the bridge may spend in a day, and a ceiling on what
+ *  the lanes it opens may spend in a day. Absent any one of them the stage is
+ *  refused and the missing key is named, because a tick that silently did
+ *  nothing is indistinguishable from a tick that silently spent. */
+export function spendKeys(cfg) {
+  const missing = [];
+  if (!cfg?.bridge?.enabled) missing.push("bridge.enabled");
+  if (!(Number(cfg?.bridge?.daily_budget_usd) > 0)) missing.push("bridge.daily_budget_usd > 0");
+  if (!(Number(cfg?.lanes?.daily_budget_usd) > 0)) missing.push("lanes.daily_budget_usd > 0");
+  return { ok: missing.length === 0, missing };
 }
 
 /** A JSON gear cannot carry a function, so its `inputs` is a list of paths
@@ -186,9 +204,14 @@ function pathsFn(paths) {
 
 export function gear(d) {
   if (!d || !d.name) throw new Error("gear needs a name");
+  const stages = (d.stages || []).map(stage);
   return {
     name: String(d.name), description: d.description || "",
-    stages: (d.stages || []).map(stage),
+    stages,
+    // Declared on the gear, or inherited from any stage that declares it: what
+    // `bb pipeline list` has to show is whether running this gear can cost
+    // money, and a gear whose fourth stage spends is a gear that spends.
+    spends: !!d.spends || stages.some((s) => s.spends),
     on: Array.isArray(d.on) ? d.on.map(String) : [],
     chain: (d.chain || []).map((c) => (typeof c === "string" ? { gear: c, when: "" } : { gear: String(c.gear), when: c.when || "" })),
   };

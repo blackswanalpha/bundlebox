@@ -123,4 +123,179 @@ test("practice with the default actor and no bridge spends nothing and says so",
   assert.ok(out.rounds[0].sent.every((s) => s.state !== "done"));
 });
 
+test("genesis --finding: the row's path is the surface, its detail is the rule, and what it names is a capability", async (t) => {
+  if (skipIfNoPython(t)) return;
+  store.put("findings", [...store.get("findings", []), {
+    id: "f00dcafe01", detector: "silent-fallback", severity: "high", status: "open",
+    path: "src/api/invoices.js", files: ["src/api/invoices.js"],
+    title: "src/api/invoices.js: the tenant falls back without a warning",
+    detail: "POST /invoices must not fall back to the default tenant when the header is absent. `bb scan --only silent-fallback` shows it.",
+    fix_hint: "Return 400 instead of falling back.",
+    evidence: { line: 42, snippet: "tenant = header || DEFAULT_TENANT" },
+  }]);
+  const r = genesis.derive({ finding: "f00dcafe" });
+  assert.equal(r.rc, 0, r.why);
+  const w = r.world;
+  assert.equal(w.row.kind, "finding");
+  assert.deepEqual(w.surfaces.map((s2) => s2.id), ["invoices"], "the surface is named from the path");
+  assert.equal(w.rules.length, 1);
+  assert.match(w.rules[0].text, /must not fall back/);
+  assert.equal(w.rules[0].modality, "must_not");
+  assert.equal(w.rules[0].surface, "invoices");
+  // A capability for every route and command the row names, and nothing else.
+  const caps = w.capabilities.map((c) => c.id);
+  assert.ok(caps.includes("http:POST /invoices"), caps.join(", "));
+  assert.ok(caps.some((c) => c.startsWith("cmd:bb scan")), caps.join(", "));
+  assert.ok(w.capabilities.every((c) => c.surface === "invoices"));
+  // and unknown rows for what a row cannot settle
+  assert.ok(w.unknown.some((u) => /actors/.test(u)), w.unknown.join(" | "));
+  assert.ok(w.unknown.some((u) => /base URL/.test(u)), w.unknown.join(" | "));
+  assert.ok(fs.existsSync(path.join(root, ".bundlebox", "genesis", "invoices", "source.txt")));
+});
+
+test("genesis --finding: an id that matches nothing, and one that matches more than one row, both say so", async (t) => {
+  if (skipIfNoPython(t)) return;
+  assert.match(genesis.derive({ finding: "nosuchrow" }).why, /no finding/);
+  store.put("findings", [...store.get("findings", []),
+    { id: "dupe01", detector: "x", path: "a.js", title: "a", detail: "a must hold", status: "open" },
+    { id: "dupe02", detector: "x", path: "b.js", title: "b", detail: "b must hold", status: "open" }]);
+  assert.match(genesis.derive({ finding: "dupe" }).why, /matches 2 findings/);
+});
+
+test("genesis --ticket: a pasted issue reaches the same world shape", async (t) => {
+  if (skipIfNoPython(t)) return;
+  const f = path.join(tmp, "issue.md");
+  fs.writeFileSync(f, "# Checkout hangs\n\nGET /checkout must answer inside 2s. It does not, on every second call.\n");
+  const r = genesis.derive({ ticket: f, name: "checkout-ticket" });
+  assert.equal(r.rc, 0, r.why);
+  const w = r.world;
+  assert.equal(w.row.kind, "ticket");
+  assert.deepEqual(w.surfaces.map((s2) => s2.id), ["checkout-hangs"], "no path, so the surface is the title");
+  assert.equal(w.rules.length, 1);
+  assert.match(w.rules[0].text, /must answer inside 2s/);
+  assert.deepEqual(w.capabilities.map((c) => c.id), ["http:GET /checkout"]);
+  assert.match(genesis.derive({ ticket: path.join(tmp, "nothing.md") }).why, /cannot read/);
+});
+
+test("practice: it starts the service that declares the base, and hands what it found to compile and route", async (t) => {
+  if (skipIfNoPython(t)) return;
+  const doc = path.join(root, "SHOP.md");
+  fs.writeFileSync(doc, DOC);
+  assert.equal(genesis.derive({ doc, name: "shop" }).rc, 0);
+  assert.equal(genesis.seed("shop", { base }).rc, 0);
+  // Declared and down: nothing in the runbook state has ever started it. The
+  // command exits immediately — what is under test is that the round resolved
+  // the base to this row and started it, not what the process then did.
+  fs.mkdirSync(path.join(root, ".bundlebox", "runbook"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".bundlebox", "runbook", "services.json"), JSON.stringify([
+    { id: "probe", group: "all", cmd: `${JSON.stringify(process.execPath)} -e ""`, cwd: ".", port: Number(port), health: `${base}/orders` },
+  ]));
+  const scen = path.join(root, ".bundlebox", "cookbook", "shop", "scenarios");
+  const dir = fs.readdirSync(scen).find((d) => /orders/.test(d));
+  const surface = dir.replace(/^\d+-/, "");
+  const actor = async (pack) => {
+    if (pack.surface !== surface) return { state: "done", why: "nothing for this surface" };
+    sc(path.join(scen, dir), "01-submit.json", { id: "shop-submit", surface, severity: "high", title: "submit with no line",
+      question: "is an empty order refused?", rule: ["An order must have at least one line before it can be submitted (line 2)"],
+      steps: [{ name: "submit empty", do: "POST /orders", body: { lines: [] }, expect: { status: 422 } }] });
+    return { state: "done", why: "wrote 1" };
+  };
+  const out = await practice.practice("shop", { rounds: 1, actor });
+  assert.equal(out.rc, 0, out.why);
+  // W2: the round names the service it started.
+  assert.equal(out.base, base);
+  assert.equal(out.service.id, "probe");
+  assert.match(out.service.state, /^(up|already up)$/, JSON.stringify(out.service));
+  // W3: the red-under-a-rule scenario is a finding, and the round ends holding
+  // a packed unit and a lane rather than a row.
+  const round = out.rounds[0];
+  assert.equal(round.kept.length, 1);
+  assert.match(round.kept[0].why, /red under a quoted rule/);
+  assert.ok(round.findings >= 1, JSON.stringify(round.kept));
+  assert.ok(round.units.length >= 1, `no unit for the kept red scenario: ${JSON.stringify(round)}`);
+  const laneIds = new Set(store.get("lanes", []).map((l) => l.id));
+  for (const ln of round.lanes) assert.ok(laneIds.has(ln.id), `${ln.id} is not in lanes.json, so \`bb run\` would not list it`);
+  assert.ok(round.lanes.length >= 1 && round.lanes.every((l) => l.units > 0), JSON.stringify(round.lanes));
+});
+
+test("practice: services declared and none at this base is a mismatch the round refuses to run at", async (t) => {
+  if (skipIfNoPython(t)) return;
+  fs.writeFileSync(path.join(root, ".bundlebox", "runbook", "services.json"), JSON.stringify([
+    { id: "elsewhere", cmd: "true", port: 1, health: "http://127.0.0.1:1/health" },
+  ]));
+  const scen = path.join(root, ".bundlebox", "cookbook", "shop", "scenarios");
+  const dir = fs.readdirSync(scen).find((d) => /tenancy/.test(d)) || fs.readdirSync(scen)[0];
+  const surface = dir.replace(/^\d+-/, "");
+  const actor = async (pack) => {
+    if (pack.surface !== surface) return { state: "done", why: "nothing for this surface" };
+    sc(path.join(scen, dir), "01-list.json", { id: "shop-list", surface, severity: "low", title: "list is reachable",
+      question: "does GET /orders answer?", rule: ["GET /orders is exposed (line 3)"],
+      steps: [{ name: "list", do: "GET /orders", expect: { status: 200 } }] });
+    return { state: "done", why: "wrote 1" };
+  };
+  const out = await practice.practice("shop", { rounds: 1, actor });
+  assert.equal(out.service.state, "undeclared");
+  assert.match(out.service.why, /no service declares/);
+  assert.equal(out.rounds[0].kept[0].why, "validated; not run");
+  fs.rmSync(path.join(root, ".bundlebox", "runbook", "services.json"));
+});
+
+test("practice: a ceiling already reached stops the loop before it drafts anything, and it is re-read every round", async (t) => {
+  if (skipIfNoPython(t)) return;
+  const cfg = path.join(root, ".bundlebox", "config.json");
+  // A day's worth of priced usage against a $1 lane ceiling.
+  store.append("usage", { ts: `${new Date().toISOString().slice(0, 10)}T00:00:00Z`, session_id: "s", msg_id: "m",
+    run_id: "r", model: "claude-sonnet-5", input: 4_000_000, output: 400_000 });
+  fs.writeFileSync(cfg, JSON.stringify({ lanes: { daily_budget_usd: 1 }, bridge: { enabled: true, daily_budget_usd: 1 } }));
+  let sent = 0;
+  const out = await practice.practice("shop", { rounds: 3, spend: true, run: true, actor: async () => { sent += 1; return { state: "done" }; } });
+  assert.equal(out.rc, 0, out.why);
+  assert.equal(sent, 0, "nothing was drafted against a ceiling already reached");
+  assert.equal(out.rounds.length, 0);
+  assert.match(out.stopped, /^budget: /);
+  assert.match(out.stopped, /lanes —/);
+  assert.equal(out.budget.ok, false);
+  assert.ok(out.budget.lanes.over_by > 0, JSON.stringify(out.budget));
+
+  // Raised between runs: the loop reads it again rather than caching it.
+  fs.writeFileSync(cfg, JSON.stringify({ lanes: { daily_budget_usd: 0 }, bridge: { enabled: true, daily_budget_usd: 0 } }));
+  const again = await practice.practice("shop", { rounds: 1, spend: true, run: true, actor: async () => { sent += 1; return { state: "done", why: "nothing written" }; } });
+  assert.equal(again.budget.ok, true);
+  assert.ok(sent > 0, "with no ceiling the round drafts");
+  fs.unlinkSync(cfg);
+});
+
+test("practice: two rounds that buy no coverage stop the loop, whatever the verifier kept", async (t) => {
+  if (skipIfNoPython(t)) return;
+  const doc = path.join(root, "REPEAT.md");
+  fs.writeFileSync(doc, DOC);
+  assert.equal(genesis.derive({ doc, name: "repeat" }).rc, 0);
+  assert.equal(genesis.seed("repeat", { base }).rc, 0);
+  const scen = path.join(root, ".bundlebox", "cookbook", "repeat", "scenarios");
+  const dir = fs.readdirSync(scen).find((d) => /orders/.test(d));
+  const surface = dir.replace(/^\d+-/, "");
+  let round = 0;
+  // Every round: one scenario that is kept, and one that is rejected for the
+  // SAME reason under the same name. The lessons bump and never add.
+  const actor = async (pack) => {
+    if (pack.surface !== surface) return { state: "done", why: "nothing for this surface" };
+    round += 1;
+    sc(path.join(scen, dir), `0${round}-ok.json`, { id: `repeat-ok-${round}`, surface, severity: "low", title: "list",
+      question: "?", rule: ["GET /orders is exposed (line 3)"], steps: [{ name: "list", do: "GET /orders", expect: { status: 200 } }] });
+    sc(path.join(scen, dir), "99-same.json", { id: "repeat-same", surface, severity: "low", title: "asserts nothing",
+      question: "?", rule: ["x"], steps: [{ name: "look", do: "GET /orders" }] });
+    return { state: "done", why: "wrote 2" };
+  };
+  const out = await practice.practice("repeat", { rounds: 6, actor });
+  assert.equal(out.rc, 0, out.why);
+  assert.match(out.stopped, /^no progress: coverage held at .+ for 2 rounds/);
+  assert.equal(out.rounds[out.rounds.length - 1].stale_rounds, 2);
+  assert.ok(out.rounds.length < 6, `it ran every round it was given: ${out.rounds.map((r) => r.coverage_pct).join(", ")}`);
+  // It kept a scenario every round and the verifier passed every time: this is
+  // the one stop that a round's own verdict cannot reach.
+  assert.ok(out.kept >= out.rounds.length, JSON.stringify(out.rounds.map((r) => r.kept.length)));
+  const pcts = out.rounds.map((r) => r.coverage_pct);
+  assert.equal(pcts[pcts.length - 1], pcts[pcts.length - 2], `coverage moved: ${pcts.join(", ")}`);
+});
+
 test.after(() => child.kill());

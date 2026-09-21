@@ -163,3 +163,43 @@ export function checkCmd(expect, { rc, stdout, stderr, ms }) {
   if (n === 0 && !e) { n = 1; if (rc !== 0) why.push(`rc ${rc} and nothing was asserted; a bare \`run\` step expects 0`); }
   return { why, n };
 }
+
+// ── the ui half ─────────────────────────────────────────────────────────────
+//
+// The fourth step kind, and the one thing about it that matters: there is no
+// model between the step and the action. `{"ui": "click #submit"}` is a line an
+// actor wrote ONCE, at practice time, and every replay after that costs
+// nothing. A driver that took natural language per step would be a model call
+// per step — ten minutes and twenty-four thousand tokens per drive, measured in
+// `src/recom/artemis.js` — against a corpus this factory replays on every tick.
+//
+// The grammar is four verbs and nothing else. A fifth would be a place for a
+// sentence to hide.
+export const UI_VERBS = ["open", "click", "type", "expect"];
+
+/** `{ verb, selector, text }` from a ui line, or `{ why }`. */
+export function parseUi(line) {
+  const raw = String(line || "").trim();
+  if (!raw) return { why: "`ui` is empty" };
+  const [head, ...rest] = raw.split(/\s+/);
+  const verb = head.toLowerCase();
+  if (!UI_VERBS.includes(verb)) return { why: `\`${head}\` is not a ui verb; one of ${UI_VERBS.join(", ")}` };
+  const tail = rest.join(" ").trim();
+  if (verb === "open") return tail ? { verb, target: tail } : { why: "`open` needs a page: `open index.html`" };
+  if (verb === "click") return tail ? { verb, selector: tail } : { why: "`click` needs a selector: `click #submit`" };
+  if (verb === "type") {
+    const m = /^(\S+)\s+(.+)$/.exec(tail);
+    return m ? { verb, selector: m[1], text: unquote(m[2]) } : { why: '`type` needs a selector and a value: `type #email a@b.c`' };
+  }
+  // expect: `expect text "..."` | `expect visible <selector>` | `expect absent <selector>`
+  const m = /^(text|visible|absent)\s+(.+)$/.exec(tail);
+  if (!m) return { why: '`expect` takes `text <string>`, `visible <selector>` or `absent <selector>`' };
+  return m[1] === "text" ? { verb, what: "text", text: unquote(m[2]) } : { verb, what: m[1], selector: m[2].trim() };
+}
+
+const unquote = (s) => { const t = String(s).trim(); return /^(".*"|'.*')$/s.test(t) ? t.slice(1, -1) : t; };
+
+/** Does a ui action assert anything? `click` and `type` drive; only `expect`
+ *  makes a claim, and a scenario of nothing but drives is green because nothing
+ *  was checked — the state `corpus.check()` exists to refuse. */
+export const uiAsserts = (action) => action.verb === "expect";
