@@ -20,13 +20,13 @@
 import path from "node:path";
 import * as store from "../core/store.js";
 import * as expert from "../core/expert.js";
-import { readJson } from "../core/config.js";
+import { readJson, load as loadConfig } from "../core/config.js";
 import { VAR } from "../core/paths.js";
 import { setMode, isJson, warn } from "../core/log.js";
 import { now, stamp, shortId, slug, sum } from "../core/util.js";
 import { fingerprint, inputsOf, readMeta, writeMeta } from "../kit/cache.js";
 import * as episodes from "../buckmaster/episodes.js";
-import { evaluate, verbKey, load as loadGears } from "./spec.js";
+import { evaluate, verbKey, spendKeys, load as loadGears } from "./spec.js";
 import { context, storeFacts, features } from "./facts.js";
 
 export { context } from "./facts.js";
@@ -82,6 +82,19 @@ function decide(g, st, row, { ctx, model, lift, apply, prev }) {
     if (f.fresh) { row.state = "fresh"; row.why = f.fresh; }
   }
   const feats = features(st, ctx, inputCount);
+
+  // The one stage kind that can cost money, and the only place in this loop
+  // that can. Checked before the dry-run branch so `refused` beats `would-run`:
+  // a stage nobody has given permission to is refused whether or not --apply
+  // was typed, and a person reading a dry run has to see which key is missing.
+  if (!row.state && st.spends) {
+    // `fresh`: the ceilings are read at the moment of the decision, not from
+    // whatever this process cached at start-up. A worker that has been up for
+    // six hours deciding on a six-hour-old budget is the one case this check
+    // exists for.
+    const g = spendKeys(loadConfig({ fresh: true }));
+    if (!g.ok) { row.state = "refused"; row.why = `spends: ${g.missing.join(", ")} — not set. \`bb config\``; }
+  }
 
   // Only a model that beat its base rate votes; the base-rate fallback is not a prediction.
   if (!row.state && st.optional && model && model.useful) {
@@ -173,7 +186,7 @@ export async function runGear(name, opts = {}) {
 
   const ran = rows.filter((r) => r.state === "ran");
   const failed = rows.filter((r) => r.state === "error" || (r.state === "ran" && r.rc === 2));
-  const skipped = rows.filter((r) => ["gated", "fresh", "predicted-idle"].includes(r.state));
+  const skipped = rows.filter((r) => ["gated", "fresh", "predicted-idle", "refused"].includes(r.state));
   // Labels are decided once the whole run is visible: what a stage produced is
   // only worth something if a LATER stage read it.
   episodes.autolabel(eps, { completed: true });

@@ -8,20 +8,27 @@
 // `02-items` has written its rows before `09-search` goes looking for them, so
 // a corpus that seeds its own row proves the index rather than the product.
 //
+// A step is one of four things: `do` is an HTTP call, `run` is a command,
+// `static` is a file assertion and `ui` is an action against the driver the
+// persona declares. Nothing else, and a fifth would be a place for a sentence
+// to hide.
+//
 // `check()` is the whole difference between green-because-everything-held and
 // green-because-nothing-was-checked, and it needs no server: it refuses a
 // scenario in which nothing asserts, an unknown surface, an expectation key
-// nothing implements, a duplicate id, an `as` that names nobody and a
-// `{{token}}` nothing in scope defines. A typo in `as` would otherwise fall
-// back to the persona silently, and a tenancy-leak scenario that ran entirely
-// as ONE user is green for the worst possible reason.
+// nothing implements, a duplicate id, an `as` that names nobody, a `ui` step
+// whose driver is not declared, and a `{{token}}` nothing in scope defines. A
+// typo in `as` would otherwise fall back to the persona silently, and a
+// tenancy-leak scenario that ran entirely as ONE user is green for the worst
+// possible reason.
 import fs from "node:fs";
 import path from "node:path";
 import { BB_DIR, rel } from "../core/paths.js";
 import { readJson, writeJson } from "../core/config.js";
-import { KEYS } from "./expect.js";
+import { KEYS, parseUi, uiAsserts } from "./expect.js";
 import { builtin, refs } from "./tokens.js";
 import { unsupportedPatterns } from "./engine.js";
+import { byId as driverById, ids as driverIds } from "./drivers/index.js";
 
 export const DIR = () => path.join(BB_DIR, "cookbook");
 export const dirOf = (id) => path.join(DIR(), id);
@@ -73,7 +80,11 @@ export function list() {
   });
 }
 
-const ASSERTING = (st) => Boolean(st.static || st.run || (st.expect && Object.keys(st.expect).some((k) => KEYS.includes(k))));
+// A `ui` step asserts only when it is an `expect`: `click` and `type` drive.
+// A scenario of nothing but drives is green because nothing was checked, which
+// is the one state this whole function exists to refuse.
+const uiClaims = (st) => { const a = parseUi(st.ui); return !a.why && uiAsserts(a); };
+const ASSERTING = (st) => Boolean(st.static || st.run || (st.ui && uiClaims(st)) || (st.expect && Object.keys(st.expect).some((k) => KEYS.includes(k))));
 
 /** Where a step's tokens have to resolve. The fields are the ones the engine
  *  substitutes with `missing` COLLECTED; `save` values are left out because it
@@ -81,7 +92,7 @@ const ASSERTING = (st) => Boolean(st.static || st.run || (st.expect && Object.ke
  *  is a path that matches nothing rather than a step error — and refusing it
  *  here would make the gate stricter than the run it stands in front of. */
 const stepRefs = (st) => [
-  ...refs(st.do || ""), ...refs(st.run || ""), ...refs(st.static || {}),
+  ...refs(st.do || ""), ...refs(st.run || ""), ...refs(st.static || {}), ...refs(st.ui || ""),
   ...refs(st.body === undefined ? "" : st.body), ...refs(st.expect || {}), ...refs(st.headers || {}),
 ];
 const saves = (st) => (st.save && typeof st.save === "object" ? Object.keys(st.save) : []);
@@ -104,6 +115,7 @@ export function check(c) {
     for (const n of new Set(names)) if (!scope.has(n) && !builtin(n))
       errors.push(`${at}: \`{{${n}}}\` resolves to nothing — not a persona var, not saved by an earlier step, not a built-in`);
   };
+  const driver = String(c.persona.driver || "");
   const shared = new Set([...Object.keys(c.persona.vars || {}), "base"]);
   (c.persona.setup || []).forEach((st, i) => {
     unresolved(stepRefs(st), `setup step ${i + 1} (${st.name || "unnamed"})`, shared);
@@ -129,10 +141,20 @@ export function check(c) {
     if (!sc.severity) warnings.push(`${where}: no severity; it will triage as medium`);
     steps.forEach((st, i) => {
       const at = `${where} step ${i + 1} (${st.name || "unnamed"})`;
-      const kinds = ["do", "run", "static"].filter((k) => st[k]);
-      if (kinds.length === 0) errors.push(`${at}: has none of \`do\`, \`run\`, \`static\``);
+      const kinds = ["do", "run", "static", "ui"].filter((k) => st[k]);
+      if (kinds.length === 0) errors.push(`${at}: has none of \`do\`, \`run\`, \`static\`, \`ui\``);
       if (kinds.length > 1) errors.push(`${at}: has both \`${kinds.join("` and `")}\`; a step is one thing`);
       if (st.do && !/^\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S/i.test(st.do)) errors.push(`${at}: \`do\` must be "METHOD /path", got ${JSON.stringify(st.do)}`);
+      if (st.ui) {
+        // A `ui` step whose driver is undeclared is refused HERE, before the
+        // run. The alternative is a board in which every ui step errored for
+        // the same reason, which costs a run to learn one fact about the
+        // persona file.
+        const a = parseUi(st.ui);
+        if (a.why) errors.push(`${at}: \`ui: ${st.ui}\` — ${a.why}`);
+        if (!driver) errors.push(`${at}: has a \`ui\` step and persona.json declares no \`driver\` (one of ${driverIds().join(", ")})`);
+        else if (!driverById(driver)) errors.push(`${at}: persona.driver \`${driver}\` is not a driver; one of ${driverIds().join(", ")}`);
+      }
       for (const k of Object.keys(st.expect || {})) if (!KEYS.includes(k)) errors.push(`${at}: expectation \`${k}\` is not implemented — nothing would check it`);
       if (st.as && !actorIds.has(st.as)) errors.push(`${at}: \`as: ${st.as}\` names nobody in persona.actors`);
       if (st.save && typeof st.save !== "object") errors.push(`${at}: \`save\` must be an object of {name: path}`);
@@ -162,6 +184,10 @@ export function spec(c, { base = "", rpm = null, only = "", ids: pick = null, pa
     timezone: p.timezone || "UTC",
     tz_offset_minutes: p.tz_offset_minutes ?? 0,
     headers: p.headers || {},
+    // Declared, never guessed: a corpus written for a page silently driving a
+    // phone would first show up as a board of red steps about selectors that
+    // never existed.
+    driver: p.driver || "",
     // `{{base}}` is always the base this board actually ran against, and it is
     // set AFTER the persona's own vars so it cannot be shadowed. A corpus that
     // could disagree with the base printed at the top of the board would be

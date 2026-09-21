@@ -161,8 +161,16 @@ export function ceiling(cfg = load(), readUsage = () => store.rows("usage")) {
       const c = prices.cost(r.model, { inp: num(r.input), out: num(r.output), cache_write: num(r.cache_write), cache_read: num(r.cache_read) });
       if (c) spent += c.total; else unpriced += 1;
     }
-    if (limit && spent >= limit) return { ok: false, limit, spent, unpriced, why: `today's attributed spend $${spent.toFixed(2)} has reached the $${limit} bridge ceiling` };
-    return { ok: true, limit, spent, unpriced };
+    // `over_by` is the fold gap, reported rather than closed. This ceiling is
+    // measured off folded transcripts, and a call that lands between two folds
+    // is invisible to the check in front of the next one — so a tick can
+    // overspend by one call, and the first evidence of it is a spend already
+    // PAST the limit rather than at it. Saying by how much is the difference
+    // between a ceiling that held and one that was noticed afterwards.
+    const over = limit && spent > limit ? Math.round((spent - limit) * 100) / 100 : 0;
+    if (limit && spent >= limit) return { ok: false, limit, spent, unpriced, over_by: over,
+      why: `today's attributed spend $${spent.toFixed(2)} has reached the $${limit} bridge ceiling${over ? ` and is $${over.toFixed(2)} past it: one call landed inside the fold gap` : ""}` };
+    return { ok: true, limit, spent, unpriced, over_by: 0 };
   } catch (e) { return { ok: false, limit, spent: null, why: `budget check failed (${e.message}); refusing to send` }; }
 }
 

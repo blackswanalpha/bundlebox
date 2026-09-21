@@ -79,6 +79,32 @@ test("nothing on the unattended tick can spend", async () => {
   assert.deepEqual(await cron.unsafeVerbs(env.BOOTSTRAP), []);
 });
 
+test("a line that may spend is a third list, asked for by name, and the three keys are still the permission", async () => {
+  const cron = await import("../src/cron.js");
+  const { GEARS } = await import("../src/pipeline/gears.js");
+  // The default install cannot produce one however the flags are read.
+  assert.equal(cron.lines({}).length, cron.CRON_ENTRIES.length);
+  assert.equal(cron.lines({ spend: false }).length, cron.CRON_ENTRIES.length);
+  assert.ok(cron.SPEND_ENTRIES.length >= 1);
+  for (const e of cron.SPEND_ENTRIES) {
+    assert.ok(!cron.CRON_ENTRIES.some((x) => x.gear === e.gear), `${e.gear} is on both lists`);
+    const g = GEARS.find((x) => x.name === e.gear);
+    assert.ok(g && g.spends, `${e.gear} is installed by --spend but does not declare spends`);
+    // Refused by default, allowed only when the caller asked for a spending line.
+    assert.ok((await cron.unsafeVerbs(e.gear)).length, `${e.gear} installs without --spend`);
+    assert.deepEqual(await cron.unsafeVerbs(e.gear, { spend: true }), []);
+  }
+  const ls = cron.lines({ spend: true });
+  assert.equal(ls.length, cron.CRON_ENTRIES.length + cron.SPEND_ENTRIES.length);
+  for (const e of cron.SPEND_ENTRIES) assert.ok(ls.some((l) => cron.gearOf(l) === e.gear), e.gear);
+  // A day is midnight, not `*/24`: the hour field caps at 23 and would fire twice.
+  assert.equal(cron.schedule(1440), "0 0 * * *");
+  // `--spend` does not grant permission; the three config keys do, at the tick.
+  const perm = await cron.spendPermission();
+  assert.equal(typeof perm.ok, "boolean");
+  assert.ok(Array.isArray(perm.missing));
+});
+
 test("a gear declaring on: cron is reached by a line install writes", async () => {
   // `on: cron` was an eligibility, not a schedule: one line ran `factory`, and
   // `situation`, `ops` and `scenarios` declared cron while no chain named them.

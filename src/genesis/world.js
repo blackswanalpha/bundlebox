@@ -10,6 +10,7 @@ import path from "node:path";
 import * as expert from "../core/expert.js";
 import * as corpus from "../cookbook/corpus.js";
 import * as episodes from "../buckmaster/episodes.js";
+import * as store from "../core/store.js";
 import { BB_DIR, OUT, ROOT, rel, abs } from "../core/paths.js";
 import { readJson, writeJson } from "../core/config.js";
 import { readText } from "../core/fs.js";
@@ -33,20 +34,38 @@ function readSource({ doc = "", prompt = "" }) {
   return { text, from: rel(p) };
 }
 
-/** Document -> world model, written to disk with the source beside it. The
- *  source is kept because every item in the model cites a line of it, and a
- *  citation into a file that has since moved is not evidence. */
-export function derive({ doc = "", prompt = "", name = "", base = "" } = {}) {
-  const src = readSource({ doc, prompt });
-  if (src.why) return { rc: 2, why: src.why };
-  if (!src.text.trim()) return { rc: 2, why: 'nothing to read. bb genesis <doc.md> | bb genesis - | bb genesis --prompt "..."' };
-  const id = slug(name || (src.from && src.from !== "stdin" && src.from !== "--prompt" ? path.basename(src.from).replace(/\.\w+$/, "") : "") || "genesis");
-  const w = expert.call("world-derive", { text: src.text, name: id, base });
-  if (!w) return { rc: 2, why: `python3 >= 3.9 is required to read a document into a world model (${expert.lastError}). bb doctor` };
+/** A finding row from the store, by id or by an unambiguous id prefix. */
+function findingRow(want) {
+  const all = store.get("findings", []) || [];
+  const exact = all.find((f) => f.id === want);
+  if (exact) return { row: exact };
+  const hits = all.filter((f) => String(f.id || "").startsWith(want));
+  if (hits.length === 1) return { row: hits[0] };
+  if (!hits.length) return { why: `no finding \`${want}\`. bb findings` };
+  return { why: `\`${want}\` matches ${hits.length} findings: ${hits.map((f) => f.id).join(", ")}` };
+}
+
+/** A pasted issue or crash report: the first non-blank line is the title, the
+ *  rest is the body. Nothing else is parsed out of it, because a ticket has no
+ *  schema and inventing one is how a derivation starts guessing. */
+function ticketRow(file) {
+  const text = file === "-" ? fs.readFileSync(0, "utf8") : readText(abs(file), null);
+  if (text == null) return { why: `cannot read ${rel(abs(file))}` };
+  const lines = String(text).split("\n");
+  const i = lines.findIndex((l) => l.trim());
+  if (i < 0) return { why: `${rel(abs(file))} is empty` };
+  return { row: { title: lines[i].replace(/^#+\s*/, "").trim(), body: lines.slice(i + 1).join("\n").trim(), path: "" } };
+}
+
+/** Everything after the derivation: the source beside the model, the model on
+ *  disk, the episode. Shared by all three inlets, because a world derived from
+ *  a finding has to be the same file a world derived from a document is — every
+ *  verb downstream reads `world.json` and none of them asks where it came from. */
+function writeWorld(id, w, { from, text }) {
   const dir = path.join(DIR(), id);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "source.txt"), src.text);
-  const model = { ...w, id, from: src.from, derived_at: now(), source_bytes: Buffer.byteLength(src.text) };
+  fs.writeFileSync(path.join(dir, "source.txt"), text);
+  const model = { ...w, id, from, derived_at: now(), source_bytes: Buffer.byteLength(text) };
   writeJson(worldPath(id), model);
   writeJson(path.join(DIR(), "current.json"), { id, at: now() });
   episodes.write({ kind: "stage", verb: "genesis", stage: "genesis:derive",
@@ -55,6 +74,38 @@ export function derive({ doc = "", prompt = "", name = "", base = "" } = {}) {
     turns_saved: episodes.turns({ files_read: 1, searches: w.counts.surfaces + w.counts.capabilities }),
     detail: { world: rel(worldPath(id)) } });
   return { rc: 0, id, world: model, file: rel(worldPath(id)) };
+}
+
+/** Document -> world model, written to disk with the source beside it. The
+ *  source is kept because every item in the model cites a line of it, and a
+ *  citation into a file that has since moved is not evidence.
+ *
+ *  `--finding` and `--ticket` are the other two inlets. They reach the same
+ *  file: a row already carries the path, the rule it contradicts and the
+ *  evidence, so it is a field mapping rather than a second parse. */
+export function derive({ doc = "", prompt = "", finding = "", ticket = "", name = "", base = "" } = {}) {
+  if (finding || ticket) return deriveRow({ finding, ticket, name, base });
+  const src = readSource({ doc, prompt });
+  if (src.why) return { rc: 2, why: src.why };
+  if (!src.text.trim()) return { rc: 2, why: 'nothing to read. bb genesis <doc.md> | bb genesis - | bb genesis --prompt "..." | bb genesis --finding <id> | bb genesis --ticket <file>' };
+  const id = slug(name || (src.from && src.from !== "stdin" && src.from !== "--prompt" ? path.basename(src.from).replace(/\.\w+$/, "") : "") || "genesis");
+  const w = expert.call("world-derive", { text: src.text, name: id, base });
+  if (!w) return { rc: 2, why: `python3 >= 3.9 is required to read a document into a world model (${expert.lastError}). bb doctor` };
+  return writeWorld(id, w, { from: src.from, text: src.text });
+}
+
+/** A finding row or a pasted ticket -> the same world model. */
+export function deriveRow({ finding = "", ticket = "", name = "", base = "" } = {}) {
+  const kind = finding ? "finding" : "ticket";
+  const got = finding ? findingRow(String(finding)) : ticketRow(String(ticket));
+  if (got.why) return { rc: 2, why: got.why };
+  const row = got.row;
+  const id = slug(name || path.basename(String(row.path || "")).replace(/\.\w+$/, "") || row.id || row.title || kind);
+  if (!id) return { rc: 2, why: `the ${kind} names nothing a world can be called; pass --name` };
+  const w = expert.call("world-derive-row", { row, kind, name: id, base });
+  if (!w) return { rc: 2, why: `python3 >= 3.9 is required to read a ${kind} into a world model (${expert.lastError}). bb doctor` };
+  const { source = "", ...model } = w;
+  return writeWorld(id, model, { from: `${kind} ${row.id || row.path || row.title}`, text: source });
 }
 
 /** Seed a corpus from a world: the persona, the surfaces and the setup. The

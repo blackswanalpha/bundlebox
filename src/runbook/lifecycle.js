@@ -87,6 +87,50 @@ export function up(id, { apply = false } = {}) {
     why: s.memory ? "no cage: systemd-run is not available, so `memory` is not enforced" : "" };
 }
 
+/** The origin of a URL, with localhost and 127.0.0.1 read as the same box: a
+ *  persona that says one and a service row that says the other are not two
+ *  services, and treating them as two is how a round starts a second copy on a
+ *  port that is already taken. */
+const origin = (u) => {
+  try {
+    const x = new URL(String(u));
+    const host = x.hostname === "localhost" ? "127.0.0.1" : x.hostname;
+    return `${x.protocol}//${host}:${x.port || (x.protocol === "https:" ? 443 : 80)}`;
+  } catch { return ""; }
+};
+
+/** The declared service that answers at `base`, by health URL first and port
+ *  second, or null. */
+export function serviceAt(base) {
+  const want = origin(base);
+  if (!want) return null;
+  const port = Number(want.split(":").pop());
+  const all = services();
+  return all.find((s) => s.health && origin(s.health) === want)
+    || all.find((s) => Number(s.port) === port) || null;
+}
+
+/** Start whatever declares `base`, and wait for it to answer.
+ *
+ *  `bb genesis practice` calls this before its verifier. A round that writes
+ *  scenarios and then reds every one of them against a base nothing started has
+ *  paid for the writing and learnt nothing about the product; the one measured
+ *  round this exists for was started by hand first, and nothing in the loop
+ *  said so. When no row declares the base this reports that and starts nothing:
+ *  a base somebody keeps up by hand is still a base. */
+export function upFor(base, { apply = true, seconds = 0 } = {}) {
+  const declared = services().length;
+  const s = serviceAt(base);
+  if (!s) return { rc: 0, id: "", state: "undeclared", declared, why: `no service declares ${base} in ${rel(FILE())}` };
+  const u = up(s.id, { apply });
+  if (u.rc) return { rc: u.rc, id: s.id, state: u.state, declared, why: u.why || "" };
+  const w = wait([s], { seconds });
+  return { rc: 0, id: s.id, state: u.state, declared, answering: w.ok, waited_ms: w.waited_ms ?? null,
+    // A ceiling reached is reported, never a rejection: `wait` gives up on the
+    // clock and the scenarios it was waiting for are still the scenarios.
+    why: w.ok ? "" : w.why || `${s.id} did not answer at ${s.health} inside ${w.waited_ms}ms` };
+}
+
 function unitActive(u) {
   const r = execRun(["systemctl", "--user", "show", u, "--property=ActiveState"], { timeout: 8000 });
   return /ActiveState=(active|activating)/.test(r.out);

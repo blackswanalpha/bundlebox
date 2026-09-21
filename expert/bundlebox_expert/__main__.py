@@ -73,6 +73,8 @@ def main(argv: list) -> int:
         out = throttle.apply(inp.get("decisions") or [], inp.get("cfg"), inp.get("history") or throttle.cooldowns(inp.get("outcomes") or []))
     elif verb == "world-derive":
         out = world.derive(inp.get("text", ""), inp.get("name", ""), inp.get("base", ""))
+    elif verb == "world-derive-row":
+        out = world.derive_row(inp.get("row") or {}, inp.get("kind", "finding"), inp.get("name", ""), inp.get("base", ""))
     elif verb == "coverage-plan":
         out = coverage.plan(inp.get("world") or {}, inp.get("corpus") or {}, int(inp.get("limit", 40)))
     elif verb == "scenario-select":
@@ -93,7 +95,7 @@ def main(argv: list) -> int:
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS, "locate": locate.thresholds(inp.get("cfg"))}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "world-derive-row", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
         return 2
     print(json.dumps(out))
     return 0

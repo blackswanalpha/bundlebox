@@ -141,6 +141,47 @@ test("each stage writes an episode with pre-run features only", async () => {
   assert.equal(eps[0].gear, "ep");
 });
 
+test("a stage that spends is refused until all three keys are set, and the missing one is named", async () => {
+  const cfg = path.join(root, ".bundlebox", "config.json");
+  let calls = 0;
+  const table = { fake: { run: async () => { calls += 1; return 0; } } };
+  const gears = { s: gear({ name: "s", stages: [{ name: "spender", verb: "fake", spends: true }, { name: "free", verb: "fake" }] }) };
+  // The gear inherits `spends` from the stage that declares it: what
+  // `bb pipeline list` has to show is whether running this can cost money.
+  assert.equal(gears.s.spends, true);
+
+  const full = { bridge: { enabled: true, daily_budget_usd: 5 }, lanes: { daily_budget_usd: 5 } };
+  // Each key absent in turn, including all three.
+  const cases = [
+    [{}, /bridge\.enabled.*bridge\.daily_budget_usd.*lanes\.daily_budget_usd/],
+    [{ ...full, bridge: { ...full.bridge, enabled: false } }, /^spends: bridge\.enabled — not set/],
+    [{ ...full, bridge: { ...full.bridge, daily_budget_usd: 0 } }, /^spends: bridge\.daily_budget_usd > 0 — not set/],
+    [{ ...full, lanes: { daily_budget_usd: 0 } }, /^spends: lanes\.daily_budget_usd > 0 — not set/],
+  ];
+  for (const [c, why] of cases) {
+    fs.writeFileSync(cfg, JSON.stringify(c));
+    const r = await runGear("s", { apply: true, table, gears });
+    assert.equal(r.stages[0].state, "refused", JSON.stringify(c));
+    assert.match(r.stages[0].why, why);
+    assert.equal(r.stages[1].state, "ran", "a free stage beside a refused one still runs");
+    assert.equal(r.skipped, 1, "refused counts as skipped, never as ran or failed");
+    assert.equal(r.failed, 0);
+  }
+  assert.equal(calls, cases.length, "the spending stage never ran");
+
+  // A dry run says refused too: a person reading it has to see which key is
+  // missing, not `would-run`.
+  fs.writeFileSync(cfg, JSON.stringify({}));
+  assert.equal((await runGear("s", { apply: false, table, gears })).stages[0].state, "refused");
+
+  // All three present: it runs.
+  fs.writeFileSync(cfg, JSON.stringify(full));
+  const ok = await runGear("s", { apply: true, table, gears });
+  assert.deepEqual(ok.stages.map((x) => x.state), ["ran", "ran"]);
+  assert.equal(calls, cases.length + 2);
+  fs.unlinkSync(cfg);
+});
+
 test("built-in gears load, user gears.json replaces by name, skip_if_fresh stages declare inputs()", async () => {
   fs.writeFileSync(path.join(root, ".bundlebox", "gears.json"), JSON.stringify({ gears: { mine: { description: "x", stages: [{ verb: "scan", when: "dirty > 0" }] }, intake: { stages: [{ verb: "scan" }] } } }));
   const { gears, warnings } = await load();
@@ -152,6 +193,12 @@ test("built-in gears load, user gears.json replaces by name, skip_if_fresh stage
   // whenever somebody last ran `bb console build` by hand.
   assert.deepEqual(gears.factory.chain.map((c) => c.gear), ["intake", "orient", "measure", "buckmaster", "watch"]);
   for (const g of Object.values(gears)) for (const s of g.stages) if (s.skip_if_fresh) assert.equal(typeof s.inputs, "function", `${g.name}/${s.name}`);
+  // `practice` is the one built-in that can cost money, and it is the one that
+  // declares it. Every other gear is free, which is what lets a cron line run
+  // them unattended.
+  assert.equal(gears.practice.spends, true);
+  assert.deepEqual(Object.values(gears).filter((g) => g.spends).map((g) => g.name), ["practice"]);
+  assert.deepEqual(gears.practice.on, ["hand"], "nothing bb ships installs a line that spends");
   fs.unlinkSync(path.join(root, ".bundlebox", "gears.json"));
   assert.ok(SKIP_BELOW < 0.5);
 });

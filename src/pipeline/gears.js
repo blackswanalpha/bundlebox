@@ -8,11 +8,14 @@
 //   factory   one tick             intake → orient → measure → buckmaster (chained)
 //   pr        ship what routed     git status → run --pr (dry)
 //
-// Every stage here is free and local. Nothing in a built-in gear spends a
-// token or touches the network: `run --pr` stays a dry run because the gear
-// never passes --apply, and a cron tick has to be a gear that cannot do
-// anything it would need permission for. The one thing every gear writes is
-// the episode table, which is how the model trains by the factory being used.
+// Every stage here is free and local except the ones `practice` declares
+// `spends: true`: `run --pr` stays a dry run because the gear never passes
+// --apply, and a cron tick has to be a gear that cannot do anything it would
+// need permission for. A `spends` stage is refused by the runner unless
+// `bridge.enabled`, `bridge.daily_budget_usd` and `lanes.daily_budget_usd` are
+// all set, so the rule still holds: those three keys are the permission. The
+// one thing every gear writes is the episode table, which is how the model
+// trains by the factory being used.
 import { gear } from "./spec.js";
 import { walk } from "../core/fs.js";
 import { ROOT } from "../core/paths.js";
@@ -205,17 +208,36 @@ export const GEARS = [
       { verb: "run", flags: { pr: true }, description: "the plan as it would run with --pr; nothing spawns without --apply" },
     ],
   }),
-  // The one gear that spends. Hand-only, never on a cron tick: each pack opens
-  // an agent session, and the bridge's ceiling and window guard are the only
-  // things between a tick and a bill. `--run --spend` are the verb's own flags;
-  // without them the loop drafts, verifies nothing new and reports why.
+  // The one gear that spends, and the only one. Each pack opens an agent
+  // session, and the bridge's ceiling and window guard are what stand between a
+  // tick and a bill. `--run --spend` are the verb's own flags; without them the
+  // loop drafts, verifies nothing new and reports why.
+  //
+  // `spends: true` is what makes it installable on a tick at all. The runner
+  // refuses every `spends` stage unless `bridge.enabled`,
+  // `bridge.daily_budget_usd > 0` and `lanes.daily_budget_usd > 0` are all set,
+  // and names the one that is not, so the rule at the top of this file still
+  // holds in its letter: those three keys ARE the permission, and a tick can
+  // only do what permission was already given for, inside the ceilings that
+  // gave it.
+  //
+  // `on` stays hand-only here because `bb cron install` writes a line for every
+  // built-in that declares cron, and a shipped line that can open a paid
+  // session is a line nobody leaves installed. Declaring `on: ["cron"]` for
+  // `practice` in `.bundlebox/gears.json` is how a person asks for the tick,
+  // and the three keys are what let it run.
   gear({
-    name: "practice", description: "fill the corpus: plan, send a pack per gap to an agent, keep what the verifier passes, remember the rest",
-    on: ["hand"],
+    name: "practice", description: "fill the corpus: plan, send a pack per gap to an agent, keep what the verifier passes, remember the rest, close one",
+    on: ["hand"], spends: true,
     stages: [
       { verb: "genesis", args: ["plan"], description: "what no scenario touches, ranked" },
-      { verb: "genesis", args: ["practice"], flags: { run: true, spend: true }, description: "broad then deep: one agent session per pack, verified free, lessons to edge-cases.md" },
+      { verb: "genesis", args: ["practice"], flags: { run: true, spend: true }, spends: true, description: "broad then deep: one agent session per pack, verified free, lessons to edge-cases.md, findings compiled and routed" },
       { verb: "pinpoint", args: ["gaps"], when: "open_findings > 0", optional: true, description: "the red steps the kept scenarios found, located and budgeted" },
+      // The fourth stage: the lane the round just packed, run. Without it the
+      // loop ends holding a budgeted unit that nothing opens, which is where
+      // every round before this one stopped.
+      { verb: "run", flags: { apply: true }, spends: true, when: "units_ready > 0", optional: true,
+        description: "open the lanes the round routed, inside the daily ceilings; refused with the missing key named when they are not set" },
     ],
   }),
 ];

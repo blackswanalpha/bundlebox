@@ -278,3 +278,106 @@ def tier_of(method: str, path: str) -> str:
     if method in ("POST", "PUT", "PATCH", "DELETE"):
         return "complex"
     return "complex" if param else "simple"
+
+
+# ── the other two inlets ────────────────────────────────────────────────────
+#
+# `derive` above reads prose. A finding row and a pasted ticket are not prose:
+# they already carry the three fields a scenario skeleton needs — the path, the
+# rule they contradict and the evidence — so reading them as a document throws
+# those fields away and then guesses them back out of sentences. What follows is
+# the field mapping. The text the fields make still goes through `derive`, for
+# the routes, commands and constants the row names; only the surface and the
+# rule are set from the fields, because a row has no heading to take them from.
+
+
+def _text(v) -> str:
+    return re.sub(r"\s+", " ", str(v)).strip() if isinstance(v, (str, int, float)) else ""
+
+
+def _stem(p: str) -> str:
+    return re.sub(r"\.\w+$", "", str(p or "").rstrip("/").rsplit("/", 1)[-1])
+
+
+def _evidence(v, cap: int = 12) -> str:
+    """A finding's evidence, flattened to lines. Bounded: the evidence block of
+    a duplication finding is hundreds of lines and a world model is not where
+    they belong."""
+    out: list = []
+
+    def walk(x):
+        if len(out) >= cap:
+            return
+        if isinstance(x, dict):
+            for k in sorted(x):
+                walk(x[k])
+        elif isinstance(x, list):
+            for i in x:
+                walk(i)
+        elif isinstance(x, str) and x.strip():
+            out.append(x.strip()[:200])
+
+    walk(v)
+    return "\n".join(out[:cap])
+
+
+def _modality(text: str) -> str:
+    for modality, rx in MODALITY:
+        if rx.search(text):
+            return modality
+    # A row states what is wrong, not what is forbidden. `must` is the weakest
+    # claim that still makes the scenario assert something, and a stated
+    # modality above always wins over it.
+    return "must"
+
+
+def derive_row(row: dict, kind: str = "finding", name: str = "", base: str = "") -> dict:
+    """A finding row or a pasted ticket, read into the world shape a document makes."""
+    row = row or {}
+    title = _text(row.get("title"))
+    files = row.get("files") if isinstance(row.get("files"), list) else []
+    path = _text(row.get("path")) or _text(files[0] if files else "")
+    body = _text(row.get("detail")) or _text(row.get("body"))
+    hint = _text(row.get("fix_hint"))
+    source = "\n".join(p for p in (title, body, hint, _evidence(row.get("evidence"))) if p)
+
+    w = derive(source, name=name or slug(title or kind), base=base)
+    sid = slug(_stem(path)) or slug(_text(row.get("detector"))) or slug(title) or kind
+    where = path or title or kind
+    caps = [dict(c, surface=sid) for c in w["capabilities"]]
+
+    rule_text = body or title or where
+    rules = [{
+        "id": "R1", "text": rule_text, "modality": _modality(rule_text), "surface": sid,
+        "line": 0, "why": "%s %s" % (kind, _text(row.get("id")) or where),
+        "constants": w["constants"],
+    }] if rule_text else []
+
+    surfaces = [{"id": sid, "title": where, "line": 0, "rules": len(rules), "capabilities": len(caps),
+                 "why": "the %s's %s" % (kind, "path" if path else "title")}] if (rules or caps) else []
+
+    unknown = []
+    if not base and not any(c.get("kind") == "http" and c.get("absolute") for c in caps):
+        unknown.append("the base URL the http capabilities are served from — pass --base, the %s does not say" % kind)
+    unknown.append("who the actors are — a %s row names no cast; the corpus will run as one anonymous user" % kind)
+    if not caps:
+        unknown.append("what can be exercised — the %s names no route and no command, so a scenario can only "
+                       "assert over %s as a file" % (kind, path or "a path it does not carry"))
+    if not body:
+        unknown.append("what the rule actually is — the row carries no detail, so the rule is its title")
+
+    return {
+        "name": name or slug(title or kind) or "world",
+        "base": base,
+        "surfaces": surfaces,
+        "surfaces_dropped": [],
+        "actors": [],
+        "rules": rules,
+        "capabilities": caps,
+        "constants": w["constants"],
+        "unknown": unknown,
+        "row": {"kind": kind, "id": _text(row.get("id")), "path": path, "detector": _text(row.get("detector"))},
+        "source": source,
+        "counts": {"lines": len(source.splitlines()), "surfaces": len(surfaces), "rules": len(rules),
+                   "capabilities": len(caps), "actors": 0, "constants": len(w["constants"])},
+    }

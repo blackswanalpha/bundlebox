@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><title>Checkout</title></head>
+<body>
+  <h1>Checkout</h1>
+  <form id="pay" action="/pay" method="post">
+    <input id="email" name="email" type="email" placeholder="you@example.com">
+    <input id="coupon" name="coupon" type="hidden" value="">
+    <button id="submit" class="primary" type="submit">Pay now</button>
+  </form>
+  <p class="note">Orders are charged when you press Pay now.</p>
+  <div id="error" hidden>Something went wrong.</div>
+  <a id="terms" href="terms.html">Terms</a>
+</body>
+</html>
