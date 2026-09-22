@@ -7,12 +7,13 @@
  "rule": [
   "README: BARE searches the tree and reads the top files whole; PACKED is one `bb pinpoint` prompt.",
   "Both arms are counted by the same estimator over text on disk; neither calls a model.",
-  "A task that costs more packed than bare is printed in the table, not dropped."
+  "A task that costs more packed than bare is printed in the table, not dropped.",
+  "Determinism is gated in ci.yml (`the ablation bench still measures both arms`), which runs the full suite twice and compares both arms. This scenario reads the surface; it does not re-measure it."
  ],
  "steps": [
   {
-   "name": "a suite can be derived from the findings",
-   "run": "node bin/bb.js bench init",
+   "name": "a suite can be derived from the findings (two of them, so the step's cost is fixed)",
+   "run": "node bin/bb.js bench init --limit 2",
    "expect": {
     "rc": 0,
     "stdout_contains": "task"
@@ -40,14 +41,6 @@
    "expect": {
     "rc": 0,
     "stdout_contains": "MEASURED"
-   }
-  },
-  {
-   "name": "the same run twice on the same tree gives the same total \u2014 a bench that drifts is not a measurement",
-   "run": "a=$(node bin/bb.js bench run --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).totals.bare)))\"); b=$(node bin/bb.js bench run --json | node -e \"let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(String(JSON.parse(s).totals.bare)))\"); test \"$a\" = \"$b\" && echo stable",
-   "expect": {
-    "rc": 0,
-    "stdout_contains": "stable"
    }
   }
  ]
