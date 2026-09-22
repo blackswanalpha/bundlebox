@@ -587,6 +587,43 @@ async function postTool(payload) {
   if (cfg.slop?.guard_writes) await slopGuard(payload, cfg);
   if (cfg.lathe?.record_shapes) await recordShape(payload, cfg);
   if (cfg.grapple?.enabled !== false) await grappleObserve(payload);
+  if (cfg.foreman?.enabled !== false && (cfg.foreman?.hook || "observe") !== "off") await foremanWatch(payload, cfg);
+}
+
+/** The foreman's live steer: the one channel that reaches an agent while it
+ *  is still working. Every `foreman.hook_every` tool calls of a session this
+ *  runs one assessment with the agent marked active, so only the warnings can
+ *  fire: steer once, then stop. In `observe` the row is recorded with
+ *  `emitted: false` and nothing reaches the window, which is the base rate
+ *  `bb foreman replay` is read against before `steer` is switched on. Jev
+ *  stays out of this path unless `foreman.hook_jev` is set: a remote call here
+ *  is paid inside the session, on a tool call. */
+export async function foremanWatch(payload, cfg = load()) {
+  const f = cfg.foreman || {};
+  const session = String(payload?.session_id || "");
+  if (!session) return null;
+  const every = Math.max(1, Number(f.hook_every) || 10);
+  let due = false;
+  store.update("foreman-hook", (d) => {
+    const doc = d && typeof d === "object" && !Array.isArray(d) ? d : {};
+    const s = doc[session] || { n: 0, last: 0 };
+    s.n += 1;
+    if (s.n - s.last >= every) { s.last = s.n; due = true; }
+    doc[session] = s;
+    return doc;
+  }, {});
+  if (!due) return null;
+  const phase = f.hook === "steer" ? "steer" : "observe";
+  try {
+    const foreman = await import("../foreman/index.js");
+    const r = foreman.assess({ session, active: true, cfg, jev: Boolean(f.hook_jev), extra: { hook: phase } });
+    if (r.error) { log("post-tool", `foreman ${r.error}`); return null; }
+    if (!["steer", "stop"].includes(r.action)) return r;
+    if (phase !== "steer") return r;
+    const text = foreman.steerText(r);
+    emit({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: capTokens(text, CAPS["post-tool"]) } });
+    return { ...r, emitted: text };
+  } catch (e) { log("post-tool", `foreman ${String(e && e.message || e).slice(0, 120)}`); return null; }
 }
 
 /** grapple's counters, fed for free: sixty bytes per tool call, no decision.

@@ -56,6 +56,7 @@ export const MODULES = [
   ["wire", "./wire/index.js"],
   ["uptake", "./uptake/index.js"],
   ["grapple", "./grapple/index.js"],
+  ["foreman", "./foreman/index.js"],
   ["cron", "./cron.js"],
   ["selftest", "./selftest.js"],
   ["kernel", "./kernel-cmd.js"],
@@ -101,7 +102,7 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "intent", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple"]);
+  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "intent", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple", "foreman"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
@@ -109,7 +110,7 @@ const CHAPTERS = [
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "intent", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
-  ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],
+  ["ship", "What closes the loop?", ["foreman", "finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
 ];
 
