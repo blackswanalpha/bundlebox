@@ -12,8 +12,8 @@
 <style>
   @page { size: 1920px 1080px; margin: 0; }
   html, body { height: 100%; overflow: hidden; background: #0B1411; }
-  .viewport { position: fixed; inset: 0; display: grid; place-items: center; }
-  .stage { width: 1920px; height: 1080px; position: relative; transform-origin: center; flex: none; }
+  .viewport { position: fixed; inset: 0; overflow: hidden; }
+  .stage { width: 1920px; height: 1080px; position: absolute; left: 50%; top: 50%; transform-origin: center; }
   .slide { position: absolute; inset: 0; background: var(--paper); padding: 110px 140px; display: none; flex-direction: column; }
   .slide.on { display: flex; }
   .slide.dark { background: radial-gradient(120% 90% at 20% 10%, #0E4433 0%, #07271D 55%, #041710 100%); color: #fff; }
@@ -41,7 +41,7 @@
   .flow div:not(:last-child)::after { content: "→"; position: absolute; right: -24px; top: 50%; transform: translateY(-50%); font-size: 30px; color: var(--green); }
 
   .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin-top: 90px; }
-  .big div { border-top: 3px solid var(--mint); padding-top: 30px; }
+  .big > div { border-top: 3px solid var(--mint); padding-top: 30px; }
   .big .num { font-size: 150px; line-height: 1; color: var(--mint); letter-spacing: -0.04em; }
   .big p { font-size: 28px; line-height: 1.4; color: #CFE3DA; margin-top: 24px; }
 
@@ -67,11 +67,37 @@
   .ms td, .ms th { padding: 16px 24px 16px 0; color: #CFE3DA; border-color: rgba(255,255,255,.14); }
   .ms th { color: #8FB3A5; border-color: var(--mint); font-size: 20px; }
 
+  .legend { display: flex; gap: 44px; margin-top: 34px; font-size: 22px; color: var(--ink-2); }
+  .legend span { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; display: inline-block; }
+  .dot.sonnet { background: var(--green); }
+  .dot.pending { border: 3px dashed var(--green); }
+  .dot.other { background: #8A9892; }
+  .chart { width: 100%; height: auto; margin-top: 26px; font-family: var(--body); }
+  .chart .grid { stroke: var(--rule); stroke-width: 1; }
+  .chart .axis { fill: var(--muted); font-size: 18px; }
+  .chart .lab { fill: var(--ink-2); font-size: 18px; }
+  .chart .lab.hl { fill: var(--ink); font-weight: 700; font-size: 22px; }
+  .chart circle { stroke: var(--paper); stroke-width: 2; }
+  .board { margin-top: 28px; }
+  .brow { display: grid; grid-template-columns: 360px 1fr 130px 180px 110px 90px; align-items: center; column-gap: 24px; height: 32px; font-size: 19px; color: var(--ink-2); border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+  .brow > span:nth-child(n+3) { text-align: right; }
+  .brow.head { font-size: 14px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); height: 30px; border-bottom: 1.5px solid var(--ink); }
+  .brow .eff { color: var(--muted); margin-left: 8px; }
+  .brow .ci { color: var(--muted); font-size: 14px; margin-left: 4px; }
+  .track { position: relative; height: 12px; background: #EFEDE7; border-radius: 0 4px 4px 0; }
+  .track .bar { position: absolute; left: 0; top: 0; bottom: 0; background: #8A9892; border-radius: 0 4px 4px 0; }
+  .track .whisk { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--ink-2); border-right: 2px solid var(--ink-2); }
+  .track .whisk::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid var(--ink-2); }
+  .brow.hl { color: var(--ink); font-weight: 700; background: var(--mint-soft); }
+  .brow.hl .bar { background: var(--green); }
+  .brow.proj { color: var(--green); font-weight: 600; background: #fff; border: 1.5px dashed var(--green); }
+  .brow.proj .track { background: repeating-linear-gradient(135deg, #E9F2EE 0 8px, #fff 8px 16px); }
   .hint { position: fixed; bottom: 14px; right: 16px; font: 500 13px var(--body); color: #8FB3A5; }
   @media print {
     html, body { height: auto; overflow: visible; background: none; }
-    .viewport { position: static; display: block; }
-    .stage { transform: none !important; width: auto; height: auto; }
+    .viewport { position: static; display: block; overflow: visible; }
+    .stage { position: static; transform: none !important; width: auto; height: auto; }
     .slide { position: relative; display: flex !important; width: 1920px; height: 1080px; break-after: page; }
     .hint { display: none; }
   }
@@ -117,6 +143,27 @@
   </section>
 
   <section class="slide">
+    <div class="eyebrow">03 · Proof · DeepSWE</div>
+    <h2 style="font-size:64px">Claude Sonnet 5 costs the most per task on DeepSWE.</h2>
+    <div class="legend">
+      <span><i class="dot sonnet"></i>claude-sonnet-5 [max]: 54%, $26.40 per task</span>
+      <span><i class="dot pending"></i>claude-sonnet-5 + bundlebox: projected, not measured</span>
+      <span><i class="dot other"></i>Other models, best config each</span>
+    </div>
+    <svg id="deepswe" class="chart" viewBox="0 0 1640 560" role="img" aria-label="DeepSWE pass@1 against average cost per task for 21 models"></svg>
+    <div class="corner"><span>Source: <a href="https://deepswe.datacurve.ai/">deepswe.datacurve.ai</a>, v1.1, 113 tasks, updated 2026-09-22</span><span>5</span></div>
+  </section>
+
+  <section class="slide" style="padding-top:80px">
+    <div class="eyebrow" style="margin-bottom:18px">03 · Proof · DeepSWE leaderboard</div>
+    <h2 style="font-size:52px">Sonnet 5 scores 54% and costs $26.40 a task, the most on the board.</h2>
+    <div class="board" id="board">
+      <div class="brow head"><span>Model</span><span></span><span>Pass@1</span><span>Avg cost</span><span>Out tok</span><span>Steps</span></div>
+    </div>
+    <div class="corner" style="bottom:40px"><span>Source: <a href="https://deepswe.datacurve.ai/">deepswe.datacurve.ai</a>, v1.1, best config per model. The bundlebox row is a projection, not a measurement.</span><span>6</span></div>
+  </section>
+
+  <section class="slide">
     <div class="eyebrow">03 · Proof</div>
     <h2>Five bugs twelve green unit tests missed. Zero model tokens.</h2>
     <div class="bugs">
@@ -127,7 +174,7 @@
       <p>Ten "Add to cart" buttons were indistinguishable to a screen reader.</p>
     </div>
     <p class="sub" style="margin-top:50px">17 scenarios, 92 steps, 12 seconds, 87 requests, on the sampleOne ecommerce service.</p>
-    <div class="corner"><img src="logo.svg" alt=""><span>5</span></div>
+    <div class="corner"><img src="logo.svg" alt=""><span>7</span></div>
   </section>
 
   <section class="slide">
@@ -151,7 +198,7 @@
         </ol>
       </div>
     </div>
-    <div class="corner"><img src="logo.svg" alt=""><span>6</span></div>
+    <div class="corner"><img src="logo.svg" alt=""><span>8</span></div>
   </section>
 
   <section class="slide">
@@ -176,7 +223,7 @@
       </div>
     </div>
     <p class="sub" style="margin-top:40px">The price stays below the tokens it measurably saves.</p>
-    <div class="corner"><img src="logo.svg" alt=""><span>7</span></div>
+    <div class="corner"><img src="logo.svg" alt=""><span>9</span></div>
   </section>
 
   <section class="slide dark">
@@ -192,12 +239,111 @@
         <tr><td>9–12</td><td>First paying teams, pricing set from their savings</td><td>A repeatable way to sell it</td></tr>
       </tbody>
     </table>
-    <div class="corner"><span>Victor Mbugua · kamandexperb@gmail.com · github.com/blackswanalpha/bundlebox</span><span>8</span></div>
+    <div class="corner"><span>Victor Mbugua · kamandexperb@gmail.com · github.com/blackswanalpha/bundlebox</span><span>10</span></div>
   </section>
 
 </div></div>
 <div class="hint">← → to move · P to print</div>
 <script>
+  // DeepSWE v1.1 leaderboard, best config per model, read 2026-09-23 from deepswe.datacurve.ai.
+  // [model, effort, pass@1 %, avg cost per task USD, output tokens]
+  const DEEPSWE = [
+    ['gpt-6-astra', 'xhigh', 74, 4.43, '30k'], ['gemini-3.8-flash', 'high', 74, 2.36, '143k'],
+    ['claude-opus-5', 'max', 74, 11.84, '118k'], ['gpt-5.6-sol', 'max', 73, 6.46, '60k'],
+    ['claude-fable-5', 'xhigh', 70, 13.41, '80k'], ['glm-5.3', 'max', 69, 3.99, '80k'],
+    ['kimi-k3', 'max', 69, 4.65, '81k'], ['grok-4.6', 'medium', 67, 3.45, '50k'],
+    ['gpt-5.6-luna', 'max', 67, 0.61, '73k'], ['gpt-5.5', 'xhigh', 67, 7.23, '46k'],
+    ['gemini-3.7-flash', 'medium', 65, 2.03, '94k'], ['glm-5.3-flash', 'max', 63, 0.24, '73k'],
+    ['deepseek-v4-pro', 'max', 63, 1.67, '106k'], ['claude-opus-4.8', 'max', 59, 13.22, '135k'],
+    ['qwen3.8-max', 'xhigh', 57, 3.73, '95k'], ['muse-spark-1.2', 'xhigh', 55, 3.70, '99k'],
+    ['claude-sonnet-5', 'max', 54, 26.40, '214k'], ['deepseek-v4-flash', 'max', 53, 0.46, '108k'],
+    ['gemini-3.6-flash', 'high', 47, 2.21, '96k'], ['glm-5.2', 'max', 44, 3.92, '78k'],
+    ['gemini-3.5-flash', 'high', 36, 3.45, '76k'],
+  ];
+  const LABELED = ['claude-sonnet-5', 'claude-opus-5', 'gpt-6-astra', 'glm-5.3-flash', 'claude-opus-4.8'];
+  (function drawDeepswe() {
+    const svg = document.getElementById('deepswe'), NS = 'http://www.w3.org/2000/svg';
+    const L = 90, R = 1600, T = 20, B = 490;
+    const x = c => L + (Math.log10(c) - Math.log10(0.2)) / (Math.log10(40) - Math.log10(0.2)) * (R - L);
+    const y = p => B - (p - 30) / 50 * (B - T);
+    const el = (tag, attrs, text) => {
+      const e = document.createElementNS(NS, tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      if (text != null) e.textContent = text;
+      svg.appendChild(e); return e;
+    };
+    for (const p of [30, 40, 50, 60, 70, 80]) {
+      el('line', { class: 'grid', x1: L, x2: R, y1: y(p), y2: y(p) });
+      el('text', { class: 'axis', x: L - 14, y: y(p) + 6, 'text-anchor': 'end' }, p + '%');
+    }
+    for (const c of [0.25, 0.5, 1, 2, 5, 10, 20]) {
+      el('line', { class: 'grid', x1: x(c), x2: x(c), y1: T, y2: B });
+      el('text', { class: 'axis', x: x(c), y: B + 30, 'text-anchor': 'middle' }, '$' + c);
+    }
+    el('text', { class: 'axis', x: (L + R) / 2, y: B + 64, 'text-anchor': 'middle' }, 'Average cost per task (USD, log scale)');
+    el('text', { class: 'axis', x: 20, y: (T + B) / 2, 'text-anchor': 'middle', transform: 'rotate(-90 20 ' + (T + B) / 2 + ')' }, 'Pass@1');
+    // Projection, not a measurement: Sonnet 5's cost cut by bundlebox's measured savings range
+    // (-34% opening window, -74% same planned findings), pass@1 assumed unchanged.
+    const S = DEEPSWE.find(r => r[0] === 'claude-sonnet-5');
+    const lo = S[3] * (1 - 0.74), hi = S[3] * (1 - 0.34), py = y(S[2]);
+    el('line', { x1: x(lo), x2: x(hi), y1: py, y2: py, stroke: '#1B8C66', 'stroke-width': 3, 'stroke-dasharray': '8 6' });
+    for (const v of [lo, hi]) el('line', { x1: x(v), x2: x(v), y1: py - 12, y2: py + 12, stroke: '#1B8C66', 'stroke-width': 3 });
+    el('line', { x1: x(S[3]) - 18, x2: x(hi) + 16, y1: py, y2: py, stroke: '#1B8C66', 'stroke-width': 2, opacity: 0.5 });
+    const mid = Math.sqrt(lo * hi);
+    const pc = el('circle', { cx: x(mid), cy: py, r: 14, fill: '#FAF9F6', style: 'stroke:#1B8C66;stroke-width:3;stroke-dasharray:5 4' });
+    const pt = document.createElementNS(NS, 'title');
+    pt.textContent = 'claude-sonnet-5 + bundlebox (projected): $' + lo.toFixed(2) + '–$' + hi.toFixed(2) + ' per task, 54% pass@1 assumed';
+    pc.appendChild(pt);
+    el('text', { class: 'lab hl', x: x(mid), y: py + 48, 'text-anchor': 'middle' }, 'sonnet-5 + bundlebox (projected)');
+    el('text', { class: 'lab', x: x(mid), y: py + 74, 'text-anchor': 'middle' }, '$' + lo.toFixed(2) + '–$' + hi.toFixed(2) + ' per task, if the measured 34–74% savings hold');
+
+    const rows = DEEPSWE.slice().sort((a, b) => (a[0] === 'claude-sonnet-5') - (b[0] === 'claude-sonnet-5'));
+    for (const [m, eff, p, c, tok] of rows) {
+      const hl = m === 'claude-sonnet-5';
+      const d = el('circle', { cx: x(c), cy: y(p), r: hl ? 14 : 9, fill: hl ? '#1B8C66' : '#8A9892' });
+      const t = document.createElementNS(NS, 'title');
+      t.textContent = m + ' [' + eff + ']: ' + p + '% pass@1, $' + c.toFixed(2) + ' per task, ' + tok + ' output tokens';
+      d.appendChild(t);
+      if (LABELED.includes(m)) {
+        const left = x(c) > R - 260;
+        if (hl) el('text', { class: 'lab hl', x: x(c) + 14, y: y(p) - 28, 'text-anchor': 'end' }, m);
+        else el('text', { class: 'lab', x: x(c) + (left ? -22 : 16), y: y(p) - 14, 'text-anchor': left ? 'end' : 'start' }, m);
+      }
+    }
+  })();
+
+  // Same leaderboard: pass@1 confidence interval (±%) and agent steps per model.
+  const CI_STEPS = {
+    'gpt-6-astra': [3, 29], 'gemini-3.8-flash': [1, 166], 'claude-opus-5': [4, 99], 'gpt-5.6-sol': [3, 61],
+    'claude-fable-5': [3, 68], 'glm-5.3': [3, 124], 'kimi-k3': [5, 98], 'grok-4.6': [2, 70],
+    'gpt-5.6-luna': [4, 102], 'gpt-5.5': [6, 82], 'gemini-3.7-flash': [3, 117], 'glm-5.3-flash': [4, 123],
+    'deepseek-v4-pro': [6, 155], 'claude-opus-4.8': [2, 120], 'qwen3.8-max': [3, 111], 'muse-spark-1.2': [2, 101],
+    'claude-sonnet-5': [4, 268], 'deepseek-v4-flash': [4, 153], 'gemini-3.6-flash': [4, 117], 'glm-5.2': [2, 129],
+    'gemini-3.5-flash': [4, 105],
+  };
+  (function drawBoard() {
+    const board = document.getElementById('board'), MAX = 80;
+    const pct = v => Math.max(0, Math.min(100, v / MAX * 100)) + '%';
+    const row = (cls, cells) => {
+      const r = document.createElement('div');
+      r.className = 'brow ' + cls;
+      r.innerHTML = cells.map(c => '<span>' + c + '</span>').join('');
+      board.appendChild(r);
+    };
+    for (const [m, eff, p, c, tok] of DEEPSWE) {
+      const [ci, steps] = CI_STEPS[m];
+      const track = '<div class="track" title="' + m + ': ' + p + '% ±' + ci + '%"><div class="bar" style="width:' + pct(p) + '"></div>' +
+        '<div class="whisk" style="left:' + pct(p - ci) + ';width:calc(' + pct(2 * ci) + ')"></div></div>';
+      row(m === 'claude-sonnet-5' ? 'hl' : '', [m + '<span class="eff">[' + eff + ']</span>', track,
+        p + '%<span class="ci">±' + ci + '%</span>', '$' + c.toFixed(2), tok, steps]);
+      if (m === 'claude-sonnet-5') {
+        const lo = c * (1 - 0.74), hi = c * (1 - 0.34);
+        row('proj', ['+ bundlebox (projected)', '<div class="track" title="Not measured on DeepSWE"></div>',
+          'not measured', '$' + lo.toFixed(2) + '–$' + hi.toFixed(2), '', '']);
+      }
+    }
+  })();
+
   const slides = [...document.querySelectorAll('.slide')];
   const stage = document.getElementById('stage');
   let i = 0;
@@ -209,7 +355,7 @@
   }
   function fit() {
     const s = Math.min(innerWidth / 1920, innerHeight / 1080);
-    stage.style.transform = 'scale(' + s + ')';
+    stage.style.transform = "translate(-50%, -50%) scale(" + s + ")";
   }
   addEventListener('resize', fit);
   addEventListener('keydown', e => {
