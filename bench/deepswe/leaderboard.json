@@ -1,0 +1,33 @@
+{
+  "benchmark": "DeepSWE",
+  "source": "https://deepswe.datacurve.ai/",
+  "as_of": "2026-09-22",
+  "tasks": 113,
+  "scoring": "pass@1, single attempt",
+  "scaffold": "mini-swe-agent, for consistency across models",
+  "note": "Published by Datacurve. Every row is somebody else's measurement, read off the public board and not reproduced here. The error bars are the board's own; it does not state the interval methodology.",
+  "columns": ["model", "effort", "score_pct", "ci_pct", "usd_per_task", "tokens_per_task", "steps_per_task"],
+  "rows": [
+    ["gpt-6-astra", "xhigh", 74, 3, 4.43, 30000, 29],
+    ["gemini-3.8-flash", "high", 74, 1, 2.36, 143000, 166],
+    ["claude-opus-5", "max", 74, 4, 11.84, 118000, 99],
+    ["gpt-5.6-sol", "max", 73, 3, 6.46, 60000, 61],
+    ["claude-fable-5", "xhigh", 70, 3, 13.41, 80000, 68],
+    ["glm-5.3", "max", 69, 3, 3.99, 80000, 124],
+    ["kimi-k3", "max", 69, 5, 4.65, 81000, 98],
+    ["grok-4.6", "medium", 67, 2, 3.45, 50000, 70],
+    ["gpt-5.6-luna", "max", 67, 4, 0.61, 73000, 102],
+    ["gpt-5.5", "xhigh", 67, 6, 7.23, 46000, 82],
+    ["gemini-3.7-flash", "medium", 65, 3, 2.03, 94000, 117],
+    ["glm-5.3-flash", "max", 63, 4, 0.24, 73000, 123],
+    ["deepseek-v4-pro", "max", 63, 6, 1.67, 106000, 155],
+    ["claude-opus-4.8", "max", 59, 2, 13.22, 135000, 120],
+    ["qwen3.8-max", "xhigh", 57, 3, 3.73, 95000, 111],
+    ["muse-spark-1.2", "xhigh", 55, 2, 3.70, 99000, 101],
+    ["claude-sonnet-5", "max", 54, 4, 26.40, 214000, 268],
+    ["deepseek-v4-flash", "max", 53, 4, 0.46, 108000, 153],
+    ["gemini-3.6-flash", "high", 47, 4, 2.21, 96000, 117],
+    ["glm-5.2", "max", 44, 2, 3.92, 78000, 129],
+    ["gemini-3.5-flash", "high", 36, 4, 3.45, 76000, 105]
+  ]
+}

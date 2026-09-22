@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bundlebox — one question measured, one priced</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* The post-5/post-7 card, so the series reads as one thing. The colour does
+     one job here and it is not decoration: the accent marks the column that was
+     measured, the grey marks the one that was only costed. Identity is never
+     colour alone — each column carries its own STATUS word, its own rule style
+     (solid against dashed) and its own footer line, so the distinction survives
+     greyscale and survives a reader who cannot separate teal from grey.
+
+     Same contrast rule as post-7: figures wear ink, not accent. #008C99 on this
+     paper is 3.79:1 — fine for a 54px hero under the large-text rule, short of
+     4.5:1 for anything at body size. */
+  :root {
+    --paper: #FAF8F2;
+    --ink: #191A14;
+    --ink-2: #454738;
+    --muted: #6B6D5F;
+    --rule: #E0DACB;
+    --accent: #008C99;
+    --context: #7F7B6B;
+    --font-display: "Newsreader", Georgia, serif;
+    --font-text: "IBM Plex Sans", Helvetica, sans-serif;
+    --font-figure: "IBM Plex Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1200px; height: 627px; background: var(--paper); color: var(--ink);
+         font-family: var(--font-text); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .card { height: 100%; padding: 34px 60px 26px; display: flex; flex-direction: column; }
+
+  .top { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 12px; }
+  .mark { font-family: var(--font-display); font-size: 21px; font-weight: 500; letter-spacing: -0.01em; }
+  .mark i { font-style: normal; color: var(--accent); }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+  h1 { font-family: var(--font-display); font-size: 34px; line-height: 1.06; font-weight: 400;
+       letter-spacing: -0.02em; margin: 14px 0 3px; }
+  .sub { font-size: 14.5px; color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0; flex: 1; min-height: 0; }
+  .col { padding: 0 34px; display: flex; flex-direction: column; }
+  .col:first-child { padding-left: 0; border-right: 1px solid var(--rule); }
+  .col:last-child { padding-right: 0; }
+
+  .status { font-family: var(--font-figure); font-size: 11.5px; letter-spacing: 0.13em; text-transform: uppercase;
+            display: inline-flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .status b { font-weight: 500; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .measured .dot { background: var(--accent); }
+  .measured b { color: var(--accent); }
+  .priced .dot { border: 1.5px dashed var(--context); }
+  .priced b { color: var(--context); }
+
+  .q { font-family: var(--font-display); font-size: 19px; line-height: 1.2; font-weight: 400;
+       letter-spacing: -0.012em; margin: 0 0 3px; max-width: 26ch; }
+  .where { font-size: 12.5px; color: var(--muted); margin: 0 0 13px; }
+
+  .hero { display: flex; align-items: baseline; gap: 12px; margin-bottom: 2px; min-height: 50px; }
+  .hero b { font-family: var(--font-figure); font-size: 45px; font-weight: 500; line-height: 1;
+            letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .measured .hero b { color: var(--accent); }
+  .priced .hero b { color: var(--ink); }
+  .hero span { font-size: 13.5px; color: var(--muted); line-height: 1.3; max-width: 21ch; }
+
+  .lines { margin-top: 12px; border-top: 1px solid var(--rule); }
+  .priced .lines { border-top: 1px dashed var(--rule); }
+  .line { display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
+          padding: 6.5px 0; border-bottom: 1px solid var(--rule); }
+  .priced .line { border-bottom: 1px dashed var(--rule); }
+  .line:last-child { border-bottom: 0; }
+  .line dt { font-size: 12.5px; color: var(--ink-2); line-height: 1.3; }
+  .line dd { margin: 0; font-family: var(--font-figure); font-size: 14px; font-weight: 500;
+             font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+  .line dd em { font-style: normal; font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+
+  .note { margin-top: auto; padding-top: 11px; font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+  .note b { color: var(--ink-2); font-weight: 500; }
+
+  .foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule);
+          display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; }
+  .foot .claim { font-family: var(--font-display); font-size: 16px; line-height: 1.28; max-width: 52ch; }
+  .foot .source { font-size: 11.5px; line-height: 1.45; color: var(--muted); text-align: right; white-space: nowrap; }
+  .foot .source b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div class="mark">bundle<i>box</i></div>
+    <div class="kicker">SWE-bench Verified · DeepSWE · 2026-09-22</div>
+  </div>
+
+  <h1>One question is answered. The other has a price on it.</h1>
+  <p class="sub">bundlebox claims the same work on less context. That is two claims, and only one of them has been run.</p>
+
+  <div class="cols">
+    <div class="col measured">
+      <div class="status"><span class="dot"></span><b>Measured</b></div>
+      <p class="q">Does the packed window hold what the fix touches?</p>
+      <p class="where">SWE-bench Verified · 100 instances · no model called</p>
+      <div class="hero"><b>3.1&times;</b><span>less context for the same issue</span></div>
+      <dl class="lines">
+        <div class="line"><dt>Context per task</dt><dd>8.7k &rarr; 2.8k<em>tokens</em></dd></div>
+        <div class="line"><dt>Maintainer's changed files in scope</dt><dd>24.6% &rarr; 64.3%</dd></div>
+        <div class="line"><dt>Instances with every gold file</dt><dd>26 &rarr; 61<em>of 100</em></dd></div>
+        <div class="line"><dt>Time to assemble the window</dt><dd>246ms &rarr; 8.9s</dd></div>
+      </dl>
+      <p class="note">Both arms count tokens over text on disk. The last row is the one bundlebox loses, printed rather than dropped. <b>A localisation score, not a resolve rate.</b></p>
+    </div>
+
+    <div class="col priced">
+      <div class="status"><span class="dot"></span><b>Costed, not run</b></div>
+      <p class="q">Does the smaller window cost you any outcome?</p>
+      <p class="where">DeepSWE · non-inferiority trial · pre-registered</p>
+      <div class="hero"><b>$2,676</b><span>to run both arms once, still underpowered</span></div>
+      <dl class="lines">
+        <div class="line"><dt>Margin declared before any trial</dt><dd>M = 7.5<em>points</em></dd></div>
+        <div class="line"><dt>Tasks needed at M = 7.5</dt><dd>210 &ndash; 489</dd></div>
+        <div class="line"><dt>Tasks DeepSWE has</dt><dd>113</dd></div>
+        <div class="line"><dt>226 trials on claude-opus-5</dt><dd>$11.84<em>per task</em></dd></div>
+      </dl>
+      <p class="note">McNemar on discordant pairs, one-sided 2.5%, 80% power. <b>The affordable run is not the run that would answer it</b> — so the figure above is a price, not a result.</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="claim">A tool that will not say what would falsify it is not making a claim.</div>
+    <div class="source">
+      <b>bundlebox</b> — the design, the margin and the sizing are fixed<br>
+      before the first trial. github.com/blackswanalpha/bundlebox
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,75 @@
+I wrote the experiment that could prove my own tool is not worth installing,
+and published what it would cost to run before running it.
+
+bundlebox makes one claim: the same work on less context. Those are two
+claims, and only one of them has been measured.
+
+The measured one. On SWE-bench Verified, 100 instances, the packed brief put
+2.8k tokens in the window against 8.7k for an arm that greps the tree and reads
+the top ten files. The maintainer's own changed files were inside that scope
+64.3% of the time against 24.6%. Both arms are token counts over text on disk.
+Neither called a model, so neither number is a projection of one.
+
+The unmeasured one is the question anybody sensible asks next: does the smaller
+window cost you any outcome?
+
+I could not answer it, so I wrote down how it would be answered.
+
+The first decision was that it is not a superiority trial. "Does bundlebox score
+higher on SWE-bench" is a question the product does not claim to answer, and a
+null result from it would tell you nothing. The matching design is
+non-inferiority: same tasks, same model, same scaffold, and the hypothesis is
+that the smaller window does not cost more than M points of resolve rate.
+
+M = 7.5 points. Declared before any trial, and not chosen because it is
+reachable — chosen because a tool that costs you more than about one task in
+thirteen is not worth its install, whatever it saves on tokens. If that margin
+is wrong, it is wrong now, while nobody has seen any data.
+
+Then the sizing, which is where it got uncomfortable.
+
+Both arms run identical tasks, so this is McNemar's test on the pairs that
+disagree. At 80% power and a one-sided 2.5%, M = 7.5 needs between 210 and 489
+tasks depending on how often the arms disagree — and the discordance rate is
+unknown until somebody runs it.
+
+DeepSWE has 113 tasks.
+
+So the honest position is that the corpus I have cannot answer the question at
+the margin I declared. Running both arms over all 113 once is 226 trials. On
+claude-opus-5 that is roughly $2,676 at the published per-task cost, and it
+would still be underpowered.
+
+Three ways out, in the order I would take them: run it at three attempts per
+task for 339 trials an arm, which also measures per-task variance that nothing
+here has; or widen M to 12.5, which 113 tasks do support, and say plainly that
+the claim got weaker; or move to SWE-bench Verified's 500 tasks, which needs the
+official harness and a Docker image per repository.
+
+What I will not do is run the corpus, read the result, and then pick the margin
+that makes it come out well. Writing the margin, the sizing and the analysis
+down now is what makes that impossible later.
+
+One aside from the model selection, because it surprised me. The obvious pick
+was the mid-tier model. On the public board it is the worst row on both axes
+this trial cares about: 54% at $26.40 a task over 214k tokens and 268 steps,
+against 74% at $11.84 over 118k tokens and 99 steps for the larger one. Cheaper
+and better, not a trade. Those are Datacurve's published measurements on a
+different scaffold, so I treat them as an order of magnitude and not a quote.
+
+An arm that never calls the tool is not a bundlebox arm, so the trial records
+whether it was called at all, and voids those trials rather than counting them
+as losses. And a confidence interval that includes the margin gets published as
+an inconclusive run at that sample size, with the sample size.
+
+A tool that will not tell you what would falsify it is not making a claim. It is
+doing marketing.
+
+The design is in the repository, under bench/deepswe/DESIGN.md, and it is dated
+earlier than any result I ever report from it.
+
+  npm i -g bundlebox
+
+github.com/blackswanalpha/bundlebox
+
+#AI #DeveloperTools #Benchmarking #ClaudeCode #OpenSource
