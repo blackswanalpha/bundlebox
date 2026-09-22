@@ -7,10 +7,9 @@ kit that a competitor's README does not also make. Order matters: the registry
 record and the two list PRs go first, so the traffic these posts create lands on
 a listing that already exists.
 
-**Blocked until `docs/benchmark/index.html` is on main:** every post below wants
-to link `https://blackswanalpha.github.io/bundlebox/docs/benchmark/`. That page
-is on `feat/bench-per-arm-latency-and-page`, so the URL is a 404 today. Merge
-first, or cut the link and keep the table.
+The charts and the method are live at https://blackswanalpha.github.io/bundlebox/docs/benchmark/ — every post
+below links it, because a table in a comment is a claim and the page is the
+working.
 
 ---
 
@@ -48,6 +47,8 @@ The recall figure is a localisation score against the maintainer's own patch. It
 is not a resolve rate. No model was called and no test was run, so I cannot tell
 you it fixes more bugs — only that the files the fix touches are in the window
 more often.
+
+Charts, the per-instance spread and the method: https://blackswanalpha.github.io/bundlebox/docs/benchmark/
 
 And there is one chart that does not favour it: building the brief takes 8.9s
 against 246ms to grep and read. 6.6s of that is constructing the symbol space
@@ -95,6 +96,8 @@ The cost side, since nobody posts theirs: the brief takes 8.9s to assemble
 against 246ms for grep-and-read, and 6.6s of that is first-visit symbol
 construction a workspace pays once.
 
+Every chart, including that one: https://blackswanalpha.github.io/bundlebox/docs/benchmark/
+
 Nine stdio tools, zero dependencies, MIT: `bb_pinpoint`, `bb_context`,
 `bb_snapgen`, `bb_findings`, `bb_scan`, `bb_oversight_brief`, `bb_explain`,
 `bb_tokens_estimate`, `bb_session`.
@@ -138,6 +141,7 @@ write another line of the instruction block. Mine cost tokens in every
 session to be ignored in most of them.
 
 Repo, MIT: https://github.com/blackswanalpha/bundlebox
+Benchmarks, since I would rather be measured than believed: https://blackswanalpha.github.io/bundlebox/docs/benchmark/
 
 ---
 
@@ -163,6 +167,8 @@ Instances with every gold file present: 26/100 -> 61/100.
 
 Those are localisation scores against the maintainer's patch, not resolve rates.
 No model ran.
+
+https://blackswanalpha.github.io/bundlebox/docs/benchmark/
 
 4/ The chart that does not favour it:
 
