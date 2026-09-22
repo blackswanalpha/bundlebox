@@ -115,9 +115,14 @@ def session_signals(turns: list) -> dict:
     }
 
 
-def aggregate(sessions: list) -> dict:
+def aggregate(sessions: list, split: bool = True) -> dict:
     """Medians across sessions; every key a rule reads. None when no session
-    could say — a threshold compared against None does not fire."""
+    could say — a threshold compared against None does not fire.
+
+    `split` adds the same medians per intent kind. "You re-read the same files
+    too much" is advice about a habit, and a habit belongs to a kind of work:
+    re-reading while investigating is reading, re-reading while fixing is the
+    waste the rule was written for. Averaging the two hides both."""
     def med(key):
         xs = [s[key] for s in sessions if s.get(key) is not None]
         return st.median(xs) if xs else None
@@ -130,7 +135,7 @@ def aggregate(sessions: list) -> dict:
         for c, n in s.get("top_repeat_cmds") or []:
             repeat_cmds[c] = repeat_cmds.get(c, 0) + n
     n = len(sessions)
-    return {
+    out = {
         "sessions": n,
         "reread_ratio": med("reread_ratio"), "top_reread_files": sorted(reread_files.items(), key=lambda x: -x[1])[:20],
         "singleton_turn_ratio": med("singleton_turn_ratio"),
@@ -144,3 +149,16 @@ def aggregate(sessions: list) -> dict:
         "interrupts_per_session": (sum(int(s.get("interrupts") or 0) for s in sessions) / n) if n else None,
         "cache_read_ratio": med("cache_read_ratio"),
     }
+    if split:
+        kinds: dict = {}
+        for s in sessions:
+            k = str(s.get("kind") or "")
+            if k:
+                kinds.setdefault(k, []).append(s)
+        # One kind is not a split. Until `bb intent` has a table that decides,
+        # every session carries the same label, and a per-kind table would be
+        # the aggregate printed twice under a heading that implies a comparison
+        # nobody made. `kinds_seen` says which it was either way.
+        out["by_kind"] = {k: aggregate(v, split=False) for k, v in kinds.items()} if len(kinds) > 1 else {}
+        out["kinds_seen"] = sorted(kinds)
+    return out

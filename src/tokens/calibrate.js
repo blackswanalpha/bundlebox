@@ -202,6 +202,17 @@ export function reserveSamples() {
     const kind = String(e.kind || e.unit_kind || "");
     if (sid && kind && !kindOf.has(sid)) kindOf.set(sid, kind);
   }
+  // A located prompt is not an episode: no lane packed it, so it carries no
+  // unit kind. Its kind is what `bb intent` decided, and without these rows the
+  // reserve table is only checkable against the sessions a lane ran — which are
+  // the `fix` ones, which is the half of the table nobody doubted. Episodes
+  // still win where both exist: a unit that ran is a stronger claim about what
+  // the session was than a classifier's opinion of the prompt that opened it.
+  for (const r of store.rows("intent", { limit: 8000 })) {
+    const sid = String(r.session_id || "");
+    const kind = String(r.kind || "");
+    if (sid && kind && !kindOf.has(sid)) kindOf.set(sid, kind);
+  }
   const by = {};
   for (const r of store.rows("usage")) {
     const kind = kindOf.get(String(r.session_id || ""));
@@ -285,7 +296,7 @@ export function reportAll(a, cfg = load()) {
         : `  reserve ${String(r.sessions).padStart(5)} sessions   ${String(r.kind).padEnd(12)} too few to fit (need ${a.reserve.need})`);
     }
   } else {
-    L.push("  reserve     0 sessions   no episode names a unit kind yet; the shipped table stands");
+    L.push("  reserve     0 sessions   nothing names a kind for a measured session yet (no episode, no `bb intent` row); the shipped table stands");
   }
   return L.join("\n");
 }

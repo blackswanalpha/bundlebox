@@ -1,6 +1,6 @@
 {
   "root": "/home/mbugua/Documents/CodeBase/bundlebox",
-  "generated": "2026-09-20T15:00:02.461Z",
+  "generated": "2026-09-22T09:00:01.993Z",
   "how": "ss",
   "why": "",
   "services": [
@@ -28,17 +28,8 @@
       "held_by_other": false
     }
   ],
-  "strays": [
-    {
-      "port": 25463,
-      "host": "127.0.0.1",
-      "proc": ".cline",
-      "pid": 2008543,
-      "cwd": "/home/mbugua/Documents/CodeBase/bundlebox",
-      "supports": "."
-    }
-  ],
-  "observed": 59,
+  "strays": [],
+  "observed": 30,
   "up": 0,
   "of": 1
 }

@@ -420,6 +420,15 @@ export async function fits({ cfg = load() } = {}) {
   catch (e) { log("session-end", `symbol space ${String(e && e.message || e).slice(0, 160)}`); }
   try { const c = fitConfidenceHead(); out.confidence = c; log("session-end", `confidence head n=${c.acted_on ?? 0} acted_on ${c.useful ? "beats PRECISION" : `(${c.why})`}`); }
   catch (e) { log("session-end", `confidence head ${String(e && e.message || e).slice(0, 160)}`); }
+  // The intent table. Fitted here and nowhere else: this is the only budget in
+  // the box that may call Jev, and sleep time is the only place a remote model
+  // is allowed to cost anything.
+  try {
+    const { fit } = await import("../intent/index.js");
+    const i = await fit();
+    out.intent = i;
+    log("session-end", `intent table n=${i.n ?? 0} ${i.useful ? `fitted, ${(i.useful_kinds || []).join("/")} decide` : `fallback (${i.why})`}`);
+  } catch (e) { log("session-end", `intent table ${String(e && e.message || e).slice(0, 160)}`); }
   return out;
 }
 
@@ -449,12 +458,21 @@ async function autoPinpoint(payload, p) {
     return true;
   }
   const t0 = Date.now();
-  const pp = await import("../pinpoint/index.js");
-  const b = await pp.build(p, { kind: "fix" });
+  const [pp, intent] = await Promise.all([import("../pinpoint/index.js"), import("../intent/index.js")]);
+  // The kind is the budget: it picks this turn's output reserve, and the reserve
+  // is what capacity() does NOT spend on scope. `classify` is arithmetic over a
+  // stored table — no network, no model, no clock — so it costs the turn nothing
+  // and returns `fix` unchanged when no table has been fitted yet.
+  const it = intent.classify(p);
+  const b = await pp.build(p, { kind: it.kind });
   const rec = brief.record(b, { sessionId, briefPath: b.path });
   brief.activate(rec);
   brief.prune();
-  log("prompt", `pinpoint ${b.scope.length} files, ${b.anchors.length} regions, ${b.verdict} in ${Date.now() - t0}ms`);
+  // Recorded so `bb tokens calibrate` can group measured output by kind. A
+  // located prompt is not a unit, so it has no episode, so without this row the
+  // reserve table is only ever checked against the lanes that ran.
+  intent.record({ session_id: sessionId, kind: it.kind, p: it.p, via: it.via });
+  log("prompt", `pinpoint ${b.scope.length} files, ${b.anchors.length} regions, ${b.verdict}, kind ${it.kind} (${it.via}) in ${Date.now() - t0}ms`);
   emit({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: capTokens(brief.band(rec), CAPS.prompt) } });
   return true;
 }

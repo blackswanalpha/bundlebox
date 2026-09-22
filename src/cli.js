@@ -24,6 +24,7 @@ export const MODULES = [
   ["snapgen", "./snapgen/index.js"],
   ["arc", "./arc/index.js"],
   ["pinpoint", "./pinpoint/index.js"],
+  ["intent", "./intent/index.js"],
   ["bench", "./bench/index.js"],
   ["genesis", "./genesis/index.js"],
   ["cookbook", "./cookbook/index.js"],
@@ -40,6 +41,7 @@ export const MODULES = [
   ["frames", "./frames/index.js"],
   ["failsafe", "./failsafe/index.js"],
   ["auditor", "./auditor/index.js"],
+  ["case", "./case/index.js"],
   ["monitor", "./monitor/index.js"],
   ["console", "./console/index.js"],
   ["oversight", "./oversight/index.js"],
@@ -99,12 +101,12 @@ const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "updat
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple"]);
+  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "intent", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
   ["govern", "What is the bar, before anything is written?", ["auditor"]],
-  ["look", "What is in this tree?", ["init", "doctor", "env", "scan", "findings", "explain", "triage", "oversight", "designlabs"]],
-  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "tokens", "sieve", "janitor", "slop", "bench"]],
+  ["look", "What is in this tree?", ["init", "doctor", "env", "scan", "findings", "explain", "triage", "case", "oversight", "designlabs"]],
+  ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "intent", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
   ["ship", "What closes the loop?", ["finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],

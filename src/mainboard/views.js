@@ -27,18 +27,24 @@ import * as dotty from "../dotty/index.js";
 import * as cdp from "../dotty/cdp.js";
 import * as bugbash from "./bugbash.js";
 import * as turntables from "./turntables.js";
+import * as proofhouse from "./proofhouse.js";
 import * as store from "../core/store.js";
 import { load } from "../core/config.js";
 import * as expert from "../core/expert.js";
 import * as kernel from "../core/kernel.js";
+import { codeFiles } from "../snapgen/tables.js";
 
 // The four at the end came in with the bugbash port. They are about the
 // rendered surface rather than about system behaviour, which is why they are
 // their own words and not stretched out of `GAP`: a tap target under the touch
 // floor and a route the corpus never calls are not the same kind of fact and a
 // board that spells them the same cannot be sorted by anybody.
+// FACTORY is the one category whose subject is this box rather than the system
+// under test. Its own word for the same reason the four UI ones have theirs: a
+// unit scoped to the whole tree and a route that 500s are not the same kind of
+// fact, and a board that spells them the same cannot be sorted by anybody.
 export const CATEGORIES = ["PLATFORM", "GAP", "CONTRACT", "SCORE", "FRICTION", "PERFORMANCE", "RACE", "SECURITY", "COVERAGE",
-  "UI", "COPY", "A11Y", "STATE"];
+  "UI", "COPY", "A11Y", "STATE", "FACTORY"];
 const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(:|\/|$)/i;
 
 export const VIEWS = [
@@ -248,6 +254,23 @@ export const VIEWS = [
         return { ran: false, skipped: `a replay needs two runs of the same corpus to compare — ${thin.join(", ")}. \`bb cookbook run\` stores one each time; the \`scenarios\` gear does it on every tick` };
       }
       return { ran: true, findings, facts };
+    },
+  },
+  {
+    id: "proofhouse", title: "Proofhouse", question: "is what this box produced fit to act on?", writes: ["FACTORY"], prefix: "PH",
+    // The only view that reads no service and no corpus: its subject is on disk
+    // already. It is last on purpose — every view above it may have written a
+    // finding this run, and a queue is worth checking after it is full.
+    async run() {
+      const units = store.get("units", []) || [];
+      const rows = store.get("findings", []) || [];
+      if (!units.length && !rows.length) return { ran: false, skipped: "no units and no findings: this box has produced nothing to check" };
+      let universe = 0;
+      try { universe = codeFiles().length; } catch { /* reported as a blind spot below, never as a pass */ }
+      const r = proofhouse.check({ units, findings: rows, universe });
+      // R1 says a view that did not run reports why. A view that ran with one
+      // eye shut has the same failure at a smaller size, so the facts carry it.
+      return { ran: true, findings: r.findings, facts: { ...r.facts, blind: r.blind } };
     },
   },
 ];

@@ -50,6 +50,13 @@ export const GEARS = [
       // a gear run against a store that already holds findings still has work.
       { verb: "compile", flags: { write: true }, when: "open_findings > 0", description: "findings -> units packed to a window" },
       { verb: "route", flags: { write: true }, when: "units_ready > 0", description: "units -> lanes. Stops here: running them is a decision" },
+      // Last, and about the four stages above it rather than about the tree.
+      // Every check in this view reads an artefact one of them just wrote, and
+      // an unwired check is the thing it exists to catch: the queue it is for
+      // was built by a tick nobody read, and every health row above it was
+      // green while fifty-nine of sixty-two units were one finding.
+      { verb: "mainboard", args: ["run"], flags: { only: "proofhouse" }, when: "units_ready > 0", optional: true,
+        description: "the queue this tick packed, checked against itself: a scope that is the tree, one detector owning the board, work that cannot come back green, free closures nobody ran" },
     ],
   }),
   gear({
