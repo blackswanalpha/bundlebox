@@ -381,6 +381,57 @@ test("jev: a calibrated opinion on a pattern replaces its prior as the item's un
   }
 });
 
+test("jev: a timeout, a 429 and a 5xx are retried; a 4xx and a refused connection are not", async () => {
+  const { spawn } = await import("node:child_process");
+  const jev = await import("../src/grapple/jev.js");
+  // Each path fails its first N requests in its own way, then answers.
+  w("jev-flaky.mjs", `import http from "node:http";
+    const seen = {};
+    const srv = http.createServer((req, res) => { req.resume(); req.on("end", () => {
+      const n = seen[req.url] = (seen[req.url] || 0) + 1;
+      const ok = () => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ answers: { q: { noul: 0.7 } }, n })); };
+      if (req.url === "/count") return res.end(JSON.stringify(seen));
+      if (req.url === "/slow-once" && n === 1) return setTimeout(ok, 1500);
+      if (req.url === "/503-once" && n === 1) { res.statusCode = 503; res.setHeader("retry-after", "0"); return res.end("{}"); }
+      if (req.url === "/429-twice" && n <= 2) { res.statusCode = 429; return res.end("{}"); }
+      if (req.url === "/always-503") { res.statusCode = 503; return res.end("{}"); }
+      if (req.url === "/400") { res.statusCode = 400; return res.end("{}"); }
+      ok(); }); });
+    srv.listen(0, "127.0.0.1", () => process.stdout.write(String(srv.address().port) + "\\n"));`);
+  const child = spawn(process.execPath, [path.join(root, "jev-flaky.mjs")], { stdio: ["ignore", "pipe", "inherit"] });
+  const port = await new Promise((r) => child.stdout.once("data", (d) => r(String(d).trim())));
+  const at = (p) => { process.env.TYPESAFE_API_URL = `http://127.0.0.1:${port}${p}`; };
+  const ask1 = (o) => jev.call({ state: "s", questions: { q: { type: "noul", instructions: "q?" } } }, { timeout: 500, backoff: 10, ...o });
+  try {
+    process.env.TYPESAFE_API_KEY = "test-key";
+    at("/slow-once");
+    assert.equal(ask1({ retries: 0 }), null, "one attempt, and it timed out");
+    at("/slow-once"); // the second request on this path answers at once
+    assert.equal(ask1().attempts, 1);
+    at("/503-once");
+    const r503 = ask1();
+    assert.equal(r503.attempts, 2);
+    assert.equal(jev.probability(r503.answers.q), 0.7);
+    at("/429-twice");
+    assert.equal(ask1().attempts, 3);
+    at("/always-503");
+    assert.equal(ask1(), null, "retries run out");
+    at("/400");
+    assert.equal(ask1(), null);
+    const r = spawnSync(process.execPath, ["-e", `fetch("http://127.0.0.1:${port}/count").then((r) => r.text()).then((t) => process.stdout.write(t))`], { encoding: "utf8" });
+    const count = JSON.parse(r.stdout);
+    assert.equal(count["/always-503"], 1 + jev.RETRIES);
+    assert.equal(count["/400"], 1, "a 4xx is not retried");
+    process.env.TYPESAFE_API_URL = "http://127.0.0.1:9/";
+    const t0 = Date.now();
+    assert.equal(ask1(), null);
+    assert.ok(Date.now() - t0 < 3000, "a refused connection returns without backing off");
+  } finally {
+    delete process.env.TYPESAFE_API_KEY; delete process.env.TYPESAFE_API_URL;
+    child.kill();
+  }
+});
+
 test("priorByFinding: one pattern opinion reaches every row of its shape, and a human answer retires it", () => {
   const rows = [
     { id: "f1", status: "open", precision: "heuristic", detector: "swallowed-errors", title: "src/a.js:1 swallows an error", path: "src/a.js" },
