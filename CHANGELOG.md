@@ -2,6 +2,7 @@
 
 One file per release under `changelogs/`. This file is the index.
 
+- [v0.7.0](changelogs/v0.7.0.md) — 2026-09-22 — the locate aimed, the work labelled, and the factory under its own microscope
 - [v0.6.0](changelogs/v0.6.0.md) — 2026-09-19 — the loop measured against itself, and the handoff layer
 - [v0.5.0](changelogs/v0.5.0.md) — 2026-09-17 — the actuator layer: what this box measures now drives something
 - [v0.4.0](changelogs/v0.4.0.md) — 2026-09-16 — the enforcement axis: bb runs first, locates the work, and says whether it is finished
