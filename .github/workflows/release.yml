@@ -228,25 +228,39 @@ jobs:
           ' "${TAG#v}"
           ./mcp-publisher validate
       - run: ./mcp-publisher login github-oidc
-      # npm's CDN can serve the new tarball a few seconds after `npm publish`
-      # returns, and the registry reads it to verify mcpName. Three attempts
-      # rather than one, so a propagation delay is not a failed release.
+      # v0.7.1 is why this loop is ten minutes and not one. `npm publish`
+      # returned `+ bundlebox@0.7.1` and said "your package is being processed
+      # and may take a few minutes to become available"; the registry reads the
+      # tarball to verify mcpName and answered
+      #
+      #   NPM package 'bundlebox' exists, but version '0.7.1' was not found (404)
+      #
+      # three times in 60s, and the job went red on a release that had in fact
+      # published. npm's own wording is the budget: minutes, not seconds.
       - name: publish the record
+        timeout-minutes: 15
         run: |
-          for i in 1 2 3; do
+          for i in $(seq 1 10); do
             ./mcp-publisher publish && exit 0
-            echo "attempt $i failed; waiting for the tarball to be servable"
-            sleep 20
+            echo "attempt $i of 10 failed; npm has not served the tarball yet"
+            sleep 60
           done
           exit 1
       - if: failure()
+        env: { TAG: "${{ needs.ref.outputs.tag }}" }
         run: |
+          V="${TAG#v}"
           {
             echo "### the MCP registry record did not publish"
             echo
-            echo "The GitHub release and the npm package for \`${{ needs.ref.outputs.tag }}\` are unaffected."
+            echo "The GitHub release and the npm package for \`$TAG\` are unaffected."
             echo
-            echo "The usual cause is \`mcpName\` missing from the published tarball:"
-            echo "\`npm view bundlebox@${{ needs.ref.outputs.tag }} mcpName\` must print"
-            echo "\`io.github.blackswanalpha/bundlebox\`. Re-run this job alone once it does."
+            echo "Two causes, and the error text tells them apart."
+            echo
+            echo "\`version 'X' was not found (404)\` is npm still processing the tarball."
+            echo "Nothing is wrong with the release; re-run this job alone once"
+            echo "\`npm view bundlebox@$V mcpName\` answers."
+            echo
+            echo "Anything else is usually \`mcpName\` missing from the published"
+            echo "tarball, which must print \`io.github.blackswanalpha/bundlebox\`."
           } >> "$GITHUB_STEP_SUMMARY"
