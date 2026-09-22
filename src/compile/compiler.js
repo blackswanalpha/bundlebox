@@ -38,6 +38,21 @@ async function triageFn() {
   return _triage;
 }
 
+/** Jev's per-finding prior, `{}` when there is none.
+ *
+ *  Dynamically imported for the same reason `triageFn` is: compile is a READER
+ *  of an opinion the grapple queue already formed and paid for, never a reason
+ *  to form one. No key, no queue, no python, no grapple store — every one of
+ *  those returns `{}` and the compile prices findings off the method constant
+ *  exactly as it did before. */
+async function jevPriors(findings) {
+  try {
+    const m = await import("../grapple/ask.js");
+    if (typeof m.priorByFinding === "function") return m.priorByFinding(findings) || {};
+  } catch { /* fall through: an absent opinion is not an error */ }
+  return {};
+}
+
 const topDirOf = (p) => { const s = String(p || "").replace(/\\/g, "/"); return s.includes("/") ? s.split("/")[0] : "."; };
 
 /** The repository root is not a scope.
@@ -199,9 +214,14 @@ export async function compileUnits(findings, { maxUnits = 0 } = {}) {
 
   // Triage first: a finding the rule engine declines never becomes a unit, and
   // a finding an actuator can close becomes a zero-token unit.
+  const priors = await jevPriors(findings || []);
   const decisions = [];
-  for (const f of findings || []) {
-    if (f.status && f.status !== "open") continue;
+  for (const raw of findings || []) {
+    if (raw.status && raw.status !== "open") continue;
+    // Stamped before triage, not inside it: `triage` and `expectedValue` stay
+    // pure and synchronous, so `bb explain` derives the same number off the
+    // same finding without reaching into a store of its own.
+    const f = priors[raw.id] ? { ...raw, jev: priors[raw.id] } : raw;
     let d;
     try { d = triage(f, cfg) || {}; } catch { d = {}; }
     decisions.push({ id: f.id, detector: f.detector, promote: !!d.promote, priority: d.priority, ev: d.ev, est_tokens: f.est_tokens, auto_fix: f.auto_fix || "", _f: f, _t: d });

@@ -168,6 +168,45 @@ test("triage: ev math, floors, judgement never promoted, critical outranks", asy
   assert.match(t6.reason, /info/);
 });
 
+test("triage: a jev opinion moves the method constant and can cross the floor, but never replaces it", async () => {
+  const { triage, expectedValue, SHRINKAGE } = await import("../src/detectors/index.js");
+  const cfg = { detectors: { promote_at: "medium" } };
+  const base = { detector: "swallowed-errors", severity: "medium", precision: "heuristic", est_tokens: 150000, files: ["src/a.js"], evidence: {} };
+
+  // No opinion: the method constant, exactly as before.
+  const plain = triage(base, cfg);
+  assert.equal(expectedValue(base).conf, 0.6);
+  assert.equal(plain.ev, 0.8);
+  assert.equal(plain.promote, true);
+
+  // Jev says deliberate at 0.98 over 3 windows, so P(holds) is 0.02 and the
+  // weight is 3/(3+4). Confidence falls and the bet stops being worth a lane.
+  const w = 3 / (3 + SHRINKAGE);
+  const deliberate = { ...base, jev: { p: 0.98, n: 3 } };
+  const e1 = expectedValue(deliberate);
+  assert.equal(e1.base, 0.6);
+  assert.equal(e1.conf, Math.round(((1 - w) * 0.6 + w * 0.02) * 10000) / 10000);
+  const t1 = triage(deliberate, cfg);
+  assert.ok(t1.ev < plain.ev, `an opinion that the shape is deliberate must lower ev; ${t1.ev} vs ${plain.ev}`);
+  assert.equal(t1.promote, false);
+  assert.match(t1.reason, /below floor/);
+  assert.ok(t1.steps.some((x) => /jev: P\(deliberate\) 0.98/.test(x)), "the derivation names the number that moved it");
+
+  // The other way: Jev says it is a real defect and the same finding promotes.
+  const defect = { ...base, jev: { p: 0.05, n: 3 } };
+  const t2 = triage(defect, cfg);
+  assert.ok(t2.ev > plain.ev);
+  assert.equal(t2.promote, true);
+
+  // Shrinkage is the point: three windows never carry the confidence all the
+  // way to what Jev claimed, in either direction.
+  assert.ok(expectedValue({ ...base, jev: { p: 1, n: 3 } }).conf > 0.3, "a certain Jev still cannot drive confidence to zero");
+  assert.ok(expectedValue({ ...base, jev: { p: 0, n: 3 } }).conf < 0.95, "nor to the exact-method constant");
+
+  // A malformed or absent opinion is the same as none.
+  for (const j of [null, {}, { p: "0.4" }, { p: NaN }]) assert.equal(expectedValue({ ...base, jev: j }).conf, 0.6);
+});
+
 test("actuator fix-doc-links: dry run writes a patch and leaves the doc alone; apply rewrites", async () => {
   const { runAll } = await import("../src/detectors/index.js");
   const { actuate } = await import("../src/actuators/index.js");

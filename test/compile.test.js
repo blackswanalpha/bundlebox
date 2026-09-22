@@ -188,6 +188,30 @@ test("compileUnits: two findings of one detector in one dir become one unit with
   assert.equal(u.status, "ready");
 });
 
+test("compileUnits: a jev opinion stored against the shape reprices the unit the factory would open", async () => {
+  const gs = await import("../src/grapple/store.js");
+  const title = "src/util.js:3 swallows an error";
+  const f = { id: "j1", detector: "swallowed-errors", severity: "medium", precision: "heuristic", title, path: "src/util.js",
+    files: ["src/util.js"], key: "src/util.js:3", est_tokens: 10000, evidence: {}, kind: "fix", status: "open" };
+
+  // No question on the board: the method constant. 0.6 x 2 x 100k / 10k.
+  assert.equal((await compiler.compileUnits([f]))[0].ev, 12);
+
+  // Jev, asked as part of the queue, put this shape at 0.98 deliberate. Same
+  // finding, same severity, same cost — the confidence is what moved, and the
+  // unit is now worth less than the ones it is sorted against.
+  const key = gs.patternKey(f.detector, title);
+  gs.putQuestion({ key, shape: "pattern", detector: f.detector, n: 6, severity: "medium", precision: "heuristic", jev: { p: 0.98, uncertainty: 0.04 } });
+  const seconded = (await compiler.compileUnits([f]))[0];
+  assert.ok(seconded.ev < 12, `a shape Jev calls deliberate must cost the unit value; ev was ${seconded.ev}`);
+  assert.equal(seconded.ev, 7.03);          // 0.3514 x 2 x 100k / 10k, the method moved 3/7 of the way to P(holds) 0.02
+
+  // A human answered it. The label owns the shape, the opinion is retired, and
+  // the finding is priced off its method again.
+  gs.setState(key, "answered", { value: "no" });
+  assert.equal((await compiler.compileUnits([f]))[0].ev, 12);
+});
+
 test("compileUnits: an oversized group is split into parts that name their index", async () => {
   const mk = (i, p) => ({ id: `g${i}`, detector: "god-file", severity: "high", title: `${p} is huge`, path: p, files: [p], key: p,
     evidence: { lines: 3500 }, kind: "fix", status: "open" });

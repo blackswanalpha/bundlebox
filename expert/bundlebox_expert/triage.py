@@ -70,6 +70,12 @@ def triage(finding: dict, cfg: dict | None = None, history: dict | None = None, 
         p = M.predict_finding(head, finding)
         if p is not None:
             prior = {"p": p, "n": int(head.get("train") or head.get("n") or 0)}
+    # Jev fills the same slot when no head does. The head is fitted on THIS
+    # tree's settled findings and a general model does not get to argue with
+    # it, so this only runs when the head declined or was never fitted — which
+    # is also the only state the JS fast path can be in, so the two agree.
+    if prior is None:
+        prior = C.jev_prior(finding)
     conf = C.for_rule(finding.get("precision", "heuristic"), hist.get("held", 0), hist.get("weak", 0), hist.get("broken", 0), prior=prior)
     n = finding.get("evidence", {}).get("count") if isinstance(finding.get("evidence"), dict) else None
     n = n if isinstance(n, (int, float)) and n > 0 else 1

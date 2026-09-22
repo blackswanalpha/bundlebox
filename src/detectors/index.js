@@ -125,23 +125,53 @@ export function evFloor(cfg) {
   return Math.round(WEIGHT[sev] * 0.6 * 100000 / 200000 * 100) / 100;
 }
 
+// Shrinkage on a per-finding prior, mirroring `confidence.SHRINKAGE` in the
+// expert. A second opinion MOVES the method constant, it never replaces it:
+// four is the sample size at which an opinion is worth half the method.
+export const SHRINKAGE = 4;
+
+/** Jev's stored word on one finding, as a prior on the method constant, or
+ *  null when there is none.
+ *
+ *  Jev is asked whether a shape is DELIBERATE, so its `p` is the probability
+ *  the detector's claim is NOT a defect — the complement of the confidence
+ *  this file is about. The flip happens here, once, and nothing downstream
+ *  flips it again.
+ *
+ *  `n` is how many code windows Jev actually read for the item, never how many
+ *  rows the pattern covers: an opinion formed on three windows weighs
+ *  3/(3+4) = 0.43 and cannot outvote the method on its own. */
+export function jevPrior(f) {
+  const j = f && f.jev;
+  if (!j || typeof j.p !== "number" || !Number.isFinite(j.p)) return null;
+  const n = Number.isFinite(j.n) && j.n > 0 ? Math.floor(j.n) : 1;
+  return { p: Math.min(Math.max(1 - j.p, 0), 1), n, weight: n / (n + SHRINKAGE) };
+}
+
 /** Expected severity-points per 100k tokens: a promotion is a bet of
- *  est_tokens for a `conf` chance of removing `n` findings worth WEIGHT each. */
+ *  est_tokens for a `conf` chance of removing `n` findings worth WEIGHT each.
+ *
+ *  `base` is what the METHOD can support and never moves. `conf` is `base`
+ *  after any per-finding prior, so a reader of `bb explain` can see both the
+ *  constant and what moved it. */
 export function expectedValue(f) {
-  const conf = PRECISION[f.precision] ?? PRECISION[REGISTRY[f.detector]?.precision] ?? PRECISION.heuristic;
+  const base = PRECISION[f.precision] ?? PRECISION[REGISTRY[f.detector]?.precision] ?? PRECISION.heuristic;
+  const prior = jevPrior(f);
+  const conf = prior ? Math.round(((1 - prior.weight) * base + prior.weight * prior.p) * 10000) / 10000 : base;
   const n = Number.isFinite(f.evidence?.count) && f.evidence.count > 0 ? f.evidence.count : 1;
   const cost = Math.max(Number(f.est_tokens) || 0, 1000);
-  return { conf, n, cost, ev: Math.round(conf * (WEIGHT[f.severity] ?? 1) * n * 100000 / cost * 100) / 100 };
+  return { conf, base, prior, n, cost, ev: Math.round(conf * (WEIGHT[f.severity] ?? 1) * n * 100000 / cost * 100) / 100 };
 }
 
 export function triage(f, cfg = load()) {
   const steps = [];
   const sev = f.severity || "low";
-  const { conf, n, cost, ev } = expectedValue(f);
+  const { conf, base, prior, n, cost, ev } = expectedValue(f);
   const floorName = cfg?.detectors?.promote_at || "medium";
   const floor = evFloor(cfg);
   const out = { promote: false, reason: "", model: null, kind: f.kind || "fix", priority: null, ev, confidence: conf, ev_floor: floor, steps };
-  steps.push(`confidence ${conf} (${f.precision || "heuristic"} method); ev = ${conf} × ${WEIGHT[sev] ?? 1} × ${n} × 100k / ${human(cost)} = ${ev}`);
+  if (prior) steps.push(`jev: P(deliberate) ${f.jev.p} over ${prior.n} window(s), so P(holds) ${prior.p}; it moves ${base} to ${conf} at weight ${Math.round(prior.weight * 100) / 100}`);
+  steps.push(`confidence ${conf} (${f.precision || "heuristic"} method${prior ? ", moved by jev" : ""}); ev = ${conf} × ${WEIGHT[sev] ?? 1} × ${n} × 100k / ${human(cost)} = ${ev}`);
   if (sev === "info") { out.reason = "info severity never becomes work on its own"; steps.push("noise-floor: declined"); return out; }
   if (JUDGEMENT.has(f.detector)) { out.reason = `${f.detector} is a report, not a task`; steps.push("judgement-call: declined (critical does not override this)"); return out; }
   if (sev === "critical") {
