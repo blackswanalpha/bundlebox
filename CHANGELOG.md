@@ -2,6 +2,7 @@
 
 One file per release under `changelogs/`. This file is the index.
 
+- [v0.7.1](changelogs/v0.7.1.md) — 2026-09-22 — the runs on a page, and the server on the registries
 - [v0.7.0](changelogs/v0.7.0.md) — 2026-09-22 — the locate aimed, the work labelled, and the factory under its own microscope
 - [v0.6.0](changelogs/v0.6.0.md) — 2026-09-19 — the loop measured against itself, and the handoff layer
 - [v0.5.0](changelogs/v0.5.0.md) — 2026-09-17 — the actuator layer: what this box measures now drives something
