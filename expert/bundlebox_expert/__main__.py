@@ -4,7 +4,7 @@ import json
 import sys
 import time
 
-from . import __version__, confidence, coverage, grapple, graph, locate, memory, model, rules, scenarios, sequences, signals, space, throttle, triage, world
+from . import __version__, confidence, coverage, foreman, grapple, graph, locate, memory, model, rules, scenarios, sequences, signals, space, throttle, triage, world
 
 
 def main(argv: list) -> int:
@@ -95,10 +95,12 @@ def main(argv: list) -> int:
         out = scenarios.verdicts(inp.get("board") or {}, inp.get("thresholds"), inp.get("previous"))
     elif verb == "grapple":
         out = grapple.dispatch(inp)
+    elif verb == "foreman":
+        out = foreman.dispatch(inp)
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS, "locate": locate.thresholds(inp.get("cfg"))}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-train-intent", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "world-derive-row", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-train-intent", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "world-derive-row", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple", "foreman"]}))
         return 2
     print(json.dumps(out))
     return 0

@@ -255,6 +255,27 @@ export const DEFAULTS = {
     min_labels: 10,           // below this the harvest reports `unknown`, not a rate
     drift_at: 0.67,           // the drift score that counts as no progress
   },
+  foreman: {
+    // A responsibility policy over the coding agent (`bb foreman`). Jev answers
+    // the checks when TYPESAFE_API_KEY is set, the box's own evidence when not.
+    // `thresholds` overrides a bar by check key, e.g.
+    // "core.worker-health__worker_stuck": 0.7; `disabled` drops a responsibility.
+    enabled: true,
+    thresholds: {},
+    disabled: [],
+    max_steers: 1,            // a second warning after a steer is a stop
+    steer_grace_turns: 5,     // turns after a steer before another warning counts
+    max_iterations: 50,       // assessments per run before a person is asked
+    max_retries: 2,           // stop and resume cycles before a person is asked
+    verify: "",               // the verification command; empty is `npm test` when there is a test script
+    // The PostToolUse watcher. `observe` records what it would have said and
+    // injects nothing; `steer` puts the steer or stop into the agent's window;
+    // `off` skips it. Move to `steer` once `bb foreman replay` over the labelled
+    // observe rows says the bars are right.
+    hook: "observe",
+    hook_every: 10,           // tool calls between assessments, per session
+    hook_jev: false,          // a Jev call here is paid inside the session
+  },
   lathe: {
     // The automation engine's input. The PostToolUse hook appends the SHAPE of
     // each shell command — `git commit`, never the message — because mining the
