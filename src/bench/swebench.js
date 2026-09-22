@@ -168,6 +168,7 @@ export async function run({ n = 12, offset = 0, repos = "", cap = 10, maxFiles =
     results.push({ ...meta(inst), bare: a.bare, packed: a.packed,
       saved: a.bare - a.packed, saved_pct: pct(a.bare - a.packed, a.bare),
       localisation: packed, named_localisation: named, bare_localisation: bare, seconds: a.seconds,
+      bare_ms: a.bare_ms ?? null, packed_ms: a.packed_ms ?? null,
       // prompt4.md W3: was the target's symbol space built before pinpoint ranked
       // it? A run where it was not is the baseline, and the two must not be
       // averaged together as one number.
@@ -186,6 +187,8 @@ export async function run({ n = 12, offset = 0, repos = "", cap = 10, maxFiles =
     any: ok.filter((r) => r.localisation.hit > 0).length,
     all: ok.filter((r) => r.localisation.gold && r.localisation.hit === r.localisation.gold).length,
     space_built: ok.filter((r) => r.space?.built).length,
+    bare_ms: ok.reduce((s, r) => s + (r.bare_ms || 0), 0),
+    packed_ms: ok.reduce((s, r) => s + (r.packed_ms || 0), 0),
   };
   totals.saved = totals.bare - totals.packed;
   totals.saved_pct = pct(totals.saved, totals.bare);

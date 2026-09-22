@@ -41,10 +41,17 @@ const pct = (saved, from) => (from > 0 ? Math.round((saved / from) * 1000) / 10 
 export async function runTask(t, { cap = BARE_READ_CAP, maxFiles = MAX_FILES } = {}) {
   const row = { id: t.id, title: t.title || t.problem, from: t.from || "" };
   try {
+    // Each arm is timed on its own. A single total cannot say which arm the
+    // wall-clock went to, and "how long until the window is ready" is the half
+    // a session actually waits on.
+    const t0 = Date.now();
     const a = bare(t.problem, { files: t.files || [], cap });
+    const t1 = Date.now();
     const b = await packed(t.problem, { files: t.files || [], maxFiles });
+    const t2 = Date.now();
     const saved = a.tokens - b.tokens;
     return { ...row, bare: a.tokens, packed: b.tokens, saved, saved_pct: pct(saved, a.tokens),
+      bare_ms: t1 - t0, packed_ms: t2 - t1,
       bare_files_read: a.read, bare_files_found: a.considered, packed_files: b.scope.length,
       // The file lists, not only their counts. `bb bench gate` decides whether a
       // unit is the same task as a benched one, and files are what that is
@@ -159,8 +166,11 @@ async function cmd({ _, flags }) {
     if (!task || !task.problem) { warn("bb bench arm --file <task.json>  (needs {\"problem\": \"...\"})"); return 2; }
     const t0 = Date.now();
     const a = bare(task.problem, { files: task.files || [], cap: Number(task.cap) || cap });
+    const t1 = Date.now();
     const b = await packed(task.problem, { files: task.files || [], maxFiles: Number(task.maxFiles) || maxFiles });
+    const t2 = Date.now();
     const payload = { id: task.id || "", bare: a.tokens, packed: b.tokens,
+      bare_ms: t1 - t0, packed_ms: t2 - t1,
       bare_files: a.files.map((x) => x.file), packed_files: b.scope,
       // Two file sets, because they cost differently and a benchmark that
       // merged them would be measuring the cheaper one and reporting the
