@@ -380,3 +380,32 @@ test("jev: a calibrated opinion on a pattern replaces its prior as the item's un
     child.kill();
   }
 });
+
+test("priorByFinding: one pattern opinion reaches every row of its shape, and a human answer retires it", () => {
+  const rows = [
+    { id: "f1", status: "open", precision: "heuristic", detector: "swallowed-errors", title: "src/a.js:1 swallows an error", path: "src/a.js" },
+    { id: "f2", status: "open", precision: "heuristic", detector: "swallowed-errors", title: "src/c.js:9 swallows an error", path: "src/c.js" },
+    { id: "f3", status: "open", precision: "heuristic", detector: "silent-fallback", title: "src/b.js:1 falls back silently", path: "src/b.js" },
+    { id: "f4", status: "open", precision: "exact", detector: "doc-links", title: "README.md:3 dead link", path: "README.md" },
+    { id: "f5", status: "closed", precision: "heuristic", detector: "swallowed-errors", title: "src/a.js:1 swallows an error", path: "src/a.js" },
+  ];
+  const kA = gs.patternKey("swallowed-errors", "src/a.js:1 swallows an error");
+  const kB = gs.patternKey("silent-fallback", "src/b.js:1 falls back silently");
+  const stored = {
+    [kA]: { key: kA, state: "open", n: 82, jev: { p: 0.91, uncertainty: 0.18 } },
+    [kB]: { key: kB, state: "answered", n: 4, jev: { p: 0.2, uncertainty: 0.4 } },
+  };
+  const by = ask.priorByFinding(rows, stored);
+
+  // Both open rows of the shape inherit the one opinion; the pattern reaches
+  // 82 rows but Jev read three windows, and three is what the weight may use.
+  assert.deepEqual(by.f1, { p: 0.91, n: 3 });
+  assert.deepEqual(by.f2, by.f1);
+  assert.equal(by.f3, undefined, "a shape a human answered is settled, not seconded");
+  assert.equal(by.f4, undefined, "an exact method is not contested");
+  assert.equal(by.f5, undefined, "a closed finding is not priced");
+
+  // No Jev on the question, or no question at all: no prior, not a zero.
+  assert.deepEqual(ask.priorByFinding(rows, { [kA]: { key: kA, state: "open", n: 82 } }), {});
+  assert.deepEqual(ask.priorByFinding(rows, {}), {});
+});

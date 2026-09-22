@@ -39,6 +39,29 @@ def for_rule(precision: str, held: int = 0, weak: int = 0, broken: int = 0, prio
     return {**out, "confidence": round((1 - w) * start + w * hold, 4), "hold_rate": round(hold, 4), "settled": settled, "weight": round(w, 4)}
 
 
+def jev_prior(finding: dict) -> dict | None:
+    """Jev's stored word on one finding, in the shape `for_rule` takes as
+    `prior`, or None when there is none.
+
+    Jev is asked whether a shape is DELIBERATE, so its `p` is the probability
+    the detector's claim is NOT a defect — the complement of the confidence
+    this module is about. The flip happens here, once, and `for_rule` is handed
+    a probability that the finding HOLDS like any other.
+
+    `n` is how many code windows Jev read for the item, never how many rows the
+    pattern covers, so an opinion formed on three windows weighs
+    3/(3+SHRINKAGE) and cannot outvote the method constant on its own.
+    """
+    j = finding.get("jev")
+    if not isinstance(j, dict):
+        return None
+    p = j.get("p")
+    if not isinstance(p, (int, float)) or isinstance(p, bool):
+        return None
+    n = j.get("n")
+    n = int(n) if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0 else 1
+    return {"p": min(max(1.0 - float(p), 0.0), 1.0), "n": n}
+
 def value(conf: float, severity: str, est_tokens: int, n: int = 1) -> float:
     cost = max(int(est_tokens or 0), 1000)
     return round(conf * WEIGHT.get(severity, 1.0) * max(n, 1) * 100000 / cost, 2)

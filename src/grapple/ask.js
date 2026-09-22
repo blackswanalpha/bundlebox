@@ -15,8 +15,14 @@
 // Before either ranks, Jev (`jev.js`) gives each pattern item one calibrated
 // probability that its shape is deliberate. That probability replaces the
 // per-detector prior as the item's uncertainty: a shape Jev is sure about sinks
-// below the floor, a shape it cannot call is asked first. It is a ranking input
-// only. No answer, label or event of record comes from it.
+// below the floor, a shape it cannot call is asked first.
+//
+// The same number has a second reader. `priorByFinding` hands it to triage as a
+// per-finding prior on the method constant, which is what decides whether a
+// heuristic finding is worth a lane at all. Both readings are CONFIDENCE, never
+// a verdict: Jev writes no answer, no label and no event of record, and a human
+// answer on a shape retires Jev's opinion of it rather than being blended with
+// it.
 import fs from "node:fs";
 import { sha1 } from "../core/util.js";
 import * as core from "../core/store.js";
@@ -73,6 +79,30 @@ export function patterns(rows = contested()) {
     g.n = g.rows.length;
   }
   return [...by.values()];
+}
+
+/** Jev's stored word on each contested finding, as `{ id: { p, n } }` for
+ *  `detectors.expectedValue` to read as a prior. `{}` when Jev never ran.
+ *
+ *  Jev answers per PATTERN and a pattern covers every row of one detector
+ *  shape, so the lookup goes back through the `patternKey` the queue was built
+ *  with and every row of the shape inherits the one opinion. `n` is capped at
+ *  the windows Jev actually read, not the rows the pattern reaches, because the
+ *  shrinkage downstream is about evidence seen and Jev saw at most three.
+ *
+ *  Answered and expired questions are skipped. A shape a human settled has a
+ *  label, and a label outranks an opinion: leaving it out here is what keeps
+ *  the two from being blended into one number nobody can take apart. */
+export function priorByFinding(rows = core.get("findings", []), stored = gs.questions()) {
+  const out = {};
+  for (const f of contested(rows)) {
+    const q = stored[gs.patternKey(f.detector, f.title || f.key || "")];
+    if (!q || q.state !== "open") continue;
+    const p = q.jev && q.jev.p;
+    if (typeof p !== "number" || !Number.isFinite(p)) continue;
+    out[f.id || core.findingId(f)] = { p, n: Math.min(Math.max(Number(q.n) || 1, 1), jev.ROWS_PER_ITEM) };
+  }
+  return out;
 }
 
 /** Every askable item, before ranking: instance items from the brief, pattern

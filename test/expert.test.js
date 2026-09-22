@@ -21,6 +21,12 @@ const findings = [
   { detector: "dead-exports", severity: "low", precision: "heuristic", est_tokens: 40000 },
   { detector: "god-file", severity: "medium", precision: "exact", est_tokens: 120000 },
   { detector: "duplicate-blocks", severity: "medium", precision: "exact", est_tokens: 6000, evidence: { count: 3 } },
+  // The jev prior is the one term both sides compute rather than look up, so
+  // it is the one most likely to drift. Both directions, appended so the
+  // index-keyed assertions below keep pointing at the same findings.
+  { detector: "swallowed-errors", severity: "medium", precision: "heuristic", est_tokens: 150000, jev: { p: 0.98, n: 3 } },
+  { detector: "silent-fallback", severity: "medium", precision: "heuristic", est_tokens: 150000, jev: { p: 0.05, n: 3 } },
+  { detector: "quiet-degrade", severity: "high", precision: "heuristic", est_tokens: 20000, jev: { p: 0.5, n: 1 } },
 ];
 
 test("expert present on this box (informational)", () => { console.log(`  expert: ${have ? "python " + expert.version() : "absent — parity skipped"}`); });
