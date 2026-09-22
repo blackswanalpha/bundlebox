@@ -1,0 +1,21 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "bundlebox",
+  "owner": { "name": "Kamande Mbugua", "url": "https://github.com/blackswanalpha" },
+  "description": "The zero-token software factory: answers a parse, a count or a set difference can settle, before a model is billed for them.",
+  "plugins": [
+    {
+      "name": "bundlebox",
+      "displayName": "bundlebox",
+      "source": "./",
+      "description": "Answers where the work is before a file is opened: a packed brief, the symbol tables, the open findings and what the session cost. 67.5% less context per task on SWE-bench Verified, measured.",
+      "version": "0.7.0",
+      "author": { "name": "Kamande Mbugua" },
+      "homepage": "https://github.com/blackswanalpha/bundlebox#readme",
+      "repository": "https://github.com/blackswanalpha/bundlebox",
+      "license": "MIT",
+      "keywords": ["mcp", "context-engineering", "token-optimization", "static-analysis", "ai-agents"],
+      "category": "productivity"
+    }
+  ]
+}

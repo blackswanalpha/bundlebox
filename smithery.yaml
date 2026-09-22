@@ -1,0 +1,15 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+# bundlebox reads the repository it is started in, so it runs local: there is
+# nothing for a hosted container to point at.
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      workspace:
+        type: string
+        description: Path to the repository bundlebox should answer about. Defaults to the directory the server is started in.
+  commandFunction:
+    |-
+    (config) => ({ command: 'npx', args: ['-y', 'bundlebox', 'mcp'], env: config.workspace ? { BB_ROOT: config.workspace } : {} })

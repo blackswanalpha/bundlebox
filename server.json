@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.blackswanalpha/bundlebox",
+  "title": "bundlebox",
+  "description": "Where the work is, packed before the agent reads: brief, symbol tables, findings, token bill.",
+  "version": "0.7.1",
+  "repository": {
+    "url": "https://github.com/blackswanalpha/bundlebox",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/blackswanalpha/bundlebox#readme",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "bundlebox",
+      "version": "0.7.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
