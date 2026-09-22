@@ -420,9 +420,12 @@ export async function fits({ cfg = load() } = {}) {
   catch (e) { log("session-end", `symbol space ${String(e && e.message || e).slice(0, 160)}`); }
   try { const c = fitConfidenceHead(); out.confidence = c; log("session-end", `confidence head n=${c.acted_on ?? 0} acted_on ${c.useful ? "beats PRECISION" : `(${c.why})`}`); }
   catch (e) { log("session-end", `confidence head ${String(e && e.message || e).slice(0, 160)}`); }
-  // The intent table. Fitted here and nowhere else: this is the only budget in
-  // the box that may call Jev, and sleep time is the only place a remote model
-  // is allowed to cost anything.
+  // The intent table. Fitted here and nowhere else, and one of the two callers
+  // that may reach Jev: the other is `rank` in src/grapple/ask.js, which fetches
+  // an opinion on the pattern items and is reached from `grapple.observe` in the
+  // session-end handler below. Both run at sleep time, which is the only place a
+  // remote model is allowed to cost anything. `bb grapple` is the exception and
+  // pays the call in the foreground, because a person typed it.
   try {
     const { fit } = await import("../intent/index.js");
     const i = await fit();
