@@ -68,3 +68,10 @@ expert/**/__pycache__/
 .claude/settings.local.json
 arc/target
 repo/
+
+# The Jev API key, pasted here while wiring src/grapple/jev.js. The code reads
+# it from TYPESAFE_API_KEY and never from a file, so nothing in the tree needs
+# this path to exist — it is a scratch note that one `git add -A` away from
+# being published on a public remote, and a published key is rotated, not
+# deleted.
+docs/jev.md
