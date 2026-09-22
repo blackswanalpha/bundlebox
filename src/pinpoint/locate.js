@@ -28,7 +28,8 @@
 // than no number.
 import fs from "node:fs";
 import path from "node:path";
-import { OUT } from "../core/paths.js";
+import { execFileSync } from "node:child_process";
+import { OUT, ROOT } from "../core/paths.js";
 
 /** Exception rows, and briefs that produced one, before the pair of numbers is
  *  a measurement. Twelve rows out of one odd task is one task, not an error
@@ -99,8 +100,70 @@ export function reverted(edits = []) {
   return back;
 }
 
-/** One window, split into the four buckets. Files, not edits: a session that
- *  touched one file eleven times learned one thing about the locate. */
+/** Stamp each edit with whether git says the file was ADDED after the brief
+ *  that window belongs to. One `git log` per distinct file, not per edit, and
+ *  only from `measure` — `windows` stays pure so the same synthetic events
+ *  score identically in a test and in the tree.
+ *
+ *  A file with no add commit at all is left unstamped rather than assumed new.
+ *  That keeps an untracked file counted as a miss, which is the pessimistic
+ *  direction: this figure exists to be checked, and a number that flatters the
+ *  ranker by dropping rows it could not explain is the failure the echos
+ *  doctrine names. */
+export function markCreated(wins = []) {
+  const addedAt = new Map();
+  const when = (f) => {
+    if (addedAt.has(f)) return addedAt.get(f);
+    let t = null;
+    try {
+      const o = execFileSync("git", ["log", "--diff-filter=A", "--format=%ct", "--", f],
+        { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      const first = o.split("\n").filter(Boolean).pop();       // the oldest add is the birth
+      if (first) t = Number(first) * 1000;
+    } catch { t = null; }                                       // no git, no history: unstamped
+    addedAt.set(f, t);
+    return t;
+  };
+  for (const w of wins) {
+    for (const e of w.edits || []) {
+      const t = when(String(e.file || ""));
+      if (t !== null && w.at && t > w.at) e.created = true;
+    }
+  }
+  return wins;
+}
+
+// The guard's own test pattern, copied from `writeVerdict` in
+// `src/grapple/detect.js` rather than taken from `detectors/_shared.js`. The
+// shared one is wider — it counts `fixtures/` and `specs/` too — and a row the
+// guard would deny but this figure drops is the flattering direction. The copy
+// is pinned to the original by `test/pinpoint.test.js`, which runs both over
+// the same paths and fails when they disagree.
+export const GUARD_TEST = /(^|\/)test\/|\.test\.[jt]sx?$|_test\.(py|go|rs)$|(^|\/)tests?\//;
+
+/** Why an exception row is not the locate's to answer for, or "" when it is.
+ *
+ *  The first three mirror `detect.js:writeVerdict` exactly, and they have to:
+ *  that guard is what the recall figure is ultimately read to decide, and a
+ *  denominator holding rows the guard exempts measures something nobody acts
+ *  on. The fourth is the locate's own: a file that did not exist when the
+ *  brief was written could not have been ranked, so counting it as a miss
+ *  charges the ranker for a file it could not see. Measured here: 15 of 20
+ *  exception rows were one of these four, and the five that remained were the
+ *  ranker's. */
+export function excluded(file, created = false) {
+  const f = String(file || "");
+  if (!f) return "";
+  if (path.isAbsolute(f) || f.startsWith("..")) return "outside-workspace";
+  if (f === ".bundlebox" || f.startsWith(".bundlebox/") || f.startsWith(".bundlebox\\") || f === "GATES.md") return "generated";
+  if (GUARD_TEST.test(f.replace(/\\/g, "/"))) return "test";
+  if (created) return "created";
+  return "";
+}
+
+/** One window, split into the four buckets, with the rows nobody can be
+ *  scored on lifted out first. Files, not edits: a session that touched one
+ *  file eleven times learned one thing about the locate. */
 export function classify(w) {
   const scope = new Set((w.scope || []).map(String));
   const cut = new Set((w.cut || []).map(String));
@@ -108,16 +171,22 @@ export function classify(w) {
   const back = reverted(w.edits || []);
   const order = [];
   const touched = new Set();
+  const born = new Set();
   for (const e of w.edits || []) {
     const f = String(e.file || "");
     if (!f || back.has(f) || touched.has(f)) continue;
     touched.add(f);
+    if (e.created) born.add(f);
     order.push(f);
   }
-  const b = { in_scope: [], from_cut: [], from_candidates: [], unnamed: [] };
+  const b = { in_scope: [], from_cut: [], from_candidates: [], unnamed: [], excluded: [] };
   for (const f of order) {
-    if (scope.has(f)) b.in_scope.push(f);
-    else if (cut.has(f)) b.from_cut.push(f);
+    // In scope first: an obedient edit is unscored either way, and reporting
+    // it as excluded would hide how much of the window the brief did aim at.
+    if (scope.has(f)) { b.in_scope.push(f); continue; }
+    const why = excluded(f, born.has(f));
+    if (why) { b.excluded.push({ file: f, why }); continue; }
+    if (cut.has(f)) b.from_cut.push(f);
     else if (cand.has(f)) b.from_candidates.push(f);
     else b.unnamed.push(f);
   }
@@ -151,11 +220,18 @@ export function score(wins = [], cfg = {}) {
   const named = sum("named", scored);
   const missed = sum("missed", scored);
   const offered = sum("offered", scored);
+  // Counted over EVERY window, not just the scored ones: a window whose only
+  // exception rows were excluded scores nothing, and leaving it out of this
+  // tally would hide why the sample is smaller than the edit count suggests.
+  const byWhy = {};
+  for (const r of rows) for (const x of r.excluded || []) byWhy[x.why] = (byWhy[x.why] || 0) + 1;
   const base = { windows_seen: rows.length, windows_scored: scored.length, n, named, missed, offered,
-    in_scope_unscored: sum("in_scope", rows), reverted: sum("reverted", rows), thresholds: th };
+    in_scope_unscored: sum("in_scope", rows), reverted: sum("reverted", rows),
+    excluded: Object.values(byWhy).reduce((a, v) => a + v, 0), excluded_by: byWhy, thresholds: th };
   if (n < th.min_rows || scored.length < th.min_windows) {
     return { ...base, verdict: "unknown", precision: null, recall: null, confidence: null,
-      detail: `${n} exception row(s) over ${scored.length} brief(s); ${th.min_rows} rows over ${th.min_windows} brief(s) are needed before the locate's aim is a measurement rather than one odd task. An in-scope edit is not evidence: the brief told the session to make it.` };
+      detail: `${n} exception row(s) over ${scored.length} brief(s); ${th.min_rows} rows over ${th.min_windows} brief(s) are needed before the locate's aim is a measurement rather than one odd task. An in-scope edit is not evidence: the brief told the session to make it.`
+        + (base.excluded ? ` ${base.excluded} further edit(s) are not counted here (${Object.entries(byWhy).map(([k, v]) => `${v} ${k}`).join(", ")}): the write guard exempts the first three and the ranker could not have seen the fourth.` : "") };
   }
   const conf = blend(named, missed);
   const precision = offered ? Math.round((named / offered) * 1e4) / 1e4 : null;
@@ -164,7 +240,8 @@ export function score(wins = [], cfg = {}) {
     detail: `of ${n} edit(s) that went outside the located scope across ${scored.length} brief(s), the locate had already ranked ${named} and never mentioned ${missed} (recall ${recall}). `
       + (offered ? `${named} of ${offered} file(s) offered below the scope line were opened (precision ${precision}). `
         : "no file was offered below the scope line, so precision is not defined. ")
-      + `Confidence ${conf.confidence}, blended from ${conf.settled} sample(s) toward the method's ${conf.base}.` };
+      + `Confidence ${conf.confidence}, blended from ${conf.settled} sample(s) toward the method's ${conf.base}.`
+      + (base.excluded ? ` ${base.excluded} further edit(s) were outside this figure (${Object.entries(byWhy).map(([k, v]) => `${v} ${k}`).join(", ")}): the write guard exempts the first three and the ranker could not have seen the fourth.` : "") };
 }
 
 /** Score the stream and store the result where a brief can read it in one
@@ -172,7 +249,7 @@ export function score(wins = [], cfg = {}) {
  *  again inside `pinpoint.build` would put a transcript walk inside a 15s hook
  *  budget, and the number does not move between two briefs. */
 export function measure(events = [], { cfg = {}, expert = null } = {}) {
-  const wins = windows(events);
+  const wins = markCreated(windows(events));
   let r = null;
   if (expert) {
     try { r = expert.call("locate-replay", { windows: wins, cfg }); } catch { r = null; }

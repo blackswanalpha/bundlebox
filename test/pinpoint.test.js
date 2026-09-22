@@ -21,6 +21,10 @@ w("src/auth.js", "export function checkPassword(p) {\n  return p.length > 8;\n}\
 w("src/session.js", `${filler(220, "s")}\nexport function refreshSession(id) {\n  const t = loginToken(id);\n  return t;\n}\n${filler(220, "z")}\n`);
 w("src/token.js", `${filler(220, "t")}\nexport function loginToken(id) {\n  return "tok-" + id;\n}\n${filler(220, "u")}\n`);
 w("src/unrelated.js", "export function nothing() { return 0; }\n");
+// One real import edge, for the adjacency pass: nothing in a problem statement
+// need name `leaf` for `hub` to reach it.
+w("src/hub.js", 'import { bravoCompute } from "./leaf.js";\nexport function alphaCheck() { return bravoCompute(); }\n');
+w("src/leaf.js", "export function bravoCompute() { return 1; }\n");
 w("docs/edge-cases.md", "| id | when | then |\n|---|---|---|\n| E1 | refreshSession is called twice | the second token wins |\n| E2 | printing | irrelevant |\n");
 w(".bundlebox/out/buckmaster/recommendations.md", "# recs\n\n```\n- batch independent calls\n- read the region\n```\n");
 
@@ -272,6 +276,7 @@ test("locate: only the exception rows are scored, and a reverted file is not one
   assert.deepEqual(c.unnamed, ["miss.js"]);
   assert.deepEqual(c.reverted, ["flip.js"], "a file changed and changed back is a wrong turn, not a target");
   assert.equal(c.rows, 3);
+  assert.deepEqual(c.excluded, [], "nothing here is exempt");
   // Under the floor the answer is unknown, with n beside it, never a figure.
   const thin = aim.score([win], {});
   assert.equal(thin.verdict, "unknown");
@@ -292,6 +297,58 @@ test("locate: windows are per brief and start at the brief, not at the session",
   assert.equal(wins.length, 2, "one window per brief: pooling lets a good locate pay for a bad one");
   assert.deepEqual(wins[0].edits.map((e) => e.file), ["one.js"], "edits before the first brief have nothing to have missed");
   assert.deepEqual(wins[1].edits.map((e) => e.file), ["k.js"], "a shell write carries no path and counts on neither side");
+});
+
+test("locate: a row the write guard exempts is not a recall miss, and neither is a file that did not exist yet", async () => {
+  const aim = await import("../src/pinpoint/locate.js");
+  const win = { session: "s", at: 10, scope: ["in.js"], cut: [], candidates: [],
+    edits: [{ file: "in.js", hash: "a" }, { file: "real.js", hash: "b" },
+      { file: "test/thing.test.js", hash: "c" }, { file: ".bundlebox/out/x.json", hash: "d" },
+      { file: "/elsewhere/other.mjs", hash: "e" }, { file: "born.js", hash: "f", created: true }] };
+  const c = aim.classify(win);
+  assert.deepEqual(c.unnamed, ["real.js"], "only the file the ranker could have found and did not is a miss");
+  assert.equal(c.rows, 1);
+  assert.deepEqual(c.excluded.map((x) => x.why).sort(), ["created", "generated", "outside-workspace", "test"]);
+});
+
+// The copy in locate.js exists so the recall figure and the guard that reads it
+// agree about what a row is. Pinned by behaviour, not by comparing two regex
+// sources, because the guard's is inline and the point is the answer.
+test("locate: the exclusions agree with the write guard on which files it would never ask about", async () => {
+  const aim = await import("../src/pinpoint/locate.js");
+  const detect = await import("../src/grapple/detect.js");
+  const rec = { scope: ["in.js"], cut: [], problem: "p" };
+  const paths = ["real.js", "src/deep/thing.js", "test/a.test.js", "test/plain.js", "tests/b.js",
+    "expert/tests/test_x.py", "src/x_test.py", ".bundlebox/out/y.json", "GATES.md", "in.js"];
+  for (const f of paths) {
+    const guardSkips = detect.writeVerdict(rec, f) === null;
+    const scorerSkips = f === "in.js" || Boolean(aim.excluded(f));
+    assert.equal(scorerSkips, guardSkips,
+      `${f}: the guard ${guardSkips ? "exempts" : "asks about"} it, the scorer ${scorerSkips ? "drops" : "counts"} it`);
+  }
+});
+
+test("rank: a file with no lexical evidence enters on an import edge from the leader, and is named rather than budgeted", async () => {
+  const rankmod = await import("../src/pinpoint/rank.js");
+  // The leader is decided by the lexical pass; `neighbours` only spreads from it.
+  const n = rankmod.neighbours(new Map([["src/hub.js", 50], ["src/unrelated.js", 4]]));
+  assert.ok(n.has("src/leaf.js"), "hub.js imports it, so the graph reaches it with no term in common");
+  assert.equal(n.get("src/leaf.js"), 50 * rankmod.NEIGHBOUR_SHARE, "a share of the source's score, not a constant");
+  assert.ok(!n.has("src/hub.js"), "a scored file is not its own neighbour");
+  // Adjacency is reported separately so `build` can name it without budgeting
+  // it: an import edge is worth fifteen tokens, not a whole-file read.
+  const { ranked, adjacent } = rankmod.rankDetailed("alphaCheck is wrong", {
+    sym: [{ file: "src/hub.js", symbol: "alphaCheck", term: "alphacheck" }],
+    terms: ["alphacheck"], universe: ["src/hub.js", "src/leaf.js", "src/unrelated.js"] });
+  assert.ok(adjacent.has("src/leaf.js"), "leaf.js got in on the edge alone");
+  assert.ok(!adjacent.has("src/hub.js"), "hub.js argued its own case");
+  assert.ok(ranked.indexOf("src/hub.js") < ranked.indexOf("src/leaf.js"), "direct evidence still leads");
+});
+
+test("pinpoint: an adjacency-only file is offered below the scope line, never inside it", async () => {
+  const b = await pinpoint.build("alphaCheck is wrong", { write: false });
+  assert.ok(!b.scope.includes("src/leaf.js"), "nothing enters the budget on an import edge alone");
+  assert.ok(b.candidates.some((c) => c.file === "src/leaf.js"), "but it is named, so the session has somewhere to go");
 });
 
 test("symbol space: the distance is graded, symmetric, and unmeasured when the terms are unknown", async () => {
