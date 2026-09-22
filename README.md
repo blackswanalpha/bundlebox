@@ -145,6 +145,23 @@ costs and what to write instead.
 `bb_scan`, `bb_oversight_brief`, `bb_explain`, `bb_tokens_estimate` and
 `bb_session` over stdio as JSON-RPC 2.0, with no dependency.
 
+`bb wire --apply` writes the entry for every agent in the table above. For an
+agent it does not manage:
+
+```json
+{ "mcpServers": { "bundlebox": { "command": "npx", "args": ["-y", "bundlebox", "mcp"] } } }
+```
+
+Claude Code takes it as one line, or as a plugin, which carries the two skills
+and the hooks with it:
+
+```bash
+claude mcp add bundlebox -- npx -y bundlebox mcp
+# or
+/plugin marketplace add blackswanalpha/bundlebox
+/plugin install bundlebox@bundlebox
+```
+
 Full guide, including the agents not in this table, how to wire one bundlebox
 does not know about, and how to drive agents as lanes:
 **[docs/agents.md](docs/agents.md)**. `bb uptake` then reports which of the

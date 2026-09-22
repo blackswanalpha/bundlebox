@@ -1,6 +1,7 @@
 {
   "name": "bundlebox",
   "version": "0.7.0",
+  "mcpName": "io.github.blackswanalpha/bundlebox",
   "description": "The zero-token software factory for AI coding agents: a Node CLI, a Rust kernel and a Python expert system that scan, pack, route and run work across Claude Code, Codex, Gemini CLI, Cursor, Aider, OpenCode and any custom agent, and measure every token used and saved.",
   "keywords": [
     "accessibility",
@@ -14,6 +15,8 @@
     "design-tokens",
     "gemini-cli",
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
     "prompt-caching",
     "software-factory",
     "static-analysis",

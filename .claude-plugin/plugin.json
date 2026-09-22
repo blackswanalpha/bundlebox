@@ -1,0 +1,18 @@
+{
+  "$schema": "https://code.claude.com/schemas/plugin.json",
+  "name": "bundlebox",
+  "description": "Answers where the work is before a file is opened: a packed brief, the symbol tables, the open findings and what the session cost.",
+  "version": "0.7.0",
+  "author": { "name": "Kamande Mbugua", "url": "https://github.com/blackswanalpha" },
+  "homepage": "https://github.com/blackswanalpha/bundlebox#readme",
+  "repository": "https://github.com/blackswanalpha/bundlebox",
+  "license": "MIT",
+  "keywords": ["mcp", "context-engineering", "token-optimization", "static-analysis", "ai-agents"],
+  "skills": ["./skills/"],
+  "mcpServers": {
+    "bundlebox": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/bb",
+      "args": ["mcp"]
+    }
+  }
+}
