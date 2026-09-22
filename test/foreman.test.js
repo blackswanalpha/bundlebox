@@ -98,3 +98,25 @@ test("the post-tool watcher steers a looping session only in the steer phase, an
   const stop = await capture(async () => hooks.foremanWatch({ session_id: "sess-loop-3" }, await cfg({ hook: "steer", hook_every: 1, steer_grace_turns: 0 })));
   assert.match(JSON.parse(stop.out).hookSpecificOutput.additionalContext, /^bundlebox foreman STOP/, "the second warning after a steer is a stop");
 });
+
+test("the run's commits are its work, and committing a verified tree keeps it verified", { skip: !has && "python3 not found" }, () => {
+  const C = "sess-commit";
+  const base = foreman.rev("HEAD");
+  for (let i = 0; i < 3; i++) gs.record("tool", { session_id: C, tool: "Read", file: "src/b.js", hash: `r${i}` });
+  w("src/b.js", "export const b = 1;\n");
+  w("test/b.test.js", "// covers b\n");
+  sh("add", "."); sh("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "add b");
+  const first = foreman.assess({ session: C, since: base, job: "add b" });
+  assert.equal(first.commits, 1);
+  assert.equal(first.base, base);
+  assert.equal(first.action, "verify", "a clean tree with a commit in the run is work to verify, not nothing");
+
+  w("src/b.js", "export const b = 2;\n");
+  assert.equal(foreman.verify({ command: "node -e \"process.exit(0)\"", session: C }).ok, true);
+  sh("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "b is 2");
+  const done = foreman.assess({ session: C });
+  assert.equal(done.base, base, "later assessments keep the run's first base");
+  assert.equal(done.commits, 2);
+  assert.equal(done.action, "finish", done.reason);
+  assert.equal(foreman.assess({ session: C, since: "no-such-rev" }).error, "--since no-such-rev is not a commit");
+});

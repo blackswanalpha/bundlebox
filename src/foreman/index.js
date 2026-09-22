@@ -21,6 +21,7 @@
 // the scores and state it was decided on, so `replay` can re-run any
 // threshold change and count what would have moved.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { load } from "../core/config.js";
@@ -35,24 +36,57 @@ import * as detect from "../grapple/detect.js";
 import * as jev from "../grapple/jev.js";
 
 export const TIMELINE = "foreman-timeline";    // .bundlebox/var/foreman-timeline.jsonl
+export const HOOK_STATE = "foreman-hook";      // .bundlebox/var/foreman-hook.json: per-session call count and base
 export const INSTRUCTION_FILES = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
 const OUTPUT_TAIL = 4000;
 
 export const settings = (cfg = load()) => ({ ...(cfg.foreman && typeof cfg.foreman === "object" ? cfg.foreman : {}) });
 
 function git(...args) {
-  const r = spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", timeout: 5000, maxBuffer: 64 * 1024 * 1024 });
+  const env = typeof args[args.length - 1] === "object" ? { ...process.env, ...args.pop() } : process.env;
+  const r = spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", timeout: 5000, maxBuffer: 64 * 1024 * 1024, env });
   return r.status === 0 ? String(r.stdout || "") : "";
 }
 
-/** What the working tree looks like now. The fingerprint moves with any change
- *  to status or diff, which is how a verification run knows it went stale. */
-export function tree() {
-  const status = git("status", "--short");
-  const diff = git("diff", "--no-ext-diff", "HEAD");
-  const files = [...new Set([...git("diff", "--name-only", "HEAD").split("\n"),
-    ...git("ls-files", "--others", "--exclude-standard").split("\n")].filter(Boolean))];
-  return { status, diff, files, fingerprint: sha1(status + "\0" + diff).slice(0, 16) };
+/** The tree object the working tree would commit as, ignores applied, built in
+ *  a throwaway index so the real one is never touched. Same content, same
+ *  hash, whether the content is committed, staged or neither. */
+export function contentHash() {
+  const idx = path.join(os.tmpdir(), `bb-foreman-${process.pid}-${Date.now()}.idx`);
+  try {
+    const env = { GIT_INDEX_FILE: idx };
+    git("read-tree", "HEAD", env);
+    git("add", "-A", env);
+    return git("write-tree", env).trim();
+  } finally { try { fs.unlinkSync(idx); } catch { /* never written */ } }
+}
+
+export const rev = (r) => (r ? git("rev-parse", "--verify", "--quiet", `${r}^{commit}`).trim() : "");
+
+/** The commit a run is measured from: `--since`, else the base the run's
+ *  first assessment recorded, else HEAD when the hook first saw the session,
+ *  else HEAD now. Measuring from HEAD alone saw only uncommitted work, so a
+ *  run that committed as it went looked like a run that had done nothing. */
+export function baseOf({ since = "", rows = [], session = "" } = {}) {
+  if (since) return rev(since);
+  const recorded = rows.find((r) => r.base)?.base;
+  if (recorded && rev(recorded)) return recorded;
+  const seen = session ? (store.get(HOOK_STATE, {}) || {})[session]?.base : "";
+  if (seen && rev(seen)) return seen;
+  return rev("HEAD");
+}
+
+/** The work since `base`, committed or not. The fingerprint is the content
+ *  hash, so committing a verified change leaves it verified and any edit to
+ *  the content makes the verification stale. */
+export function tree(base = "") {
+  const b = base || rev("HEAD");
+  const head = rev("HEAD");
+  const untracked = git("ls-files", "--others", "--exclude-standard").split("\n").filter(Boolean);
+  const diff = b ? git("diff", "--no-ext-diff", b) : "";
+  const files = [...new Set([...(b ? git("diff", "--name-only", b).split("\n") : []), ...untracked].filter(Boolean))];
+  const commits = b && head && b !== head ? git("log", "-n", "200", "--format=%h %s", `${b}..HEAD`).split("\n").filter(Boolean) : [];
+  return { base: b, status: git("status", "--short"), diff, files, commits, fingerprint: contentHash() || sha1(diff + "\0" + untracked.join("\n")).slice(0, 16) };
 }
 
 /** The first repository instruction file that is a real, non-empty file. */
@@ -95,24 +129,27 @@ export function verification(rows, fingerprint) {
 }
 
 /** Everything the policy sees, gathered once. */
-export function observe({ session = "", job = "", active = false, cfg = load() } = {}) {
+export function observe({ session = "", job = "", active = false, since = "", cfg = load() } = {}) {
   const events = gs.events();
   const sid = session || [...events].reverse().find((e) => e.kind === "tool" && e.session_id)?.session_id || "";
   const rec = brief.current({ maxAgeMin: Number(cfg.wire?.brief_max_age_min) || 45, sessionId: sid });
   const w = detect.windowOf(events, { scope: rec?.scope || [], session: sid });
   const run = sid || "cli";
   const rows = timeline({ run });
-  const t = tree();
+  const base = baseOf({ since, rows, session: sid });
+  if (since && !base) return { error: `--since ${since} is not a commit` };
+  const t = tree(base);
   const lastJob = [...rows].reverse().find((r) => r.job)?.job || "";
   return {
     run,
+    base: t.base,
     fingerprint: t.fingerprint,
     observation: {
       job: job || lastJob || rec?.problem || "",
       active: Boolean(active),
       turns: w.turns,
       scope: w.scope,
-      git: { status: t.status, diff: t.diff, files: t.files },
+      git: { base: t.base, commits: t.commits, status: t.status, diff: t.diff, files: t.files },
       instructions: instructions(),
       verification: verification(rows, t.fingerprint),
       ...history(rows, w.turns.length),
@@ -125,6 +162,7 @@ export function assess(opts = {}) {
   const cfg = opts.cfg || load();
   const fcfg = settings(cfg);
   const o = observe({ ...opts, cfg });
+  if (o.error) return o;
   let answers = null, jevMs = null;
   if (opts.jev !== false && jev.available()) {
     const q = expert.call("foreman", { op: "questions", observation: o.observation, cfg: fcfg });
@@ -135,7 +173,7 @@ export function assess(opts = {}) {
   if (!d || d.error) return { error: d?.error || expert.lastError || "python3 >= 3.9 required" };
   const row = { kind: "assess", run: o.run, job: o.observation.job, action: d.action, reason: d.reason, responsibility: d.responsibility,
     confidence: d.confidence, via: d.via, drift: d.drift, scores: d.scores, sources: d.sources, state: d.state,
-    turns: o.observation.turns.length, fingerprint: o.fingerprint, jev_ms: jevMs, ...(opts.extra || {}) };
+    turns: o.observation.turns.length, base: o.base, commits: o.observation.git.commits.length, fingerprint: o.fingerprint, jev_ms: jevMs, ...(opts.extra || {}) };
   store.append(TIMELINE, row);
   return { ...row, proposed: d.proposed };
 }
@@ -161,14 +199,16 @@ export function verifyCommand(flag, cfg = load()) {
 /** Run the verification command and record the result against the tree it ran on. */
 export function verify({ command, session = "", timeoutMs = 20 * 60 * 1000 } = {}) {
   if (!command) return { error: "no verification command: pass --cmd, set foreman.verify, or add a test script" };
-  const before = tree().fingerprint;
+  const run = session || lastRun() || "cli";
+  const base = baseOf({ rows: timeline({ run }), session: run });
+  const before = tree(base).fingerprint;
   const t0 = Date.now();
   const r = spawnSync(command, { cwd: ROOT, shell: true, encoding: "utf8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 });
   const output = `${r.stdout || ""}${r.stderr || ""}`;
-  const row = { kind: "verify", run: session || lastRun() || "cli", command, ok: r.status === 0, exit: r.status,
+  const row = { kind: "verify", run, base, command, ok: r.status === 0, exit: r.status,
     output: output.slice(-OUTPUT_TAIL), ms: Date.now() - t0,
     // A command that changed the tree verified a tree that no longer exists.
-    fingerprint: tree().fingerprint === before ? before : "" };
+    fingerprint: tree(base).fingerprint === before ? before : "" };
   store.append(TIMELINE, row);
   return row;
 }
@@ -204,10 +244,10 @@ async function cmd({ _, flags }) {
   if (settings(cfg).enabled === false) { out("  foreman is off (foreman.enabled = false)"); return 0; }
   const session = String(flags.session || "");
   if (sub === "assess") {
-    const r = assess({ session, job: String(flags.job || ""), active: Boolean(flags.active), cfg });
+    const r = assess({ session, job: String(flags.job || ""), active: Boolean(flags.active), since: String(flags.since || ""), cfg });
     if (r.error) { out(`  ${r.error}`); return 1; }
     if (flags.json) { emitJson(r); return 0; }
-    out(`  ${r.action.toUpperCase()}  ${r.reason}  (${r.responsibility}${r.confidence != null ? `, ${pct(r.confidence)}` : ""}; scores via ${r.via}; drift ${r.drift})`);
+    out(`  ${r.action.toUpperCase()}  ${r.reason}  (${r.responsibility}${r.confidence != null ? `, ${pct(r.confidence)}` : ""}; scores via ${r.via}; drift ${r.drift}; ${r.commits} commit(s) since ${String(r.base).slice(0, 7)})`);
     out(table(Object.entries(r.scores).map(([k, v]) => [k, pct(v), r.sources[k]]), { header: ["check", "p", "from"] }).split("\n").map((l) => "  " + l).join("\n"));
     if (r.action === "verify") out(`  next: bb foreman verify${verifyCommand("", cfg) ? ` (runs ${verifyCommand("", cfg)})` : " --cmd \"<command>\""}`);
     return 0;
@@ -261,7 +301,7 @@ export const commands = {
     help: "watch the coding agent: responsibility checks, Jev or evidence, one action (0 tokens without Jev)",
     usage: "bb foreman [assess|verify|replay|label|log|checks] [--json]",
     long: [
-      "  bb foreman [assess] [--job \"...\"] [--active] [--session id]   score the session, pick one action",
+      "  bb foreman [assess] [--job \"...\"] [--active] [--session id] [--since <rev>]   score the run, pick one action",
       "  bb foreman verify [--cmd \"npm test\"]      run verification against the current tree and record it",
       "  bb foreman replay [--set key=value ...]   re-decide every recorded assessment under other bars",
       "  bb foreman label <#> right|wrong          mark a recorded action; replay counts fixes and regressions",
@@ -269,6 +309,8 @@ export const commands = {
       "",
       "Actions: continue, steer, stop, verify, resume, finish, escalate. --active means the agent is",
       "still running, so health and instruction warnings apply and completion does not.",
+      "The run is measured from --since, else the commit its first assessment recorded: commits made",
+      "during the run count as its work.",
       "Jev answers the checks when TYPESAFE_API_KEY is set; otherwise the box's own evidence does,",
       "and finishing then needs a passing `bb foreman verify` on the current tree.",
     ].join("\n"),

@@ -603,19 +603,24 @@ export async function foremanWatch(payload, cfg = load()) {
   const session = String(payload?.session_id || "");
   if (!session) return null;
   const every = Math.max(1, Number(f.hook_every) || 10);
-  let due = false;
+  let due = false, fresh = false;
   store.update("foreman-hook", (d) => {
     const doc = d && typeof d === "object" && !Array.isArray(d) ? d : {};
     const s = doc[session] || { n: 0, last: 0 };
+    fresh = !doc[session];
     s.n += 1;
     if (s.n - s.last >= every) { s.last = s.n; due = true; }
     doc[session] = s;
     return doc;
   }, {});
-  if (!due) return null;
+  if (!due && !fresh) return null;
   const phase = f.hook === "steer" ? "steer" : "observe";
   try {
     const foreman = await import("../foreman/index.js");
+    // HEAD at the session's first tool call is the run's base: the commits the
+    // session makes after it are its work, not history.
+    if (fresh) { const head = foreman.rev("HEAD"); store.update(foreman.HOOK_STATE, (d) => ({ ...d, [session]: { ...(d[session] || {}), base: head } }), {}); }
+    if (!due) return null;
     const r = foreman.assess({ session, active: true, cfg, jev: Boolean(f.hook_jev), extra: { hook: phase } });
     if (r.error) { log("post-tool", `foreman ${r.error}`); return null; }
     if (!["steer", "stop"].includes(r.action)) return r;
