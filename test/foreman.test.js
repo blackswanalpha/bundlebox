@@ -120,3 +120,18 @@ test("the run's commits are its work, and committing a verified tree keeps it ve
   assert.equal(done.action, "finish", done.reason);
   assert.equal(foreman.assess({ session: C, since: "no-such-rev" }).error, "--since no-such-rev is not a commit");
 });
+
+test("the hook records a base for a session whose entry predates bases, once", { skip: !has && "python3 not found" }, async () => {
+  const hooks = await import("../src/wire/hooks.js");
+  const core = await import("../src/core/store.js");
+  const { load } = await import("../src/core/config.js");
+  const O = "sess-old-entry";
+  core.update(foreman.HOOK_STATE, (d) => ({ ...d, [O]: { n: 3, last: 3 } }), {});
+  const cfg = { ...load(), foreman: { ...foreman.settings(), hook: "observe", hook_every: 100 } };
+  await hooks.foremanWatch({ session_id: O }, cfg);
+  assert.equal(core.get(foreman.HOOK_STATE, {})[O].base, foreman.rev("HEAD"));
+  sh("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "later");
+  await hooks.foremanWatch({ session_id: O }, cfg);
+  assert.notEqual(core.get(foreman.HOOK_STATE, {})[O].base, foreman.rev("HEAD"), "the base is kept, not moved to the new HEAD");
+  assert.equal(foreman.baseOf({ session: O }), core.get(foreman.HOOK_STATE, {})[O].base);
+});
