@@ -22,6 +22,8 @@ def main(argv: list) -> int:
                                  float(inp.get("cost_penalty", triage.TRIAGE_COST)), int(inp.get("min_acted", triage.MIN_ACTED)))
     elif verb == "model-train-prompts":
         out = model.train_prompts(inp.get("rows") or [])
+    elif verb == "model-train-intent":
+        out = model.train_intent(inp.get("rows") or [])
     elif verb == "model-predict-prompt":
         out = model.predict_prompt(inp.get("model") or {}, inp.get("prompt") or "")
     elif verb == "space-build":
@@ -43,7 +45,8 @@ def main(argv: list) -> int:
     elif verb == "confidence":
         out = {k: confidence.for_rule(v.get("precision", "heuristic"), v.get("held", 0), v.get("weak", 0), v.get("broken", 0)) for k, v in inp.get("rules", {}).items()}
     elif verb == "signals":
-        per = [dict(signals.session_signals(s.get("turns", [])), session_id=s.get("session_id"), interrupts=s.get("interrupts", 0)) for s in inp.get("sessions", [])]
+        per = [dict(signals.session_signals(s.get("turns", [])), session_id=s.get("session_id"),
+                    interrupts=s.get("interrupts", 0), kind=s.get("kind") or "") for s in inp.get("sessions", [])]
         out = {"sessions": per, "aggregate": signals.aggregate(per)}
     elif verb == "rules":
         out = rules.decide(inp.get("signals", {}), inp.get("thresholds"))
@@ -95,7 +98,7 @@ def main(argv: list) -> int:
     elif verb == "thresholds":
         out = {"defaults": rules.THRESHOLDS, "throttle": throttle.limits(inp.get("cfg")), "board": scenarios.THRESHOLDS, "locate": locate.thresholds(inp.get("cfg"))}
     else:
-        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "world-derive-row", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
+        print(json.dumps({"error": f"unknown verb {verb!r}", "verbs": ["version", "triage", "confidence-fit", "triage-replay", "triage-calibrate", "model-train-prompts", "model-train-intent", "model-predict-prompt", "space-build", "space-distance", "similarity-fit", "locate-replay", "confidence", "signals", "rules", "graph", "model-train", "model-predict", "memory-derive", "memory-recall", "memory-reinforce", "throttle", "thresholds", "world-derive", "world-derive-row", "coverage-plan", "scenario-select", "scenario-replay", "scenario-calibrate", "board-verdicts", "grapple"]}))
         return 2
     print(json.dumps(out))
     return 0

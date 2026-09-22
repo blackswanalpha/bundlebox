@@ -198,6 +198,28 @@ test("compileUnits: an oversized group is split into parts that name their index
   assert.deepEqual(units.flatMap((u) => u.scope).sort(), ["big/a/one.js", "big/a/two.js", "big/b/three.js"]);
 });
 
+test("compileUnits: a finding whose only location is the root gets no scope, not the whole tree", async () => {
+  const echo = (i, cmd) => ({ id: `e${i}`, detector: "echo:spin", severity: "medium",
+    title: `spin: \`${cmd}\` ran 4 times in a row with no file edited between them`,
+    path: ".", files: [], key: `spin/${cmd}`, evidence: { runs: 4, command: cmd }, kind: "investigate", status: "open" });
+  const units = await compiler.compileUnits([echo(1, "git status"), echo(2, "bb findings")]);
+  assert.equal(units.length, 1, "the root is one group, and with no scope there is nothing to split");
+  const u = units[0];
+  assert.deepEqual(u.scope, []);
+  assert.equal(u.verdict, "FITS");
+  assert.ok(!/\[\d+\/\d+\]$/.test(u.title), "no part index: an empty scope cannot be split");
+  assert.ok(u.brief.includes("(none: investigation only)"));
+  assert.deepEqual(u.finding_ids.sort(), ["e1", "e2"]);
+});
+
+test("compileUnits: a directory below the root is still a scope", async () => {
+  const units = await compiler.compileUnits([{ id: "u1", detector: "ui-generic", severity: "medium",
+    title: "docs: :hover styled 6 times, :focus-visible never", path: "docs", files: [], key: "docs/focus",
+    evidence: { hover: 6, focus_visible: 0 }, kind: "fix", status: "open" }]);
+  assert.equal(units.length, 1);
+  assert.deepEqual(units[0].scope, ["docs"], "only the root is the whole tree");
+});
+
 test("throttle: a detector over the board cap reports as a count, and the count is in the result", async () => {
   const throttle = await import("../src/compile/throttle.js");
   const decisions = [

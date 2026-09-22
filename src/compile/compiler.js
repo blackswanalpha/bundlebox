@@ -40,6 +40,23 @@ async function triageFn() {
 
 const topDirOf = (p) => { const s = String(p || "").replace(/\\/g, "/"); return s.includes("/") ? s.split("/")[0] : "."; };
 
+/** The repository root is not a scope.
+ *
+ *  A finding with no `files` whose only location is `.` is about the workspace
+ *  rather than about code in it: an echo ("the same command ran five times with
+ *  nothing edited between"), a dirty worktree. Handing `.` to `context.evaluate`
+ *  expands it to every file in the tree, which then reports SPLIT and returns one
+ *  window-sized slice of the repository per part. Twelve such findings compiled
+ *  to fifty-nine units holding 6.8M projected tokens, each one an arbitrary
+ *  twelfth of the tree next to evidence that names no file at all.
+ *
+ *  A directory BELOW the root stays: `ui-generic` files one row per directory
+ *  ("docs: :hover styled 6 times, :focus-visible never") and those fourteen files
+ *  are the finding. Only the root is the whole tree, and the whole tree is the
+ *  absence of a located scope. An empty scope is a state the brief already
+ *  names: "(none: investigation only)". */
+const isRootPath = (p) => { const s = String(p || "").replace(/\\/g, "/").replace(/\/+$/, ""); return s === "" || s === "."; };
+
 // What PROVES a change, read off the tree and merged under `kernel.gates` so a
 // configured gate always wins over a guessed one. `quick` is the cheapest gate
 // found (lint, then typecheck, then test); `full` is the test run.
@@ -214,7 +231,7 @@ export async function compileUnits(findings, { maxUnits = 0 } = {}) {
   for (const key of [...groups.keys()].sort()) {
     const [topDir, detector] = key.split("\0");
     const members = groups.get(key).sort((a, b) => (a._t.priority ?? 5) - (b._t.priority ?? 5) || String(a.id).localeCompare(String(b.id)));
-    const scope = [...new Set(members.flatMap((f) => (f.files && f.files.length ? f.files : [f.path]).filter(Boolean)))].sort();
+    const scope = [...new Set(members.flatMap((f) => (f.files && f.files.length ? f.files : [f.path]).filter((p) => p && !isRootPath(p))))].sort();
     const actuator = members.find((f) => f.auto_fix)?.auto_fix || null;
     const models = members.map((f) => f._t.model).filter(Boolean);
     const model = models.find((m) => /opus/i.test(m)) || models[0] || cfg.lanes?.model || "";

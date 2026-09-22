@@ -97,6 +97,26 @@ export function probability(a) {
   return null;
 }
 
+/** `{ by: { key: p }, ms }` for questions a caller composed itself, or null.
+ *
+ *  `opinions()` below is the pattern-item caller and packs code windows as its
+ *  state. `bb intent` is the other one and packs prompts, which are not code
+ *  and carry no rows, so it composes its own state and comes in here. Both go
+ *  through `call`, so both get the same treatment on every failure: null, and
+ *  the caller proceeds as it did without an opinion. */
+export function probabilities(state, questions, opts = {}) {
+  if (!available() || !questions || !Object.keys(questions).length) return null;
+  const r = call({ state, questions }, opts);
+  if (!r) return null;
+  const by = {};
+  for (const k of Object.keys(questions)) {
+    const p = probability(r.answers[k]);
+    if (p == null || Number.isNaN(p)) continue;
+    by[k] = Math.round(Math.min(Math.max(p, 0), 1) * 1000) / 1000;
+  }
+  return { by, ms: r.ms };
+}
+
 /** `{ by: { key: { p, uncertainty } }, asked, answered, tokens, ms }` for the
  *  pattern items, or null when Jev did not answer. `p` is Jev's probability the
  *  shape is deliberate; `uncertainty` is 2·min(p, 1−p), the distance from a

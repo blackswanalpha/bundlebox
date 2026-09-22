@@ -233,6 +233,72 @@ def predict_prompt(model: dict, prompt) -> dict:
     return {"p": round(p, 3), "fire": p >= float(model.get("threshold", 0.2)), "source": "model"}
 
 
+# ── intent head: which KIND of unit is this prompt? ─────────────────────────
+#
+# `is this a task` and `what kind of task` are the same question asked of the
+# same string, so this reuses `prompt_featurize` rather than growing a second
+# featurizer. A second one would be a second thing to keep in step with the JS
+# mirror, and the mirror is the only reason PROBES exists.
+#
+# Five one-vs-rest heads, not one multiclass fit: each kind then carries its
+# own `useful`, and a kind the join never labelled falls back on its own
+# instead of taking the other four down with it. The caller argmaxes over the
+# kinds that beat their base rate and defaults for the rest.
+
+KINDS = ("fix", "verify", "investigate", "build", "write")
+
+#: A kind may only decide once it has been seen this often, and seen this often
+#: in the holdout. `fit_head`'s MIN_ROWS is a floor on the join as a whole; with
+#: an 80/20 split that leaves a two-row holdout, on which a perfect AUC is luck.
+#: A kind that decides here moves ~28k of window, so the bar is its own: enough
+#: positives to fit on, and enough held back to have been wrong on.
+MIN_KIND_ROWS = 12
+MIN_KIND_HOLDOUT = 4
+
+
+def train_intent(rows: list, **kw) -> dict:
+    """rows: [{prompt, kind, at, via}] — the prompt the hook located, against
+    the kind that session turned out to be.
+
+    `via` is "behaviour" when the transcript proved the kind and "jev" when
+    only an opinion split it. Both are fitted; the counts are carried
+    separately so a table resting on opinion is visible as one rather than
+    reading like measurement."""
+    labelled = [r for r in rows if r.get("kind") in KINDS]
+    heads, useful = {}, []
+    for k in KINDS:
+        h = fit_head(labelled, lambda r: prompt_featurize(r.get("prompt")),
+                     lambda r, kind=k: 1 if r.get("kind") == kind else 0,
+                     lambda r: str(r.get("at") or ""), **kw)
+        pos = sum(1 for r in labelled if r.get("kind") == k)
+        ho_pos = sum(h.get("holdout_labels") or [])
+        h["positives"] = pos
+        h["holdout_positives"] = ho_pos
+        # Thin evidence is not a verdict. Beating a base rate of 0.83 on six
+        # rows is what one lucky row looks like, and the cost of believing it is
+        # a budget decided backwards on every prompt until the next fit.
+        if h.get("useful") and (pos < MIN_KIND_ROWS or ho_pos < MIN_KIND_HOLDOUT):
+            h["useful"] = False
+            h["why"] = f"{pos} rows ({ho_pos} in holdout); need {MIN_KIND_ROWS} and {MIN_KIND_HOLDOUT}"
+        # The holdout vectors are what `train_prompts` picks a threshold from.
+        # This head argmaxes instead, so they are provenance nobody reads, and
+        # five copies of them is five times a table that a hook parses.
+        h.pop("holdout_scores", None)
+        h.pop("holdout_labels", None)
+        heads[k] = h
+        if h.get("useful"):
+            useful.append(k)
+    return {"kinds": heads,
+            "useful": bool(useful),
+            "useful_kinds": useful,
+            "n": len(labelled),
+            "by_kind": {k: sum(1 for r in labelled if r.get("kind") == k) for k in KINDS},
+            "by_via": {v: sum(1 for r in labelled if (r.get("via") or "behaviour") == v)
+                       for v in ("behaviour", "jev")},
+            "probes": [{"prompt": p, "features": prompt_featurize(p)} for p in PROBES],
+            "why": "" if useful else f"no kind beat its base rate on the time-split holdout ({len(labelled)} rows)"}
+
+
 # ── finding head: a per-finding prior for `confidence.for_rule` ─────────────
 
 _TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec)(/|$)|[._-](test|spec)\.[a-z]+$|^test_")

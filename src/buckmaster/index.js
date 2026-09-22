@@ -43,13 +43,22 @@ function slim(t) {
  *  that wrote them. A transcript no adapter recognises is skipped, not zeroed. */
 export function sessions({ limit = 40 } = {}) {
   const entries = ledger.transcripts();
+  // What `bb intent` decided for each session, so the medians can be split by
+  // the kind of work. A session with no row is unlabelled and lands in the
+  // overall aggregate only: an unknown kind is not a `fix`.
+  const kindOf = new Map();
+  for (const r of store.rows("intent", { limit: 8000 })) {
+    const sid = String(r.session_id || "");
+    if (sid && r.kind && !kindOf.has(sid)) kindOf.set(sid, String(r.kind));
+  }
   const dated = entries.map((t) => { let m = 0; try { m = fs.statSync(t.file).mtimeMs; } catch { /* gone */ } return { ...t, m }; }).sort((a, b) => b.m - a.m).slice(0, limit);
   const rows = [];
   for (const t of dated) {
     const turns = ledger.turns(t.file, t.adapter);
     if (!turns) continue;
     const interrupts = turns.reduce((n, u) => n + (u.toolResults || []).filter((r) => INTERRUPT.test(String(r.text || ""))).length, 0);
-    rows.push({ session_id: path.basename(t.file).replace(/\.jsonl?$/, ""), adapter: t.adapter, turns: turns.map(slim), interrupts });
+    const sid = path.basename(t.file).replace(/\.jsonl?$/, "");
+    rows.push({ session_id: sid, adapter: t.adapter, turns: turns.map(slim), interrupts, kind: kindOf.get(sid) || "" });
   }
   return { sessions: rows, unknown: entries.unknown || [] };
 }
@@ -96,6 +105,19 @@ function signalsText(doc) {
     ["singleton_turn_ratio", "singleton tool turns"], ["retry_ratio", "retry-after-error"], ["ctx_slope_median", "window slope / turn"], ["ctx_peak_median", "window peak (median)"],
     ["cache_read_ratio", "cache-read ratio"], ["long_session_share", "long-session share"], ["compactions_per_session", "compactions / session"], ["searches_per_session", "searches / session"], ["interrupts_per_session", "interrupts / session"]]) {
     lines.push(`    ${pad(label, 26)} ${pad(f(a[k]), 10, true)}`);
+  }
+  // Per kind, and only when there is more than one: a split that shows one
+  // column is the same number under a heading that implies a comparison.
+  const byKind = a.by_kind || {};
+  const kinds = Object.keys(byKind);
+  if (kinds.length) {
+    lines.push("", `  by intent kind — the same medians, split by what the session was doing`, "");
+    for (const k of kinds) {
+      const b = byKind[k];
+      lines.push(`    ${pad(k, 14)} ${pad(`${b.sessions} sessions`, 12)} re-read ${f(b.reread_ratio)}   repeat-cmd ${f(b.repeat_cmd_ratio)}   searches/session ${f(b.searches_per_session)}`);
+    }
+  } else if ((a.kinds_seen || []).length === 1) {
+    lines.push("", `  every labelled session is \`${a.kinds_seen[0]}\`, so there is nothing to split by. \`bb intent\` says why.`);
   }
   if (doc.unknown_adapters?.length) lines.push("", `  could not look: ${doc.unknown_adapters.join(", ")}`);
   return lines.join("\n");
