@@ -607,7 +607,10 @@ export async function foremanWatch(payload, cfg = load()) {
   store.update("foreman-hook", (d) => {
     const doc = d && typeof d === "object" && !Array.isArray(d) ? d : {};
     const s = doc[session] || { n: 0, last: 0 };
-    fresh = !doc[session];
+    // No base yet, not "first sight": an entry written before bases were
+    // recorded would otherwise never get one. A recorded "" (not a git
+    // repository) still counts, so the rev-parse is not paid on every call.
+    fresh = !(doc[session] && "base" in doc[session]);
     s.n += 1;
     if (s.n - s.last >= every) { s.last = s.n; due = true; }
     doc[session] = s;
