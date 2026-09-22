@@ -79,6 +79,7 @@ STATE_CHARS = 60000            # the state blob; Jev's ceiling is 32k tokens
 FIELD_CHARS = 4000
 DIFF_CHARS = 20000
 TURNS_SHOWN = 30
+COMMITS_SHOWN = 50
 DOC_WORDS = re.compile(r"\b(readme|docs?|documentation|user guide|release notes?|changelog)\b", re.I)
 DOC_FILE = re.compile(r"(\.mdx?$|\.rst$|(^|/)docs?/)", re.I)
 TEST_FILE = re.compile(r"(^|/)(tests?|__tests__|spec)/|[._-](test|spec)\.[a-z]+$|(^|/)test_[^/]+\.py$", re.I)
@@ -158,11 +159,12 @@ def state(obs: dict) -> str:
         f"last {len(turns)} of {len(w['turns'])}:", "\n".join(turn_lines) or "(none)",
         "## scope", "\n".join(w["scope"]) or "(no scope stated)",
         "## git status", _tail(g.get("status") or "(clean)", FIELD_CHARS),
-        "## changed files", "\n".join((g.get("files") or [])[:200]) or "(none)",
+        f"## commits since {g.get('base') or 'the run began'}", "\n".join((g.get("commits") or [])[:COMMITS_SHOWN]) or "(none)",
+        "## changed files since then, committed or not", "\n".join((g.get("files") or [])[:200]) or "(none)",
         "## verification", (f"command: {ver.get('command')}; ok: {ver.get('ok')}; after last change: {ver.get('current')}\n"
                             + _tail(ver.get("output") or "", FIELD_CHARS)) if ver.get("command") else "(never run)",
         f"## repository instructions ({ins.get('path') or 'none'})", _head(ins.get("text") or "(none)", FIELD_CHARS),
-        "## diff", _tail(g.get("diff") or "(none)", DIFF_CHARS),
+        "## diff since then, committed or not", _tail(g.get("diff") or "(none)", DIFF_CHARS),
     ]
     # The diff is last, so the cap cuts the diff and never the job.
     return _head("\n".join(parts), STATE_CHARS)
@@ -185,11 +187,14 @@ def evidence(obs: dict, cfg: dict | None = None) -> dict:
     d = grapple.drift(_window(obs))
     c, p = d["counters"], d["parts"]
     files = [str(f) for f in ((obs.get("git") or {}).get("files") or [])]
+    commits = (obs.get("git") or {}).get("commits") or []
     ver = obs.get("verification") or {}
     verified = bool(ver.get("command")) and ver.get("ok") is True and bool(ver.get("current"))
     failed = bool(ver.get("command")) and ver.get("ok") is False
     changed = bool(files)
-    implemented = changed and c["edits"] > 0 and p["since_edit"] < 1.0
+    # A commit in the run is an edit the window may not hold: a session that
+    # opens on committed work has no Edit turns and still has a change.
+    implemented = changed and (bool(commits) or (c["edits"] > 0 and p["since_edit"] < 1.0))
     tested = any(TEST_FILE.search(f) for f in files)
     satisfied = 0.8 if verified and implemented else 0.5
     v = {
