@@ -7,16 +7,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
 <style>
-  /* The post-5/post-7 card, so the series reads as one thing. The colour does
-     one job here and it is not decoration: the accent marks the column that was
-     measured, the grey marks the one that was only costed. Identity is never
-     colour alone — each column carries its own STATUS word, its own rule style
-     (solid against dashed) and its own footer line, so the distinction survives
-     greyscale and survives a reader who cannot separate teal from grey.
+  /* The post-5/post-7 card. Two charts, and they are deliberately different
+     shapes because they are different kinds of claim: a measured magnitude is a
+     bar, an undecided difference is an interval against a margin. Drawing the
+     second one as a bar is what would let somebody read a result off it, and
+     there is no result to read.
 
-     Same contrast rule as post-7: figures wear ink, not accent. #008C99 on this
-     paper is 3.79:1 — fine for a 54px hero under the large-text rule, short of
-     4.5:1 for anything at body size. */
+     Colour never carries meaning alone. Each column has its own status word,
+     its own rule style (solid against dashed) and its own chart form, so the
+     distinction survives greyscale. Figures wear ink rather than the accent,
+     which is 3.79:1 on this paper. */
   :root {
     --paper: #FAF8F2;
     --ink: #191A14;
@@ -25,6 +25,7 @@
     --rule: #E0DACB;
     --accent: #008C99;
     --context: #7F7B6B;
+    --fail: #B04A28;
     --font-display: "Newsreader", Georgia, serif;
     --font-text: "IBM Plex Sans", Helvetica, sans-serif;
     --font-figure: "IBM Plex Mono", Consolas, monospace;
@@ -32,108 +33,126 @@
   * { box-sizing: border-box; }
   body { margin: 0; width: 1200px; height: 627px; background: var(--paper); color: var(--ink);
          font-family: var(--font-text); overflow: hidden; -webkit-font-smoothing: antialiased; }
-  .card { height: 100%; padding: 34px 60px 26px; display: flex; flex-direction: column; }
+  .card { height: 100%; padding: 32px 58px 24px; display: flex; flex-direction: column; }
 
-  .top { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 12px; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 11px; }
   .mark { font-family: var(--font-display); font-size: 21px; font-weight: 500; letter-spacing: -0.01em; }
   .mark i { font-style: normal; color: var(--accent); }
   .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 
-  h1 { font-family: var(--font-display); font-size: 34px; line-height: 1.06; font-weight: 400;
-       letter-spacing: -0.02em; margin: 14px 0 3px; }
-  .sub { font-size: 14.5px; color: var(--muted); margin: 0 0 14px; max-width: 92ch; }
+  h1 { font-family: var(--font-display); font-size: 33px; line-height: 1.06; font-weight: 400;
+       letter-spacing: -0.02em; margin: 13px 0 3px; }
+  .sub { font-size: 14px; color: var(--muted); margin: 0 0 13px; }
 
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0; flex: 1; min-height: 0; }
-  .col { padding: 0 34px; display: flex; flex-direction: column; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+  .col { padding: 0 30px; display: flex; flex-direction: column; }
   .col:first-child { padding-left: 0; border-right: 1px solid var(--rule); }
   .col:last-child { padding-right: 0; }
 
-  .status { font-family: var(--font-figure); font-size: 11.5px; letter-spacing: 0.13em; text-transform: uppercase;
-            display: inline-flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-  .status b { font-weight: 500; }
+  .status { font-family: var(--font-figure); font-size: 11px; letter-spacing: 0.13em; text-transform: uppercase;
+            display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .measured .dot { background: var(--accent); }
-  .measured b { color: var(--accent); }
+  .measured .status b { color: var(--accent); font-weight: 500; }
   .priced .dot { border: 1.5px dashed var(--context); }
-  .priced b { color: var(--context); }
+  .priced .status b { color: var(--context); font-weight: 500; }
 
-  .q { font-family: var(--font-display); font-size: 19px; line-height: 1.2; font-weight: 400;
-       letter-spacing: -0.012em; margin: 0 0 3px; max-width: 26ch; }
-  .where { font-size: 12.5px; color: var(--muted); margin: 0 0 13px; }
+  .q { font-family: var(--font-display); font-size: 18.5px; line-height: 1.2; font-weight: 400;
+       letter-spacing: -0.012em; margin: 0 0 2px; max-width: 27ch; }
+  .where { font-size: 12px; color: var(--muted); margin: 0 0 14px; }
 
-  .hero { display: flex; align-items: baseline; gap: 12px; margin-bottom: 2px; min-height: 50px; }
-  .hero b { font-family: var(--font-figure); font-size: 45px; font-weight: 500; line-height: 1;
-            letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-  .measured .hero b { color: var(--accent); }
-  .priced .hero b { color: var(--ink); }
-  .hero span { font-size: 13.5px; color: var(--muted); line-height: 1.3; max-width: 21ch; }
+  /* left: a measured magnitude */
+  .bars { display: grid; gap: 20px; }
+  .brow { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 12px; }
+  .brow .bl { font-family: var(--font-figure); font-size: 11.5px; color: var(--ink-2); text-align: right; }
+  .track { display: flex; align-items: center; gap: 10px; }
+  .bar { height: 42px; border-radius: 0 3px 3px 0; }
+  .bar.ctx { background: var(--context); }
+  .bar.acc { background: var(--accent); }
+  .bv { font-family: var(--font-figure); font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .bv em { font-style: normal; font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+  .gain { margin-top: 18px; font-family: var(--font-figure); font-size: 13px; color: var(--ink-2); line-height: 1.75; }
+  .gain b { color: var(--accent); font-size: 15px; }
 
-  .lines { margin-top: 12px; border-top: 1px solid var(--rule); }
-  .priced .lines { border-top: 1px dashed var(--rule); }
-  .line { display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
-          padding: 6.5px 0; border-bottom: 1px solid var(--rule); }
-  .priced .line { border-bottom: 1px dashed var(--rule); }
-  .line:last-child { border-bottom: 0; }
-  .line dt { font-size: 12.5px; color: var(--ink-2); line-height: 1.3; }
-  .line dd { margin: 0; font-family: var(--font-figure); font-size: 14px; font-weight: 500;
-             font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
-  .line dd em { font-style: normal; font-size: 11.5px; color: var(--muted); margin-left: 6px; }
-
-  .note { margin-top: auto; padding-top: 11px; font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+  .note { margin-top: auto; padding-top: 10px; font-size: 11px; line-height: 1.4; color: var(--muted); }
   .note b { color: var(--ink-2); font-weight: 500; }
 
-  .foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule);
-          display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; }
-  .foot .claim { font-family: var(--font-display); font-size: 16px; line-height: 1.28; max-width: 52ch; }
-  .foot .source { font-size: 11.5px; line-height: 1.45; color: var(--muted); text-align: right; white-space: nowrap; }
+  .foot { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--rule);
+          display: flex; align-items: flex-end; justify-content: space-between; gap: 36px; }
+  .foot .claim { font-family: var(--font-display); font-size: 15.5px; line-height: 1.28; max-width: 52ch; }
+  .foot .source { font-size: 11px; line-height: 1.45; color: var(--muted); text-align: right; white-space: nowrap; }
   .foot .source b { color: var(--ink); font-weight: 600; }
+
+  svg text { font-family: var(--font-figure); fill: var(--muted); }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="top">
     <div class="mark">bundle<i>box</i></div>
-    <div class="kicker">SWE-bench Verified · DeepSWE · 2026-09-22</div>
+    <div class="kicker">SWE-bench Verified · DeepSWE v1.1 · 2026-09-22</div>
   </div>
 
   <h1>One question is answered. The other has a price on it.</h1>
-  <p class="sub">bundlebox claims the same work on less context. That is two claims, and only one of them has been run.</p>
+  <p class="sub">bundlebox claims the same work on less context. Those are two claims, and only one of them has been run.</p>
 
   <div class="cols">
     <div class="col measured">
       <div class="status"><span class="dot"></span><b>Measured</b></div>
       <p class="q">Does the packed window hold what the fix touches?</p>
       <p class="where">SWE-bench Verified · 100 instances · no model called</p>
-      <div class="hero"><b>3.1&times;</b><span>less context for the same issue</span></div>
-      <dl class="lines">
-        <div class="line"><dt>Context per task</dt><dd>8.7k &rarr; 2.8k<em>tokens</em></dd></div>
-        <div class="line"><dt>Maintainer's changed files in scope</dt><dd>24.6% &rarr; 64.3%</dd></div>
-        <div class="line"><dt>Instances with every gold file</dt><dd>26 &rarr; 61<em>of 100</em></dd></div>
-        <div class="line"><dt>Time to assemble the window</dt><dd>246ms &rarr; 8.9s</dd></div>
-      </dl>
-      <p class="note">Both arms count tokens over text on disk. The last row is the one bundlebox loses, printed rather than dropped. <b>A localisation score, not a resolve rate.</b></p>
+
+      <div class="bars">
+        <div class="brow">
+          <div class="bl">bare</div>
+          <div class="track"><div class="bar ctx" style="width:300px"></div><div class="bv">8.7k</div></div>
+        </div>
+        <div class="brow">
+          <div class="bl">+ bundlebox</div>
+          <div class="track"><div class="bar acc" style="width:97px"></div><div class="bv">2.8k<em>input tokens / task</em></div></div>
+        </div>
+      </div>
+      <div class="gain"><b>3.1&times;</b> less context &nbsp;·&nbsp; gold files in scope 24.6% → 64.3%<br>
+        <span style="color:var(--fail)">&minus;</span> and the arm it loses: 246ms to grep against 8.9s to pack</div>
+
+      <p class="note">Both arms count tokens over text on disk; neither called a model. <b>A localisation score, not a resolve rate.</b></p>
     </div>
 
     <div class="col priced">
       <div class="status"><span class="dot"></span><b>Costed, not run</b></div>
       <p class="q">Does the smaller window cost you any outcome?</p>
-      <p class="where">DeepSWE · non-inferiority trial · pre-registered</p>
-      <div class="hero"><b>$2,676</b><span>to run both arms once, still underpowered</span></div>
-      <dl class="lines">
-        <div class="line"><dt>Margin declared before any trial</dt><dd>M = 7.5<em>points</em></dd></div>
-        <div class="line"><dt>Tasks needed at M = 7.5</dt><dd>210 &ndash; 489</dd></div>
-        <div class="line"><dt>Tasks DeepSWE has</dt><dd>113</dd></div>
-        <div class="line"><dt>226 trials on claude-opus-5</dt><dd>$11.84<em>per task</em></dd></div>
-      </dl>
-      <p class="note">McNemar on discordant pairs, one-sided 2.5%, 80% power. <b>The affordable run is not the run that would answer it</b> — so the figure above is a price, not a result.</p>
+      <p class="where">DeepSWE · claude-sonnet-5, both arms · non-inferiority</p>
+
+      <svg viewBox="0 0 470 196" width="470" height="196" role="img"
+           aria-label="Non-inferiority plot. The margin is minus 7.5 points. At 113 tasks the 95% interval is plus or minus 7.1 points at 15% discordance, 9.2 at 25% and 10.9 at 35%, so two of the three cross the margin and cannot conclude.">
+        <rect x="0" y="10" width="102" height="122" fill="#B04A28" opacity="0.07"/>
+        <line x1="102" y1="10" x2="102" y2="132" stroke="#B04A28" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <line x1="220" y1="10" x2="220" y2="132" stroke="#454738" stroke-width="1"/>
+        <text x="102" y="148" text-anchor="middle" font-size="10.5" fill="#B04A28">&minus;7.5 = M</text>
+        <text x="220" y="148" text-anchor="middle" font-size="10.5">0</text>
+        <text x="0" y="164" font-size="10" fill="#B04A28">worse by more than M</text>
+        <text x="330" y="164" text-anchor="middle" font-size="10">no worse than M</text>
+        <g stroke="#7F7B6B" stroke-width="1.6">
+          <line x1="108" y1="34" x2="332" y2="34"/><line x1="108" y1="27" x2="108" y2="41"/><line x1="332" y1="27" x2="332" y2="41"/>
+          <line x1="75"  y1="72" x2="365" y2="72"/><line x1="75"  y1="65" x2="75"  y2="79"/><line x1="365" y1="65" x2="365" y2="79"/>
+          <line x1="49"  y1="110" x2="391" y2="110"/><line x1="49" y1="103" x2="49" y2="117"/><line x1="391" y1="103" x2="391" y2="117"/>
+        </g>
+        <g fill="#454738"><circle cx="220" cy="34" r="3"/><circle cx="220" cy="72" r="3"/><circle cx="220" cy="110" r="3"/></g>
+        <text x="400" y="38" font-size="10.5">15% &plusmn;7.1</text>
+        <text x="400" y="76" font-size="10.5">25% &plusmn;9.2</text>
+        <text x="400" y="114" font-size="10.5">35% &plusmn;10.9</text>
+        <text x="0" y="188" font-size="10.5">sonnet-5 (bundlebox) &minus; sonnet-5, resolve rate, points · 113 tasks, 95% CI</text>
+      </svg>
+
+      <p class="note">Two of the three cross the margin: <b>113 tasks cannot answer this at M = 7.5</b>, and 226 trials on the board's own per-task cost is $2,676. No arm has run, so the intervals sit at the null.</p>
     </div>
   </div>
 
   <div class="foot">
     <div class="claim">A tool that will not say what would falsify it is not making a claim.</div>
     <div class="source">
-      <b>bundlebox</b> — the design, the margin and the sizing are fixed<br>
-      before the first trial. github.com/blackswanalpha/bundlebox
+      <b>bundlebox</b> — sizing, margin and analysis fixed before the first trial;<br>
+      board figures are Datacurve's. github.com/blackswanalpha/bundlebox
     </div>
   </div>
 </div>
