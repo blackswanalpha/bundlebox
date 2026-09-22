@@ -24,7 +24,7 @@ import { kcall, codeFiles } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
 import { clean } from "../slop/index.js";
 import { PREAMBLE } from "../wire/brief.js";
-import { rank, informative } from "./rank.js";
+import { rankDetailed, informative } from "./rank.js";
 import { ambiguity, lines as ambiguityLines } from "./ambiguity.js";
 import * as aim from "./locate.js";
 
@@ -235,8 +235,12 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
   // So the content search runs every time and the ranker weighs it against the
   // symbol evidence rather than a gate deciding in advance which one to trust.
   const grep = grepHits(ts);
-  const ranked = rank(problem, { explicit, sym, grep, terms: ts, universe: codeFiles().map(rel) });
-  let scope = ranked.slice(0, maxFiles);
+  const { ranked, adjacent } = rankDetailed(problem, { explicit, sym, grep, terms: ts, universe: codeFiles().map(rel) });
+  // `adjacent` earned its place on an import edge from the file this ranker put
+  // first, not on anything the statement said. That is worth NAMING below the
+  // scope line and not worth reading whole, so it is held out of the opening
+  // scope and out of the grow loop, and falls through to the candidates.
+  let scope = ranked.filter((f) => !adjacent.has(f)).slice(0, maxFiles);
   let anchors = [];
   const seen = new Set();
   for (const h of sym) {
@@ -285,7 +289,7 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
   const grown = [];
   const payloadCap = context.capacity(kind, { brief: estimate.text(String(problem).trim(), "prose") });
   let tries = 0;
-  for (const f of ranked.slice(scope.length)) {
+  for (const f of ranked.filter((x) => !adjacent.has(x)).slice(scope.length)) {
     if (!ev.underfilled || scope.length >= GROW_CAP || tries >= GROW_TRIES) break;
     tries++;
     if ((ev.parts?.payload || 0) + estimate.file(abs(f)) > payloadCap) continue;

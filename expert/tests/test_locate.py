@@ -43,6 +43,39 @@ class Locate(unittest.TestCase):
         bare = locate.classify({"scope": ["a.js"], "edits": [{"file": "", "hash": ""}]})
         self.assertEqual(bare["rows"], 0)
 
+    def test_a_row_the_write_guard_exempts_is_not_a_recall_miss(self):
+        w = window(0, edits=[
+            {"file": "in0.js", "hash": "a"},
+            {"file": "real.js", "hash": "b"},
+            {"file": "test/thing.test.js", "hash": "c"},
+            {"file": ".bundlebox/out/x.json", "hash": "d"},
+            {"file": "/elsewhere/other.mjs", "hash": "e"},
+            {"file": "born.js", "hash": "f", "created": True},
+        ])
+        c = locate.classify(w)
+        self.assertEqual(c["unnamed"], ["real.js"])
+        self.assertEqual(c["rows"], 1)
+        self.assertEqual(sorted(x["why"] for x in c["excluded"]),
+                         ["created", "generated", "outside-workspace", "test"])
+
+    def test_the_exclusions_mirror_the_js_copy(self):
+        # `src/pinpoint/locate.js` holds the same four rules and
+        # `test/pinpoint.test.js` pins them to the write guard. Both files are
+        # read by the same figure, so a rule added to one and not the other
+        # would make the JS and expert engines disagree about the denominator.
+        self.assertEqual(locate.excluded("src/a.js"), "")
+        self.assertEqual(locate.excluded("src/a.js", created=True), "created")
+        self.assertEqual(locate.excluded("test/a.test.js"), "test")
+        self.assertEqual(locate.excluded("tests/a.js"), "test")
+        self.assertEqual(locate.excluded("src/x_test.py"), "test")
+        self.assertEqual(locate.excluded(".bundlebox/out/x.json"), "generated")
+        self.assertEqual(locate.excluded("GATES.md"), "generated")
+        self.assertEqual(locate.excluded("/tmp/x.js"), "outside-workspace")
+        self.assertEqual(locate.excluded("../sibling/x.js"), "outside-workspace")
+        # The guard's narrower pattern, not the wider one in detectors/_shared:
+        # dropping a row the guard would deny flatters the ranker.
+        self.assertEqual(locate.excluded("fixtures/a.js"), "")
+
     def test_too_few_rows_is_unknown_and_never_a_figure(self):
         r = locate.replay([window(0)])
         self.assertEqual(r["verdict"], "unknown")

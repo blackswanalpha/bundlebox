@@ -230,6 +230,56 @@ export function pathWeights(terms, universe) {
   return { hits, w };
 }
 
+/** What a file gets for being IMPORTED by one the statement did land on.
+ *
+ *  Measured: for "close the loop: from any statement to a verified scenario to
+ *  a fix", the work went to `src/bridge/index.js` and `src/run/runner.js` and
+ *  the ranker never named either. Neither word appears in the statement, so
+ *  there was nothing lexical to find them with — but `src/genesis/practice.js`
+ *  was IN the scope the same ranker chose, and it imports both directly. The
+ *  graph that says so is already loaded: `centrality` reads its `inn` on every
+ *  run, and only ever to bump a file a lexical hit had already admitted.
+ *
+ *  A share of the source's score rather than a constant, so a neighbour of the
+ *  strongest file outranks a neighbour of a marginal one and a ranking with no
+ *  clear leader spreads nothing worth having. Only `out` edges: what a scoped
+ *  file IMPORTS is bounded by that file, while what imports it runs to hundreds
+ *  for anything in `core/`.
+ *
+ *  A first cut capped the bump under `PATH_TERM * MIN_TERM`, on the rule that
+ *  adjacency must never pass a word the statement used. Measured, that rule
+ *  cannot fire at all: the same statement put 106 files in the ranking for 24
+ *  slots, so anything under the weakest lexical hit is rank 90-odd and the two
+ *  files the work went to stayed invisible. The slots it was protecting had
+ *  gone to `world.py`, `gate.rs` and `ports.js` on vocabulary the statement
+ *  shares with half the tree. Adjacency to the file this ranker put FIRST is
+ *  the better bet, and 0.4 is where both measured misses come back. */
+export const NEIGHBOUR_SHARE = 0.4;
+/** How many of the top files spread. Every scored file spreading is the whole
+ *  import graph, which is not a ranking. */
+export const NEIGHBOUR_SEEDS = 6;
+
+/** `file -> bump`, for files with no direct evidence of their own. Never
+ *  throws: a box with no symbol index should rank worse, not rank nothing. */
+export function neighbours(scored) {
+  const out = new Map();
+  let g;
+  try { g = graph.graph(); } catch { return out; }
+  if (!g || !g.out) return out;
+  const seeds = [...scored].sort((a, b) => b[1] - a[1]).slice(0, NEIGHBOUR_SEEDS);
+  for (const [f, sc] of seeds) {
+    if (sc <= 0) continue;
+    let edges;
+    try { edges = g.out.get(abs(f)) || []; } catch { continue; }
+    for (const e of edges) {
+      const n = rel(e);
+      if (!n || scored.has(n) || n === f) continue;               // direct evidence outranks being adjacent to it
+      out.set(n, (out.get(n) || 0) + NEIGHBOUR_SHARE * sc);
+    }
+  }
+  return out;
+}
+
 /** How many of these hits are about WHICH file rather than about vocabulary.
  *  `bb pinpoint` uses it to decide whether the symbol tables actually answered
  *  the question: a hundred hits on `read` and `wire` are not an answer, and the
@@ -239,9 +289,12 @@ export function informative(sym) {
   return sym.filter((h) => (w.get(String(h.term || "").toLowerCase()) || 0) >= INFORMATIVE).length;
 }
 
-/** [file] most likely first. `explicit` are files the problem or the caller
- *  named, `sym` are symbol-table hits, `grep` is the bounded fallback. */
-export function rank(problem, { explicit = [], sym = [], grep = [], terms = [], universe = [] } = {}) {
+/** `{ ranked, adjacent }`. `ranked` is [file] most likely first; `adjacent` is
+ *  the subset admitted by `neighbours` alone, with no lexical evidence of their
+ *  own. The caller NAMES those and does not budget them: an import edge is a
+ *  good enough reason to spend fifteen tokens saying where to look next, and
+ *  not a good enough one to read a file whole. */
+export function rankDetailed(problem, { explicit = [], sym = [], grep = [], terms = [], universe = [] } = {}) {
   const wantsTests = /\btest(s|ing|ed)?\b|\bfixture|\bpytest|\bassert/i.test(String(problem));
   const weight = (f) => (!wantsTests && isTest(rel(f)) ? TEST_WEIGHT : 1);
   const score = new Map();
@@ -275,7 +328,18 @@ export function rank(problem, { explicit = [], sym = [], grep = [], terms = [], 
     if (sp) { const c = distance(terms, fileTerms(f, byFile.get(f) || []), sp); if (c !== null) d = SPACE_WEIGHT * c; }
     score.set(f, score.get(f) + centrality(f) + d);
   }
+  // After the direct scores are final, and never before: the seeds are the top
+  // of THIS ranking, so a neighbour is adjacent to what the statement actually
+  // landed on rather than to whatever matched first.
+  const adjacent = new Set();
+  for (const [f, n] of neighbours(score)) { adjacent.add(f); bump(f, n); }
   const pinned = [...new Set(explicit)];
   const pin = new Set(pinned);
-  return [...pinned, ...[...score].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).map(([f]) => f).filter((f) => !pin.has(f))];
+  const ranked = [...pinned, ...[...score].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).map(([f]) => f).filter((f) => !pin.has(f))];
+  return { ranked, adjacent };
+}
+
+/** The order alone, for callers that do not budget anything. */
+export function rank(problem, opts = {}) {
+  return rankDetailed(problem, opts).ranked;
 }

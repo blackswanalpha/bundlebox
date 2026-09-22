@@ -38,6 +38,9 @@ than no number.
 """
 from __future__ import annotations
 
+import posixpath
+import re
+
 from . import confidence
 
 #: Exception rows needed before the pair of numbers is a measurement.
@@ -80,8 +83,41 @@ def reverted(edits: list) -> set:
     return back
 
 
+#: The guard's own test pattern, ported from `writeVerdict` in
+#: `src/grapple/detect.js`, not the wider one in `detectors/_shared.js`: a row
+#: the guard would deny but this figure drops is the flattering direction.
+GUARD_TEST = re.compile(r"(^|/)test/|\.test\.[jt]sx?$|_test\.(py|go|rs)$|(^|/)tests?/")
+
+
+def excluded(file: str, created: bool = False) -> str:
+    """Why an exception row is not the locate's to answer for, or "" when it is.
+
+    The first three mirror `writeVerdict` in `src/grapple/detect.js` exactly,
+    and they have to: that guard is what this figure is read to decide, and a
+    denominator holding rows the guard exempts measures something nobody acts
+    on. The fourth is the locate's own — a file that did not exist when the
+    brief was written could not have been ranked, so counting it as a miss
+    charges the ranker for a file it could not see.
+
+    Mirrors `excluded` in `src/pinpoint/locate.js`; `test/pinpoint.test.js` and
+    `expert/tests/test_locate.py` pin the two to the same answers."""
+    f = str(file or "")
+    if not f:
+        return ""
+    if posixpath.isabs(f) or f.startswith("..") or (len(f) > 1 and f[1] == ":"):
+        return "outside-workspace"
+    if f == ".bundlebox" or f.startswith(".bundlebox/") or f.startswith(".bundlebox\\") or f == "GATES.md":
+        return "generated"
+    if GUARD_TEST.search(f.replace("\\", "/")):
+        return "test"
+    if created:
+        return "created"
+    return ""
+
+
 def classify(win: dict) -> dict:
-    """One brief's window, split into the four buckets above.
+    """One brief's window, split into the four buckets above, with the rows
+    nobody can be scored on lifted out first.
 
     Files, not edits: a session that touched one file eleven times learned one
     thing about the locate, and counting the eleven would let one busy file
@@ -91,18 +127,27 @@ def classify(win: dict) -> dict:
     cand = {str(x) for x in win.get("candidates") or []}
     edits = list(win.get("edits") or [])
     back = reverted(edits)
-    touched, order = set(), []
+    touched, order, born = set(), [], set()
     for e in edits:
         f = str(e.get("file") or "")
         if not f or f in back or f in touched:
             continue
         touched.add(f)
+        if e.get("created"):
+            born.add(f)
         order.append(f)
-    buckets = {"in_scope": [], "from_cut": [], "from_candidates": [], "unnamed": []}
+    buckets = {"in_scope": [], "from_cut": [], "from_candidates": [], "unnamed": [], "excluded": []}
     for f in order:
+        # In scope first: an obedient edit is unscored either way, and reporting
+        # it as excluded would hide how much of the window the brief did aim at.
         if f in scope:
             buckets["in_scope"].append(f)
-        elif f in cut:
+            continue
+        why = excluded(f, f in born)
+        if why:
+            buckets["excluded"].append({"file": f, "why": why})
+            continue
+        if f in cut:
             buckets["from_cut"].append(f)
         elif f in cand:
             buckets["from_candidates"].append(f)
@@ -140,6 +185,13 @@ def replay(windows: list, cfg: dict | None = None) -> dict:
     named = sum(r["named"] for r in scored)
     missed = sum(r["missed"] for r in scored)
     offered = sum(r["offered"] for r in scored)
+    # Counted over EVERY window, not just the scored ones: a window whose only
+    # exception rows were excluded scores nothing, and leaving it out of this
+    # tally would hide why the sample is smaller than the edit count suggests.
+    by_why: dict = {}
+    for r in rows:
+        for x in r.get("excluded") or []:
+            by_why[x["why"]] = by_why.get(x["why"], 0) + 1
     base = {
         "windows_seen": len(rows),
         "windows_scored": len(scored),
@@ -149,6 +201,8 @@ def replay(windows: list, cfg: dict | None = None) -> dict:
         "offered": offered,
         "in_scope_unscored": sum(len(r["in_scope"]) for r in rows),
         "reverted": sum(len(r["reverted"]) for r in rows),
+        "excluded": sum(by_why.values()),
+        "excluded_by": by_why,
         "thresholds": th,
     }
     if n < th["min_rows"] or len(scored) < th["min_windows"]:
@@ -163,6 +217,10 @@ def replay(windows: list, cfg: dict | None = None) -> dict:
                 f"{th['min_rows']} rows over {th['min_windows']} brief(s) are needed before the locate's aim is a "
                 "measurement rather than one odd task. An in-scope edit is not evidence: the brief told the session "
                 "to make it."
+                + (f" {base['excluded']} further edit(s) are not counted here ("
+                   + ", ".join(f"{v} {k}" for k, v in by_why.items())
+                   + "): the write guard exempts the first three and the ranker could not have seen the fourth."
+                   if base["excluded"] else "")
             ),
         )
     conf = confidence.for_rule("lexical", held=named, broken=missed)
@@ -182,5 +240,9 @@ def replay(windows: list, cfg: dict | None = None) -> dict:
                if offered else "no file was offered below the scope line, so precision is not defined. ")
             + f"Confidence {conf['confidence']}, blended from {conf['settled']} sample(s) toward the method's "
               f"{conf['base']}."
+            + (f" {base['excluded']} further edit(s) were outside this figure ("
+               + ", ".join(f"{v} {k}" for k, v in by_why.items())
+               + "): the write guard exempts the first three and the ranker could not have seen the fourth."
+               if base["excluded"] else "")
         ),
     )
