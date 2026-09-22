@@ -267,6 +267,43 @@ export function band(rec) {
 
 const overlaps = (a, from, to) => a.line_start <= to && a.line_end >= from;
 
+/** The quote a denial can serve, line by line inside QUOTE_CHARS, with the
+ *  line range of each region it actually carries and whether every region
+ *  arrived whole. */
+export function quoteOf(anchors, cap = QUOTE_CHARS) {
+  let room = cap, complete = true;
+  const parts = [], spans = [];
+  for (const a of anchors) {
+    const head = `${a.path}:${a.line_start}-${a.line_end}${a.symbol ? `  (${a.symbol})` : ""}`;
+    const want = Math.max(0, a.line_end - a.line_start + 1);
+    const lines = String(a.text || "").split("\n").slice(0, want);
+    room -= head.length + 1;
+    const take = [];
+    for (const l of lines) {
+      if (room < l.length + 1) break;
+      take.push(l);
+      room -= l.length + 1;
+    }
+    if (take.length < want) complete = false;
+    if (take.length) spans.push([a.line_start, a.line_start + take.length - 1]);
+    parts.push(`${head}\n${take.join("\n")}${take.length < want ? `\n… (lines ${a.line_start + take.length}-${a.line_end} not quoted; read them)` : ""}`);
+    if (room <= 0) complete = false;
+  }
+  return { body: parts.join("\n\n"), spans, complete };
+}
+
+/** Every line from `from` to `to` sits inside one of `spans`. */
+export function covers(spans, from, to) {
+  if (!Number.isFinite(to)) return false;
+  let at = from;
+  for (const [a, b] of [...spans].sort((x, y) => x[0] - y[0])) {
+    if (a > at) break;
+    if (b >= at) at = b + 1;
+    if (at > to) return true;
+  }
+  return at > to;
+}
+
 /** Does the brief already answer this read?
  *
  *  Returns a PreToolUse decision, or null to say nothing and let the read
@@ -305,8 +342,16 @@ export function readVerdict(rec, filePath, { offset = 0, limit = 0, capacity = 0
   // Small file, whole read: the quote saves nothing worth a denial.
   if (whole && capacity > 0 && share < minShare) return null;
 
-  const quoted = hit.map((a) => `${a.path}:${a.line_start}-${a.line_end}${a.symbol ? `  (${a.symbol})` : ""}\n${a.text}`).join("\n\n");
-  const body = quoted.length > QUOTE_CHARS ? quoted.slice(0, QUOTE_CHARS) + "\n…" : quoted;
+  // Deny only what the quote can hand back. An anchor's text is capped when
+  // the record is written and again at QUOTE_CHARS here, so a 534-line region
+  // arrives as its first few dozen lines; denying a read of line 414 of it
+  // served a quote that stopped at line 321, and the agent had to copy the
+  // file elsewhere to read it. A whole read is denied only when every region
+  // it hits arrives complete; a ranged read only when the quote holds every
+  // line of the range.
+  const q = quoteOf(hit);
+  if (whole ? !q.complete : !covers(q.spans, from, to)) return null;
+  const body = q.body;
   const cost = whole && tokens ? ` The whole file is ~${human(tokens)} tokens${share ? ` (${Math.round(share * 100)}% of the working window)` : ""}; this region is ~${human(hit.reduce((n, a) => n + a.tokens, 0))}.` : "";
   const next = inScope
     ? `\n\nTo edit outside the quoted lines, read the range you need (offset/limit) — a ranged read is allowed and is enough to unlock Edit on this file.`

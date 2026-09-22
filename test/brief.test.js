@@ -89,8 +89,40 @@ test("a range the brief did not locate goes through", () => {
 
 test("a range inside the quoted region is denied", () => {
   brief.activate(REC());
-  const v = brief.readVerdict(brief.current({}), "src/big.js", { offset: 400, limit: 10, capacity });
+  const v = brief.readVerdict(brief.current({}), "src/big.js", { offset: 401, limit: 3, capacity });
   assert.equal(v.permissionDecision, "deny");
+});
+
+test("a range reaching past the quote goes through: the quote cannot hand those lines back", () => {
+  brief.activate(REC());
+  assert.equal(brief.readVerdict(brief.current({}), "src/big.js", { offset: 400, limit: 10, capacity }), null);
+});
+
+test("a truncated region denies only the lines it carries, and says where it stops", () => {
+  // The shape that broke a session: a region that spans 400 lines whose
+  // stored text is its first 30.
+  const rec = REC();
+  const text = Array.from({ length: 30 }, (_, i) => `const a${400 + i} = compute(${400 + i}) + other(${400 + i});`).join("\n");
+  rec.anchors = [{ path: "src/big.js", symbol: "wide", line_start: 401, line_end: 800, tokens: 9000, text }];
+  brief.activate(rec);
+  assert.equal(brief.readVerdict(brief.current({}), "src/big.js", { offset: 600, limit: 30, capacity }), null, "lines the quote does not hold are read");
+  assert.equal(brief.readVerdict(brief.current({}), "src/big.js", { offset: 425, limit: 10, capacity }), null, "a range straddling the cut is read");
+  assert.equal(brief.readVerdict(brief.current({}), "src/big.js", { capacity }), null, "a whole read is not answered by part of a region");
+  const v = brief.readVerdict(brief.current({}), "src/big.js", { offset: 405, limit: 10, capacity });
+  assert.equal(v.permissionDecision, "deny", "a range the quote holds is still served from it");
+  assert.match(v.permissionDecisionReason, /lines 431-800 not quoted; read them/);
+});
+
+test("the quote cap is counted in lines, not cut mid-line", () => {
+  const long = Array.from({ length: 200 }, (_, i) => `line ${i} ${"x".repeat(40)}`).join("\n");
+  const q = brief.quoteOf([{ path: "f.js", line_start: 1, line_end: 200, text: long }]);
+  assert.equal(q.complete, false);
+  assert.ok(q.body.length <= brief.QUOTE_CHARS + 80);
+  const [a, b] = q.spans[0];
+  assert.equal(a, 1);
+  assert.ok(q.body.includes(`line ${b - 1} `) && !q.body.includes(`line ${b} `), "the last carried line is whole and the next is absent");
+  assert.equal(brief.covers([[1, 5], [6, 9]], 2, 9), true);
+  assert.equal(brief.covers([[1, 5], [7, 9]], 2, 9), false);
 });
 
 test("a small file is never worth a denial", () => {
