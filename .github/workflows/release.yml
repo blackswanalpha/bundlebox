@@ -12,13 +12,14 @@
 # no release, and `bb kernel install` had nothing to fetch. One registry's 2FA
 # prompt should not be able to unship a Rust binary.
 #
-# So there are four jobs and one rule: **`release` depends on nothing that can
-# be refused by a third party.** `npm` runs after it and its failure ends there.
+# So there are five jobs and one rule: **`release` depends on nothing that can
+# be refused by a third party.** Everything after it may fail alone.
 #
-#   kernel   build bbk for five targets            (no secrets)
-#   gate     lint, tests, and the version check     (no secrets)
-#   release  the GitHub release, with the binaries  (GITHUB_TOKEN only)
-#   npm      publish to the registry                (NPM_TOKEN; may fail alone)
+#   kernel        build bbk for five targets            (no secrets)
+#   gate          lint, tests, and the version check     (no secrets)
+#   release       the GitHub release, with the binaries  (GITHUB_TOKEN only)
+#   npm           publish to npm                         (NPM_TOKEN; may fail alone)
+#   mcp-registry  the MCP registry record                (OIDC; may fail alone)
 #
 # `workflow_dispatch` ships binaries for a tag whose release did not happen,
 # without deleting and re-pushing the tag.
@@ -185,4 +186,67 @@ jobs:
             echo "one-time password to publish. Replace it with a **Granular Access Token** scoped to"
             echo "\`bundlebox\` with read-and-write permission (npmjs.com → Access Tokens → Generate New"
             echo "Token → Granular), then re-run this job alone."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The MCP registry record, which is how an agent that has never heard of this
+  # repository finds the server. It must run after `npm` and not for tidiness:
+  # the registry fetches the published tarball and checks that its package.json
+  # carries `mcpName`. Run it first and it reads the previous version, finds a
+  # name that does not match, and rejects the record.
+  #
+  # No secret. `login github-oidc` exchanges the runner's own OIDC token, and
+  # GitHub namespaces grant `io.github.<owner>/*` to workflows in that owner's
+  # repositories — which is exactly the name server.json claims.
+  #
+  # Same rule as every job below `release`: a failure ends here. The binaries
+  # shipped and the package is on npm; a directory listing does not get to
+  # unship either.
+  mcp-registry:
+    needs: [ref, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.ref.outputs.tag }}" }
+      - name: install mcp-publisher
+        run: curl -fsSL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher
+      # server.json carries the version twice, its own and the npm package's,
+      # and both have to be the tag. Written from the tag rather than kept in
+      # step by hand: a stale version in either place is a record pointing at a
+      # tarball whose mcpName it cannot match.
+      - name: version the record from the tag
+        env: { TAG: "${{ needs.ref.outputs.tag }}" }
+        run: |
+          node -e '
+            const fs = require("fs"), v = process.argv[1];
+            const d = JSON.parse(fs.readFileSync("server.json"));
+            d.version = v;
+            for (const p of d.packages) p.version = v;
+            fs.writeFileSync("server.json", JSON.stringify(d, null, 2) + "\n");
+          ' "${TAG#v}"
+          ./mcp-publisher validate
+      - run: ./mcp-publisher login github-oidc
+      # npm's CDN can serve the new tarball a few seconds after `npm publish`
+      # returns, and the registry reads it to verify mcpName. Three attempts
+      # rather than one, so a propagation delay is not a failed release.
+      - name: publish the record
+        run: |
+          for i in 1 2 3; do
+            ./mcp-publisher publish && exit 0
+            echo "attempt $i failed; waiting for the tarball to be servable"
+            sleep 20
+          done
+          exit 1
+      - if: failure()
+        run: |
+          {
+            echo "### the MCP registry record did not publish"
+            echo
+            echo "The GitHub release and the npm package for \`${{ needs.ref.outputs.tag }}\` are unaffected."
+            echo
+            echo "The usual cause is \`mcpName\` missing from the published tarball:"
+            echo "\`npm view bundlebox@${{ needs.ref.outputs.tag }} mcpName\` must print"
+            echo "\`io.github.blackswanalpha/bundlebox\`. Re-run this job alone once it does."
           } >> "$GITHUB_STEP_SUMMARY"
