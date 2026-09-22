@@ -1,6 +1,6 @@
 [package]
 name = "bb-kernel"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "bundlebox kernel: the operations a scripting runtime gets wrong under load — tree walks, fingerprints, token estimates, duplicate windows, symbol indexes, gates with real timeouts, worktrees."
 license = "MIT"
