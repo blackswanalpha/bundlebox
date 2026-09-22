@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bundlebox deck</title>
+<link rel="icon" href="logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="pitch.css">
+<style>
+  @page { size: 1920px 1080px; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #0B1411; }
+  .viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+  .stage { width: 1920px; height: 1080px; position: relative; transform-origin: center; flex: none; }
+  .slide { position: absolute; inset: 0; background: var(--paper); padding: 110px 140px; display: none; flex-direction: column; }
+  .slide.on { display: flex; }
+  .slide.dark { background: radial-gradient(120% 90% at 20% 10%, #0E4433 0%, #07271D 55%, #041710 100%); color: #fff; }
+  .slide .eyebrow { font-size: 22px; margin-bottom: 28px; }
+  .slide.dark .eyebrow { color: var(--mint); }
+  .slide h2 { font-size: 84px; line-height: 1.02; font-weight: 700; max-width: 1500px; }
+  .slide .sub { font-size: 34px; line-height: 1.4; color: var(--ink-2); margin-top: 36px; max-width: 1400px; }
+  .slide.dark .sub { color: #CFE3DA; }
+  .corner { position: absolute; left: 140px; right: 140px; bottom: 56px; display: flex; justify-content: space-between; align-items: center; font-size: 20px; color: var(--muted); }
+  .corner img { width: 36px; height: 36px; }
+  .slide.dark .corner { color: #8FB3A5; }
+
+  .title { justify-content: center; }
+  .title .mark { display: flex; align-items: center; gap: 40px; }
+  .title .mark img { width: 170px; height: 170px; }
+  .title h1 { font-size: 150px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .title .sub { margin-top: 56px; font-size: 40px; max-width: 1300px; }
+
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; margin-top: 80px; }
+  .flow div { background: #fff; border: 1.5px solid var(--rule); border-radius: 18px; padding: 34px 32px; position: relative; }
+  .flow div.hl { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .flow b { display: block; font-family: var(--display); font-size: 34px; margin-bottom: 14px; }
+  .flow span { font-size: 24px; line-height: 1.4; color: var(--ink-2); }
+  .flow div.hl span { color: #CFE3DA; }
+  .flow div:not(:last-child)::after { content: "→"; position: absolute; right: -24px; top: 50%; transform: translateY(-50%); font-size: 30px; color: var(--green); }
+
+  .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin-top: 90px; }
+  .big div { border-top: 3px solid var(--mint); padding-top: 30px; }
+  .big .num { font-size: 150px; line-height: 1; color: var(--mint); letter-spacing: -0.04em; }
+  .big p { font-size: 28px; line-height: 1.4; color: #CFE3DA; margin-top: 24px; }
+
+  .rows { margin-top: 70px; font-size: 30px; }
+  .rows td, .rows th { padding: 20px 24px 20px 0; }
+  .rows th { font-size: 22px; }
+  .rows td.win { font-size: 34px; }
+
+  .bugs { margin-top: 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px 60px; counter-reset: b; }
+  .bugs p { font-size: 28px; line-height: 1.4; color: var(--ink-2); padding-left: 64px; position: relative; }
+  .bugs p::before { counter-increment: b; content: counter(b); position: absolute; left: 0; top: -2px; width: 44px; height: 44px; border-radius: 50%; background: var(--ink); color: var(--mint); font: 700 24px/44px var(--display); text-align: center; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 90px; margin-top: 70px; }
+  .cols h3 { font-size: 40px; margin-bottom: 26px; }
+  .cols li { font-size: 30px; line-height: 1.45; color: var(--ink-2); margin-bottom: 18px; }
+  .cols ol, .cols ul { padding-left: 40px; }
+  .kpi { display: flex; gap: 60px; margin-top: 10px; }
+  .kpi .num { font-size: 96px; line-height: 1; }
+  .kpi p { font-size: 24px; color: var(--muted); margin-top: 10px; }
+
+  .amount { font-size: 190px; line-height: 1; color: var(--mint); letter-spacing: -0.04em; margin-top: 30px; }
+  .ms { margin-top: 60px; font-size: 26px; }
+  .ms td, .ms th { padding: 16px 24px 16px 0; color: #CFE3DA; border-color: rgba(255,255,255,.14); }
+  .ms th { color: #8FB3A5; border-color: var(--mint); font-size: 20px; }
+
+  .hint { position: fixed; bottom: 14px; right: 16px; font: 500 13px var(--body); color: #8FB3A5; }
+  @media print {
+    html, body { height: auto; overflow: visible; background: none; }
+    .viewport { position: static; display: block; }
+    .stage { transform: none !important; width: auto; height: auto; }
+    .slide { position: relative; display: flex !important; width: 1920px; height: 1080px; break-after: page; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="viewport"><div class="stage" id="stage">
+
+  <section class="slide dark title on">
+    <div class="mark"><img src="logo.svg" alt=""><h1 class="display">bundlebox</h1></div>
+    <p class="sub">Cuts what AI coding agents are billed for by answering their orientation questions locally, before the agent opens.</p>
+    <div class="corner"><span>Victor Mbugua · Pitch · September 2026</span><span>MIT · npm i -g bundlebox</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">01 · Problem</div>
+    <h2>Agents are billed for reading, and most of what they read is orientation.</h2>
+    <p class="sub">Before an agent changes a line, it reads files to learn where a symbol lives, which files a task touches, whether two tables agree and what changed since last week. A parser, a count or a set difference answers each of those for free. Teams pay model prices for them anyway, on every session and by every developer.</p>
+    <div class="corner"><img src="logo.svg" alt=""><span>2</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">02 · How it works</div>
+    <h2>Answer what code can answer, then open the agent.</h2>
+    <div class="flow">
+      <div><b>Task</b><span>A developer hands work to Claude Code, Codex, Gemini CLI or OpenCode.</span></div>
+      <div class="hl"><b>bundlebox</b><span>Parses, counts and diffs the repo locally. Zero model tokens.</span></div>
+      <div><b>Brief</b><span>Files, symbols and answers, packed to fit the agent's window.</span></div>
+      <div><b>Ledger</b><span>Measures what the session used and what it was spared.</span></div>
+    </div>
+    <div class="corner"><img src="logo.svg" alt=""><span>3</span></div>
+  </section>
+
+  <section class="slide dark">
+    <div class="eyebrow">03 · Proof</div>
+    <h2>Same work, fewer tokens.</h2>
+    <div class="big">
+      <div><div class="num">−34%</div><p>opening window per agent session, 44.3k to 29.2k tokens</p></div>
+      <div><div class="num">−74%</div><p>tokens for the same planned findings, 5 sessions and 1.3M to 2 sessions and 351k</p></div>
+      <div><div class="num">−97%</div><p>sampleOne questions over its source and logs, 32,080 to 869 tokens</p></div>
+    </div>
+    <div class="corner"><span>Measured with bb session and bb tokens profile --probe, on code the maintainer wrote</span><span>4</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">03 · Proof</div>
+    <h2>Five bugs twelve green unit tests missed. Zero model tokens.</h2>
+    <div class="bugs">
+      <p>A forged token got 403 instead of 401, telling the forger it parsed.</p>
+      <p>A quantity of 1.5 was truncated to 1 and charged.</p>
+      <p>The same truncation on the admin stock endpoint.</p>
+      <p>DELETE on a real route returned 405, answered by the PATCH handler.</p>
+      <p>Ten "Add to cart" buttons were indistinguishable to a screen reader.</p>
+    </div>
+    <p class="sub" style="margin-top:50px">17 scenarios, 92 steps, 12 seconds, 87 requests, on the sampleOne ecommerce service.</p>
+    <div class="corner"><img src="logo.svg" alt=""><span>5</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">04 · Users</div>
+    <h2>Day zero of adoption, with a 90-day plan.</h2>
+    <div class="cols">
+      <div>
+        <h3>Where it stands</h3>
+        <div class="kpi">
+          <div><div class="num">150</div><p>npm downloads since Sep 19</p></div>
+          <div><div class="num">2</div><p>GitHub stars</p></div>
+          <div><div class="num">0</div><p>outside teams</p></div>
+        </div>
+      </div>
+      <div>
+        <h3>Next 90 days</h3>
+        <ol>
+          <li>Run it on 10 to 20 outside teams' repositories and publish their measured savings.</li>
+          <li>Report weekly downloads, stars and opt-in active installs monthly.</li>
+          <li>Target teams that already pay a monthly agent bill.</li>
+        </ol>
+      </div>
+    </div>
+    <div class="corner"><img src="logo.svg" alt=""><span>6</span></div>
+  </section>
+
+  <section class="slide">
+    <div class="eyebrow">05 · Business model</div>
+    <h2>The CLI stays free. Teams pay per seat for the hosted layer.</h2>
+    <div class="cols">
+      <div>
+        <h3>Free, MIT</h3>
+        <ul>
+          <li>The CLI, the local answers and the brief.</li>
+          <li>Every agent adapter.</li>
+          <li>Per-session savings for one developer.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Paid, per seat</h3>
+        <ul>
+          <li>A shared ledger of what each session used and saved.</li>
+          <li>An org dashboard of spend per repo, developer and vendor.</li>
+          <li>Budget and policy controls across every agent.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:40px">The price stays below the tokens it measurably saves.</p>
+    <div class="corner"><img src="logo.svg" alt=""><span>7</span></div>
+  </section>
+
+  <section class="slide dark">
+    <div class="eyebrow">06 · The ask</div>
+    <div class="amount num">$150,000</div>
+    <p class="sub" style="margin-top:20px">Pre-seed for 12 months of full-time work. As a grant, $5,000 funds months 1–3.</p>
+    <table class="ms">
+      <thead><tr><th>Months</th><th>Milestone</th><th>Proves</th></tr></thead>
+      <tbody>
+        <tr><td>1–3</td><td>Windows support and a public third-party benchmark</td><td>Savings hold on code the maintainer did not write</td></tr>
+        <tr><td>1–3</td><td>10 to 20 outside teams with published savings</td><td>People adopt it without help</td></tr>
+        <tr><td>4–8</td><td>Hosted team layer in beta</td><td>Teams will pay for it</td></tr>
+        <tr><td>9–12</td><td>First paying teams, pricing set from their savings</td><td>A repeatable way to sell it</td></tr>
+      </tbody>
+    </table>
+    <div class="corner"><span>Victor Mbugua · kamandexperb@gmail.com · github.com/blackswanalpha/bundlebox</span><span>8</span></div>
+  </section>
+
+</div></div>
+<div class="hint">← → to move · P to print</div>
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const stage = document.getElementById('stage');
+  let i = 0;
+  try { i = Math.min(+(location.hash.slice(1)) - 1 || 0, slides.length - 1); } catch (e) {}
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('on', k === i));
+    history.replaceState(null, '', '#' + (i + 1));
+  }
+  function fit() {
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    stage.style.transform = 'scale(' + s + ')';
+  }
+  addEventListener('resize', fit);
+  addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' '].includes(e.key)) show(i + 1);
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) show(i - 1);
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(slides.length - 1);
+    if (e.key === 'p' || e.key === 'P') print();
+  });
+  addEventListener('click', e => show(e.clientX > innerWidth / 3 ? i + 1 : i - 1));
+  fit(); show(i);
+</script>
+</body>
+</html>

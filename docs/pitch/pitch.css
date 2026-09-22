@@ -1,0 +1,24 @@
+/* Shared by the one-pager (index.html) and the deck (deck.html).
+   Display type is Helvetica, body type is Inter. */
+:root {
+  --ink: #07271D;
+  --ink-2: #3D5A50;
+  --muted: #6B7F77;
+  --green: #1B8C66;
+  --mint: #6FEFC0;
+  --mint-soft: #E9F2EE;
+  --paper: #FAF9F6;
+  --rule: #E4E1DA;
+  --display: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --body: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+h1, h2, h3, .display { font-family: var(--display); letter-spacing: -0.02em; }
+.num { font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+.eyebrow { font-family: var(--body); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 600; color: var(--muted); border-bottom: 1.5px solid var(--ink); }
+td { border-bottom: 1px solid var(--rule); vertical-align: top; }
+td.win { color: var(--green); font-weight: 700; font-family: var(--display); }
+a { color: var(--green); text-decoration: none; }

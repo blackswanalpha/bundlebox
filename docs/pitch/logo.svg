@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="bundlebox">
+  <title>bundlebox</title>
+  <defs>
+    <!-- Deep field, lit from the upper left so the mark has one light source. -->
+    <linearGradient id="bb-field" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#0E4433"/>
+      <stop offset="0.55" stop-color="#07271D"/>
+      <stop offset="1" stop-color="#041710"/>
+    </linearGradient>
+    <!-- The texture: a fine weave, felt rather than seen. -->
+    <pattern id="bb-weave" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="16" stroke="#6FEFC0" stroke-width="1" stroke-opacity="0.055"/>
+    </pattern>
+    <radialGradient id="bb-glow" cx="0.5" cy="0.44" r="0.58">
+      <stop offset="0" stop-color="#6FEFC0" stop-opacity="0.22"/>
+      <stop offset="0.6" stop-color="#2AA179" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#041710" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Edges are drawn in light, not outlined in white: the mark is a structure the field is lighting. -->
+    <!-- userSpaceOnUse, not the default objectBoundingBox: a vertical edge has a
+         zero-width bbox, which makes an objectBoundingBox gradient degenerate and
+         the stroke disappears. Absolute coordinates also give the whole mark one
+         light source instead of one per path. -->
+    <linearGradient id="bb-edge" gradientUnits="userSpaceOnUse" x1="116" y1="110" x2="396" y2="420">
+      <stop offset="0" stop-color="#A8FFDC"/>
+      <stop offset="0.5" stop-color="#57DCA8"/>
+      <stop offset="1" stop-color="#1B8C66"/>
+    </linearGradient>
+    <linearGradient id="bb-lid" x1="0.2" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#6FEFC0" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#1B8C66" stop-opacity="0.07"/>
+    </linearGradient>
+    <linearGradient id="bb-faceR" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A3527" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#041710" stop-opacity="0.95"/>
+    </linearGradient>
+    <!-- Rim light: only the two edges the light actually reaches. -->
+    <linearGradient id="bb-rim" gradientUnits="userSpaceOnUse" x1="116" y1="340" x2="300" y2="110">
+      <stop offset="0" stop-color="#A8FFDC" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#CFFFEC" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#A8FFDC" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bb-field)"/>
+  <rect width="512" height="512" rx="116" fill="url(#bb-weave)"/>
+  <rect width="512" height="512" rx="116" fill="url(#bb-glow)"/>
+
+  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <!-- Faces first: the two dark ones carry the contents, the lid catches the light. -->
+    <path d="M116 190 L256 270 L256 420 L116 340 Z" fill="url(#bb-faceR)"/>
+    <path d="M396 190 L396 340 L256 420 L256 270 Z" fill="url(#bb-faceR)" fill-opacity="0.72"/>
+    <path d="M256 110 L396 190 L256 270 L116 190 Z" fill="url(#bb-lid)"/>
+
+    <!-- The bundle: rows compressing as they descend. The lit face carries them
+         at full strength, the shaded one at a third: one light source, no outlines. -->
+    <g stroke="#6FEFC0" stroke-width="7" opacity="0.62">
+      <path d="M140 233 L217 277"/>
+      <path d="M140 273 L192 303"/>
+      <path d="M140 313 L167 329"/>
+    </g>
+    <g stroke="#6FEFC0" stroke-width="7" opacity="0.30">
+      <path d="M372 233 L295 277"/>
+      <path d="M372 273 L320 303"/>
+      <path d="M372 313 L345 329"/>
+    </g>
+
+    <!-- The three interior edges: they stop short of the ring, so the cube reads
+         as a solid and everything inside it converges on zero. -->
+    <g stroke="url(#bb-edge)" stroke-width="10" opacity="0.95">
+      <path d="M213 245 L116 190"/>
+      <path d="M299 245 L396 190"/>
+      <path d="M256 320 L256 420"/>
+    </g>
+
+    <!-- The silhouette, one continuous weight, drawn last so nothing crosses it. -->
+    <path d="M256 110 L396 190 L396 340 L256 420 L116 340 L116 190 Z" stroke="url(#bb-edge)" stroke-width="11"/>
+
+    <!-- Rim light on the two edges facing the source. -->
+    <g stroke="url(#bb-rim)" stroke-width="5">
+      <path d="M116 190 L256 110"/>
+      <path d="M116 190 L116 340"/>
+    </g>
+
+    <!-- Zero: a closed ring, not a glyph. It needs no font and holds at 16px. -->
+    <circle cx="256" cy="270" r="42" fill="#06241B" fill-opacity="0.92" stroke="none"/>
+    <circle cx="256" cy="270" r="42" stroke="#CFFFEC" stroke-width="12"/>
+    <circle cx="256" cy="270" r="42" stroke="#6FEFC0" stroke-width="22" opacity="0.16"/>
+  </g>
+</svg>
