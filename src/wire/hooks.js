@@ -624,7 +624,8 @@ export async function foremanWatch(payload, cfg = load()) {
     // session makes after it are its work, not history.
     if (fresh) { const head = foreman.rev("HEAD"); store.update(foreman.HOOK_STATE, (d) => ({ ...d, [session]: { ...(d[session] || {}), base: head } }), {}); }
     if (!due) return null;
-    const r = foreman.assess({ session, active: true, cfg, jev: Boolean(f.hook_jev), extra: { hook: phase } });
+    // One Jev attempt: the hook is killed at 15s, and retries could reach 30.
+    const r = foreman.assess({ session, active: true, cfg, jev: Boolean(f.hook_jev), jevRetries: 0, extra: { hook: phase } });
     if (r.error) { log("post-tool", `foreman ${r.error}`); return null; }
     if (!["steer", "stop"].includes(r.action)) return r;
     if (phase !== "steer") return r;

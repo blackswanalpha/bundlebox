@@ -163,17 +163,17 @@ export function assess(opts = {}) {
   const fcfg = settings(cfg);
   const o = observe({ ...opts, cfg });
   if (o.error) return o;
-  let answers = null, jevMs = null;
+  let answers = null, jevMs = null, jevAttempts = null;
   if (opts.jev !== false && jev.available()) {
     const q = expert.call("foreman", { op: "questions", observation: o.observation, cfg: fcfg });
-    const r = q && jev.probabilities(q.state, q.questions);
-    if (r) { answers = r.by; jevMs = r.ms; }
+    const r = q && jev.probabilities(q.state, q.questions, opts.jevRetries == null ? {} : { retries: opts.jevRetries });
+    if (r) { answers = r.by; jevMs = r.ms; jevAttempts = r.attempts; }
   }
   const d = expert.call("foreman", { op: "assess", observation: o.observation, jev: answers, cfg: fcfg });
   if (!d || d.error) return { error: d?.error || expert.lastError || "python3 >= 3.9 required" };
   const row = { kind: "assess", run: o.run, job: o.observation.job, action: d.action, reason: d.reason, responsibility: d.responsibility,
     confidence: d.confidence, via: d.via, drift: d.drift, scores: d.scores, sources: d.sources, state: d.state,
-    turns: o.observation.turns.length, base: o.base, commits: o.observation.git.commits.length, fingerprint: o.fingerprint, jev_ms: jevMs, ...(opts.extra || {}) };
+    turns: o.observation.turns.length, base: o.base, commits: o.observation.git.commits.length, fingerprint: o.fingerprint, jev_ms: jevMs, jev_attempts: jevAttempts, ...(opts.extra || {}) };
   store.append(TIMELINE, row);
   return { ...row, proposed: d.proposed };
 }

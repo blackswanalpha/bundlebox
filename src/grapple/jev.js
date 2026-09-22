@@ -24,7 +24,10 @@ export const MODEL = () => process.env.TYPESAFE_MODEL || "jev-latest";   // requ
 export const WINDOW = 6;              // lines each side of a row
 export const ROWS_PER_ITEM = 3;       // example windows per pattern
 export const STATE_TOKENS = 24000;    // under Jev's 32k state ceiling with room for the questions
-export const TIMEOUT_MS = 8000;
+export const TIMEOUT_MS = 8000;       // per attempt
+export const RETRIES = 2;             // after the first attempt, on a timeout, a 429 or a 5xx
+export const BACKOFF_MS = 500;        // doubled per retry
+export const MAX_WAIT_MS = 5000;      // the longest Retry-After honoured
 
 export const available = () => Boolean(process.env.TYPESAFE_API_KEY) && String(process.env.BB_JEV || "").toLowerCase() !== "off";
 
@@ -64,29 +67,45 @@ export function build(items) {
 
 // The child does the one thing this process cannot do without an event loop
 // turn: wait on fetch. It reads the request off stdin and prints the reply.
+//
+// It retries what is transient and nothing else: a timeout, a 429 and a 5xx.
+// One request timed out at 8s and the same request answered in 2.1s a moment
+// later, and without a retry that one slow reply dropped Jev for the whole
+// assessment. A refused connection or a 4xx is not going to change in a
+// second, so it returns at once. A Retry-After is honoured up to MAX_WAIT_MS.
 const CHILD = `
 let s = ""; process.stdin.setEncoding("utf8"); process.stdin.on("data", (c) => s += c);
 process.stdin.on("end", async () => {
-  const { url, key, body, timeout } = JSON.parse(s);
-  try {
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + key },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
-    process.stdout.write(JSON.stringify({ status: r.status, json: await r.json().catch(() => null) }));
-  } catch (e) { process.stdout.write(JSON.stringify({ status: 0, error: String(e && e.message || e) })); }
+  const { url, key, body, timeout, retries, backoff, maxWait } = JSON.parse(s);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const done = (o) => process.stdout.write(JSON.stringify(o));
+  for (let a = 0; ; a++) {
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + key },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(timeout) });
+      if ((r.status !== 429 && r.status < 500) || a >= retries) return done({ status: r.status, json: await r.json().catch(() => null), attempts: a + 1 });
+      const after = Number(r.headers.get("retry-after"));
+      await sleep(Math.min(after > 0 ? after * 1000 : backoff * 2 ** a, maxWait));
+    } catch (e) {
+      if (!e || e.name !== "TimeoutError" || a >= retries) return done({ status: 0, error: String(e && e.message || e), attempts: a + 1 });
+      await sleep(backoff * 2 ** a);
+    }
+  }
 });`;
 
-/** POST one system-one request. `{ answers, ms }` or null. */
-export function call({ state, questions }, { timeout = TIMEOUT_MS } = {}) {
+/** POST one system-one request, retried per CHILD. `{ answers, ms, attempts }`
+ *  or null. `retries: 0` is one attempt, for a caller with a hard deadline. */
+export function call({ state, questions }, { timeout = TIMEOUT_MS, retries = RETRIES, backoff = BACKOFF_MS } = {}) {
   if (!available() || !Object.keys(questions).length) return null;
   const body = { model: MODEL(), state, questions };
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, ["-e", CHILD], { input: JSON.stringify({ url: URL(), key: process.env.TYPESAFE_API_KEY, body, timeout }),
-    encoding: "utf8", timeout: timeout + 2000, maxBuffer: 16 * 1024 * 1024 });
+  const r = spawnSync(process.execPath, ["-e", CHILD], { input: JSON.stringify({ url: URL(), key: process.env.TYPESAFE_API_KEY, body, timeout, retries, backoff, maxWait: MAX_WAIT_MS }),
+    encoding: "utf8", timeout: (timeout + MAX_WAIT_MS) * (retries + 1) + 2000, maxBuffer: 16 * 1024 * 1024 });
   if (r.status !== 0 || !r.stdout) return null;
   let out;
   try { out = JSON.parse(r.stdout); } catch { return null; }
   if (out.status !== 200 || !out.json || typeof out.json.answers !== "object") return null;
-  return { answers: out.json.answers, ms: Date.now() - t0 };
+  return { answers: out.json.answers, ms: Date.now() - t0, attempts: out.attempts || 1 };
 }
 
 /** A noul answer as one number in [0, 1], whatever field the reply used. */
@@ -114,7 +133,7 @@ export function probabilities(state, questions, opts = {}) {
     if (p == null || Number.isNaN(p)) continue;
     by[k] = Math.round(Math.min(Math.max(p, 0), 1) * 1000) / 1000;
   }
-  return { by, ms: r.ms };
+  return { by, ms: r.ms, attempts: r.attempts };
 }
 
 /** `{ by: { key: { p, uncertainty } }, asked, answered, tokens, ms }` for the
