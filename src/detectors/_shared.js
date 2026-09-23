@@ -84,9 +84,22 @@ export function idents(ctx) {
     return m;
   });
 }
+/** identifier -> up to two files that hold it. Two is enough: usedElsewhere
+ *  only asks whether a file other than `self` holds the name, and walking every
+ *  file's set per symbol was 3 s of a django scan. */
+function holders(ctx) {
+  return cache(ctx, "holders", () => {
+    const m = new Map();
+    for (const [r, s] of idents(ctx)) for (const name of s) {
+      const h = m.get(name);
+      if (!h) m.set(name, [r]); else if (h.length < 2) h.push(r);
+    }
+    return m;
+  });
+}
 export function usedElsewhere(ctx, name, self) {
-  for (const [r, s] of idents(ctx)) if (r !== self && s.has(name)) return true;
-  return false;
+  const h = holders(ctx).get(name);
+  return Boolean(h) && (h.length > 1 || h[0] !== self);
 }
 
 // ── import graph ────────────────────────────────────────────────────────────

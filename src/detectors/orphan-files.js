@@ -12,6 +12,24 @@ const RESOLVED = new Set(["js", "ts", "vue", "svelte", "py", "dart", "rust", "ru
 const RUN_BY_HAND = /(^|\/)(bin|scripts?|tools?|migrations?|examples?|benchmarks?)\//;
 const MANIFEST = /(^|\/)(package\.json|pyproject\.toml|setup\.py|setup\.cfg|Makefile|Cargo\.toml|pubspec\.yaml|Dockerfile|[^/]*\.ya?ml|README[^/]*\.md|CLAUDE\.md|AGENTS\.md)$/;
 
+const tail = (r) => "/" + r.split("/").pop();
+/** needle -> up to two files whose text holds it, for needles that start with "/". */
+function slashHolders(text, needles) {
+  const want = new Set(needles), lens = [...new Set(needles.map((n) => n.length))], held = new Map();
+  if (!want.size) return held;
+  for (const [o, t] of text) {
+    for (let i = t.indexOf("/"); i >= 0; i = t.indexOf("/", i + 1)) {
+      for (const L of lens) {
+        const s = t.slice(i, i + L);
+        if (!want.has(s)) continue;
+        const h = held.get(s) || held.set(s, []).get(s);
+        if (h.length < 2 && h[h.length - 1] !== o) h.push(o);
+      }
+    }
+  }
+  return held;
+}
+
 export default {
   name: "orphan-files", precision: "heuristic", severity: "low",
   description: "source files never imported, required or referenced by path",
@@ -23,17 +41,25 @@ export default {
     for (const [r, t] of text) if (MANIFEST.test(r) || r.endsWith(".sh") || r.endsWith(".json")) named.push(t);
     const pj = packageJson(ctx);
     const namedText = named.join("\n") + JSON.stringify(pj || {});
-    const byDir = new Map();
+    const cands = [];
     for (const r of codeRels(ctx, { tests: false })) {
       if (!RESOLVED.has(langOf(r))) continue;
       if (ENTRY_RE.test(r) || CONFIG_RE.test(r) || RUN_BY_HAND.test(r) || isTest(r)) continue;
       if (fanIn.get(r)) continue;
       const stem = r.replace(/\.[^.]+$/, "");
       if (namedText.includes(r) || namedText.includes(stem)) continue;
-      // A path string anywhere else in the corpus (a dynamic import, a config
-      // key, a docs table) counts as a reference.
-      let referenced = false;
-      for (const [o, t] of text) { if (o !== r && (t.includes(r) || t.includes("/" + r.split("/").pop()))) { referenced = true; break; } }
+      cands.push(r);
+    }
+    // A path string anywhere else in the corpus (a dynamic import, a config
+    // key, a docs table) counts as a reference. For `a/b.py` the test was
+    // includes("a/b.py") || includes("/b.py"), and the first implies the
+    // second, so one pass over the corpus's slashes answers every candidate.
+    const held = slashHolders(text, cands.filter((r) => r.includes("/")).map(tail));
+    const byDir = new Map();
+    for (const r of cands) {
+      const referenced = r.includes("/")
+        ? (held.get(tail(r)) || []).some((o) => o !== r)
+        : [...text].some(([o, t]) => o !== r && (t.includes(r) || t.includes("/" + r)));
       if (referenced) continue;
       const dir = r.includes("/") ? r.slice(0, r.lastIndexOf("/")) : ".";
       if (!byDir.has(dir)) byDir.set(dir, []);

@@ -15,11 +15,15 @@ export default {
   run(ctx) {
     const open = store.openFindings().filter((f) => f.evidence?.sha && f.detector !== "stale-evidence");
     if (!open.length) return [];
-    const hits = [];
+    const hits = [], shas = new Map();   // a path named by 400 findings is hashed once
     for (const f of open) {
       const p = abs(f.path);
-      let now;
-      try { now = fs.statSync(p).isFile() ? sha1(ctx.readText(p)) : null; } catch { now = null; }
+      if (!shas.has(p)) {
+        let now;
+        try { now = fs.statSync(p).isFile() ? sha1(ctx.readText(p)) : null; } catch { now = null; }
+        shas.set(p, now);
+      }
+      const now = shas.get(p);
       if (now === f.evidence.sha) continue;
       hits.push({ id: f.id, detector: f.detector, path: f.path, title: String(f.title || "").slice(0, 110), gone: now === null });
     }
