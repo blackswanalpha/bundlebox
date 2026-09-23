@@ -217,7 +217,9 @@ export function importGraph(ctx) {
     for (const [r, text] of files) {
       if (!isCode(r)) continue;
       const targets = new Set();
-      for (const s of specsOf(r, text)) {
+      // The specs are this file's alone; resolving them reads the file set, so
+      // only the parse is cached.
+      for (const s of filecache.derived(r, shaOf(ctx, r, text), "specs", () => specsOf(r, text))) {
         if (s.kind === "pkg") { pkgs.add(pkgName(s.spec)); continue; }
         const t = resolveSpec(r, s, fileSet);
         if (t && t !== r) targets.add(t);
