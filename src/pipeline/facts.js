@@ -10,7 +10,7 @@ import path from "node:path";
 import * as store from "../core/store.js";
 import { git, run } from "../core/exec.js";
 import { readJson } from "../core/config.js";
-import { BB_DIR } from "../core/paths.js";
+import { BB_DIR, PKG_ROOT } from "../core/paths.js";
 import { now } from "../core/util.js";
 
 /** What is true before the gear runs. Each field is null when its source could
@@ -18,6 +18,9 @@ import { now } from "../core/util.js";
 export function context(gearName) {
   const ctx = { gear: gearName, at: now(), open_findings: null, open_high: null, dirty: null, since_min: null, units_ready: null,
     corpora: null, corpus_base: null, base_up: null, scenarios: null, world: null, services: null };
+  // Read off disk, not via arc/index.js, for the reason scenarioFacts gives. An
+  // npm install ships arc/src and no binary; `arc build` exits 2 there.
+  ctx.arc_built = fs.existsSync(path.join(PKG_ROOT, "arc", "target", "release", process.platform === "win32" ? "arc.exe" : "arc"));
   Object.assign(ctx, storeFacts());
   Object.assign(ctx, scenarioFacts());
   const st = git(["status", "--porcelain"]);
