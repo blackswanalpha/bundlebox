@@ -60,17 +60,21 @@ export default {
   description: "credential-shaped strings in tracked files, every hit, value masked",
   run(ctx) {
     const out = [];
+    // The corpus when an earlier detector already read it; building it here
+    // would read every walked file for a `--only secret-scan` run.
+    const text = ctx._cache?.corpus;
     for (const p of candidates(ctx)) {
       if (BINARY.test(p)) continue;
       let st; try { st = fs.statSync(p); } catch { continue; }
       if (!st.isFile() || st.size > 2_000_000) continue;
-      const src = ctx.readText(p);
       const r = rel(p);
-      const lineOf = lineIndex(src);
+      const src = text?.get(r) ?? ctx.readText(p);
+      let lineOf = null;   // built on the first hit: almost every file has none
       const hits = [];
       for (const [label, re, klass] of PATTERNS) {
         for (const m of src.matchAll(re)) {
           if (placeholder(label, klass, src, m, r)) continue;
+          lineOf ??= lineIndex(src);
           hits.push({ path: r, line: lineOf(m.index), kind: label, masked: mask(m[1] || m[0]) });
         }
       }
