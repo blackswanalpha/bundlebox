@@ -42,9 +42,13 @@ export default {
       const k = kernel.call("dupes", { paths: rels.map(abs), window: W, min_shared_lines: THRESHOLDS.min_shared_lines, min_distinct_ratio: THRESHOLDS.min_distinct_ratio,
         hash_comment_paths: rels.filter((r) => HASH_COMMENT.has(langOf(r))).map(abs) });
       if (k && Array.isArray(k.pairs)) {
+        // A file sits in many pairs: split it and relativise its path once.
+        const relMemo = new Map(), lines = new Map();
+        const relOf = (p) => relMemo.get(p) ?? relMemo.set(p, rel(p)).get(p);
         return k.pairs.map((p) => {
-          const a = rel(p.a), b = rel(p.b);
-          const line = (text.get(a) || "").split("\n")[p.a_line - 1];
+          const a = relOf(p.a), b = relOf(p.b);
+          if (!lines.has(a)) lines.set(a, (text.get(a) || "").split("\n"));
+          const line = lines.get(a)[p.a_line - 1];
           return finding({
             severity: "medium", files: [a, b], path: a, key: `${a}|${b}`, auto_fix: "plan-block-lift",
             title: `${a} and ${b}: ${p.shared_lines} lines in shared ${W}-line windows`,
