@@ -46,8 +46,9 @@ export function symbolsOfJs(p, src = readText(p)) {
 
 let _symbols = null;
 /** {via, byFile: Map<abs, [{name, line}]>} over every code file, computed once. */
-export function symbolIndex(paths = codeFiles()) {
+export function symbolIndex(paths) {
   if (_symbols) return _symbols;
+  paths ??= codeFiles();  // after the cache check: the filter is 7k paths x 16 suffixes per call
   const byFile = new Map(paths.map((p) => [p, []]));
   const k = paths.length ? kcall("symbols", { paths }) : null;
   let via = "js";

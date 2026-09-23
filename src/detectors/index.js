@@ -75,6 +75,9 @@ export function runAll({ only, files } = {}) {
     for (const r of registered) if (!names.includes(r)) warn(`detector ${r} is registered but disabled in config`);
   }
   const findings = [], ran = [];
+  // One hash and one token count per file per scan: django's 8,764 findings
+  // name 761 files 17,142 times, and each name was read, hashed and counted.
+  const memo = { sha: new Map(), tokens: new Map() };
   for (const name of names) {
     const det = REGISTRY[name];
     if (!det) { ran.push({ name, ms: 0, count: 0, error: "no such detector" }); continue; }
@@ -84,13 +87,13 @@ export function runAll({ only, files } = {}) {
       ran.push({ name, ms: Date.now() - t0, count: 0, error: String(e?.message || e) });
       continue;
     }
-    for (const raw of got) findings.push(normalise(raw, det));
+    for (const raw of got) findings.push(normalise(raw, det, memo));
     ran.push({ name, ms: Date.now() - t0, count: got.length, error: null });
   }
   return { findings, ran };
 }
 
-function normalise(f, det) {
+function normalise(f, det, memo) {
   const files = Array.isArray(f.files) ? f.files : [];
   const path = f.path ?? files[0] ?? ".";
   const evidence = { ...(f.evidence || {}) };
@@ -99,7 +102,15 @@ function normalise(f, det) {
   const a = abs(path);
   let isFile = false;
   try { isFile = fs.statSync(a).isFile(); } catch { /* not a file: a dir or "." */ }
-  if (isFile) evidence.sha = sha1(readText(a));
+  if (isFile) {
+    if (!memo.sha.has(a)) memo.sha.set(a, sha1(readText(a)));
+    evidence.sha = memo.sha.get(a);
+  }
+  let tokens = 0;
+  for (const p of files) {
+    if (!memo.tokens.has(p)) memo.tokens.set(p, estimate.files([p]).total);
+    tokens += memo.tokens.get(p);
+  }
   return {
     ...f, detector: det.name, files, path,
     severity: f.severity || det.severity || "low",
@@ -110,7 +121,7 @@ function normalise(f, det) {
     fix_hint: f.fix_hint || "",
     auto_fix: f.auto_fix ?? null,
     detail: String(f.detail || "").slice(0, 1500),
-    est_tokens: estimate.files(files).total,
+    est_tokens: tokens,
     status: "open",
   };
 }
