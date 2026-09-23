@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as store from "../core/store.js";
 import * as stages from "../pipeline/stages.js";
+import * as usage from "../pipeline/usage.js";
 import * as monitor from "../monitor/index.js";
 import * as bridge from "../bridge/index.js";
 import * as cookbook from "../cookbook/index.js";
@@ -108,6 +109,7 @@ export function state({ sessions = 25, fold = false, write = true } = {}) {
     at: now(), root: rel(ROOT), workspace: path.basename(ROOT),
     version: readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0",
     pipeline: stages.gaps(),
+    gears: usage.summary(),
     window: monitor.snapshot({ fold }),
     sessions: monitor.sessions({ limit: sessions, write }),
     saved: {

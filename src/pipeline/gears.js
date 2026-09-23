@@ -67,7 +67,7 @@ export const GEARS = [
       // The index the PreToolUse guards read on every tool call. It is derived
       // from the tables above, so it belongs directly after them: 1.80ms from
       // the markdown, 0.14ms from here.
-      { verb: "arc", args: ["build"], skip_if_fresh: true, inputs: source, optional: true, description: "the tables, compiled to one binary index" },
+      { verb: "arc", args: ["build"], when: "arc_built", skip_if_fresh: true, inputs: source, optional: true, description: "the tables, compiled to one binary index" },
       { verb: "oversight", args: ["guidelines"], flags: { build: true }, skip_if_fresh: true, inputs: source, optional: true, description: "the guidelines block" },
       // Every measured gap, located and budgeted before a session sees it. Only
       // when something is open: a worklist over an empty store is an empty file.
