@@ -152,6 +152,10 @@ export function specsOf(r, text) {
   return out;
 }
 
+/** specsOf through the filecache: every caller that parses a file's imports
+ *  shares one entry, so a detector that calls specsOf itself re-parses nothing. */
+export const cachedSpecs = (ctx, r, text) => filecache.derived(r, shaOf(ctx, r, text), "specs", () => specsOf(r, text));
+
 const norm = (p) => path.posix.normalize(p.replace(/\\/g, "/")).replace(/^\.\//, "");
 function first(cands, fileSet) { for (const c of cands) { const n = norm(c); if (fileSet.has(n)) return n; } return null; }
 
@@ -219,7 +223,7 @@ export function importGraph(ctx) {
       const targets = new Set();
       // The specs are this file's alone; resolving them reads the file set, so
       // only the parse is cached.
-      for (const s of filecache.derived(r, shaOf(ctx, r, text), "specs", () => specsOf(r, text))) {
+      for (const s of cachedSpecs(ctx, r, text)) {
         if (s.kind === "pkg") { pkgs.add(pkgName(s.spec)); continue; }
         const t = resolveSpec(r, s, fileSet);
         if (t && t !== r) targets.add(t);
