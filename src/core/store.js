@@ -115,14 +115,19 @@ export function bound(rows, max = MAX_FINDINGS) {
  *  finding on every scan, and a read per file would move the scan into the
  *  detectors' cost class. A touch fools it, which is exactly why `acted_on`
  *  means "these files changed" and never "the change was a fix". */
-export function witness(f, root = ROOT) {
+export function witness(f, root = ROOT, stats = null) {
   const paths = [...new Set([f.path, ...(Array.isArray(f.files) ? f.files : [])].filter(Boolean).map(String))].sort();
   if (!paths.length) return "";
   const parts = [];
   let alive = 0;
   for (const p of paths) {
-    try { const st = fs.statSync(path.join(root, p)); parts.push(`${p}:${st.size}:${Math.round(st.mtimeMs)}`); alive += 1; }
-    catch { parts.push(`${p}:gone`); }
+    let part = stats?.get(p);
+    if (part === undefined) {
+      try { const st = fs.statSync(path.join(root, p)); part = `${p}:${st.size}:${Math.round(st.mtimeMs)}`; }
+      catch { part = null; }
+      stats?.set(p, part);
+    }
+    if (part) { parts.push(part); alive += 1; } else parts.push(`${p}:gone`);
   }
   return alive ? sha1(parts.join("\n")).slice(0, 12) : "gone";
 }
@@ -212,7 +217,10 @@ export function applyTriagePolicy(policy, fit = {}) {
  *  and a finding that stopped appearing is closed rather than deleted. */
 export function findingId(f) { return sha1(`${f.detector}|${f.path || ""}|${f.key || f.title}`).slice(0, 10); }
 export function mergeFindings(fresh, { detectors }) {
-  return update("findings", (prev) => mergeInto(prev, fresh, { detectors, mark: witness }), []);
+  // One stat per path per merge: django's 8,764 findings name 761 files, and a
+  // stat per finding per path was a third of a second.
+  const stats = new Map();
+  return update("findings", (prev) => mergeInto(prev, fresh, { detectors, mark: (f) => witness(f, ROOT, stats) }), []);
 }
 
 /** The merge itself, pure so it can be tested without a filesystem and reused
