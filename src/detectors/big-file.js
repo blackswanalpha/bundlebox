@@ -6,7 +6,8 @@
 // planning input to the router.
 import { human } from "../core/util.js";
 import * as estimate from "../tokens/estimate.js";
-import { codeRels, corpus, finding } from "./_shared.js";
+import * as filecache from "../core/filecache.js";
+import { codeRels, corpus, finding, shaOf, tokenKind } from "./_shared.js";
 
 // Fractions of the window, not absolute sizes: 60k tokens is big in a 160k
 // window and ordinary in a 1M one.
@@ -24,8 +25,10 @@ export default {
     const cap = Math.max(1, (b.max_tokens || 160000) - (b.reserve_output || 0));
     const out = [];
     const text = corpus(ctx);
+    const kind = tokenKind("code");
     for (const r of codeRels(ctx)) {
-      const n = estimate.text(text.get(r), "code");
+      const src = text.get(r);
+      const n = filecache.derived(r, shaOf(ctx, r, src), kind, () => estimate.text(src, "code"));
       if (n < cap * THRESHOLDS.medium_at) continue;
       const pct = Math.round((n / cap) * 100);
       out.push(finding({

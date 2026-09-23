@@ -5,8 +5,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isGenerated, langOf, walk } from "../core/fs.js";
+import { load } from "../core/config.js";
 import { gitOk } from "../core/exec.js";
+import * as filecache from "../core/filecache.js";
 import { rel } from "../core/paths.js";
+import { sha1 } from "../core/util.js";
 
 export const CODE_LANGS = new Set(["js", "ts", "py", "dart", "go", "rust", "java", "kotlin", "ruby", "php",
   "csharp", "swift", "c", "cpp", "h", "hpp", "scala", "ex", "exs", "lua", "zig", "vue", "svelte"]);
@@ -68,19 +71,33 @@ export function corpus(ctx) {
     return m;
   });
 }
+/** sha1 of a file's text, once per scan. The key filecache entries are read by. */
+export function shaOf(ctx, r, text) {
+  const m = cache(ctx, "sha", () => new Map());
+  if (!m.has(r)) m.set(r, sha1(text));
+  return m.get(r);
+}
+/** The filecache kind for a token count: the coefficients are part of it, so a
+ *  recalibration re-counts instead of serving counts made with the old ones. */
+export const tokenKind = (kind) => `tokens:${kind}:${sha1(JSON.stringify(load().tokens || {})).slice(0, 10)}`;
+/** A set of words stored as one space-joined string: none of them holds a
+ *  space, and one string parses far faster than an array of thousands. */
+export const wordSet = (joined) => new Set(joined ? joined.split(" ") : []);
+export function wordsOf(re, text) {
+  const s = new Set();
+  re.lastIndex = 0;
+  let x;
+  while ((x = re.exec(text))) s.add(x[0]);
+  return [...s].join(" ");
+}
+
 const IDENT = /[A-Za-z_$][\w$]*/g;
 /** rel -> Set of identifiers. A word-boundary search per symbol over the whole
  *  corpus is O(symbols × bytes); a set per file is O(bytes) once. */
 export function idents(ctx) {
   return cache(ctx, "idents", () => {
     const m = new Map();
-    for (const [r, t] of corpus(ctx)) {
-      const s = new Set();
-      IDENT.lastIndex = 0;
-      let x;
-      while ((x = IDENT.exec(t))) s.add(x[0]);
-      m.set(r, s);
-    }
+    for (const [r, t] of corpus(ctx)) m.set(r, wordSet(filecache.derived(r, shaOf(ctx, r, t), "idents", () => wordsOf(IDENT, t))));
     return m;
   });
 }

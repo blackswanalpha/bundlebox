@@ -18,8 +18,9 @@
 // word is never reported. Under-reporting is the right direction. The finding
 // says "delete this or wire it up", and a false one sends somebody to delete a
 // knob that works.
-import { corpus, codeRels, finding } from "./_shared.js";
+import { codeRels, corpus, finding, shaOf, wordSet, wordsOf } from "./_shared.js";
 import { DEFAULTS } from "../core/config.js";
+import * as filecache from "../core/filecache.js";
 
 /** Every `section.key` a defaults object declares, two deep. Deeper than that is
  *  a data structure rather than a knob — `reserve_by_kind.fix` is a value of one
@@ -59,9 +60,7 @@ export default {
       // The defaults file declares them; mentioning a key there is not reading it.
       if (r.endsWith("core/config.js")) continue;
       const src = text.get(r);
-      let m;
-      WORD.lastIndex = 0;
-      while ((m = WORD.exec(src))) mentioned.add(m[0]);
+      for (const w of wordSet(filecache.derived(r, shaOf(ctx, r, src), "words", () => wordsOf(WORD, src)))) mentioned.add(w);
     }
     const dead = [];
     for (const k of knobs()) {
