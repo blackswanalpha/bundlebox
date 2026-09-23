@@ -10,10 +10,12 @@ import { load } from "../core/config.js";
 import { git } from "../core/exec.js";
 import { readText, walk } from "../core/fs.js";
 import { out, warn, emit } from "../core/log.js";
-import { ROOT, abs } from "../core/paths.js";
+import * as filecache from "../core/filecache.js";
+import { ROOT, abs, rel } from "../core/paths.js";
 import { human, sha1 } from "../core/util.js";
 import * as estimate from "../tokens/estimate.js";
 import { PLAN_ONLY } from "../actuators/_plan.js";
+import { tokenKind } from "./_shared.js";
 
 import docLinks from "./doc-links.js";
 import todoCensus from "./todo-census.js";
@@ -77,7 +79,7 @@ export function runAll({ only, files } = {}) {
   const findings = [], ran = [];
   // One hash and one token count per file per scan: django's 8,764 findings
   // name 761 files 17,142 times, and each name was read, hashed and counted.
-  const memo = { sha: new Map(), tokens: new Map() };
+  const memo = { sha: new Map(), tokens: new Map(), kind: tokenKind("file") };
   for (const name of names) {
     const det = REGISTRY[name];
     if (!det) { ran.push({ name, ms: 0, count: 0, error: "no such detector" }); continue; }
@@ -90,6 +92,9 @@ export function runAll({ only, files } = {}) {
     for (const raw of got) findings.push(normalise(raw, det, memo));
     ran.push({ name, ms: Date.now() - t0, count: got.length, error: null });
   }
+  // Only a full walk may prune: an actuator's re-count over three files would
+  // otherwise drop every other file's entry.
+  filecache.flush(files ? null : new Set(ctx.files.map((p) => rel(p))));
   return { findings, ran };
 }
 
@@ -102,13 +107,16 @@ function normalise(f, det, memo) {
   const a = abs(path);
   let isFile = false;
   try { isFile = fs.statSync(a).isFile(); } catch { /* not a file: a dir or "." */ }
-  if (isFile) {
-    if (!memo.sha.has(a)) memo.sha.set(a, sha1(readText(a)));
-    evidence.sha = memo.sha.get(a);
-  }
+  const shaAt = (x) => memo.sha.get(x) ?? memo.sha.set(x, sha1(readText(x))).get(x);
+  if (isFile) evidence.sha = shaAt(a);
   let tokens = 0;
   for (const p of files) {
-    if (!memo.tokens.has(p)) memo.tokens.set(p, estimate.files([p]).total);
+    if (!memo.tokens.has(p)) {
+      const ap = abs(p);
+      let regular = false;
+      try { regular = fs.statSync(ap).isFile(); } catch { /* a dir or gone: estimate decides */ }
+      memo.tokens.set(p, regular ? filecache.derived(rel(ap), shaAt(ap), memo.kind, () => estimate.files([p]).total) : estimate.files([p]).total);
+    }
     tokens += memo.tokens.get(p);
   }
   return {

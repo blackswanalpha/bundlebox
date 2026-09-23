@@ -8,7 +8,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { secretSweep } from "../git/repo.js";
-import { finding, gitAvailable, isTest, lineIndex, rel } from "./_shared.js";
+import * as filecache from "../core/filecache.js";
+import { finding, gitAvailable, isTest, lineIndex, rel, shaOf } from "./_shared.js";
 
 // Vendor prefixes first: a hit is a hit. The generic rules are the net for the
 // vendor nobody has a prefix for, and they are the ones the placeholder test
@@ -69,15 +70,19 @@ export default {
       if (!st.isFile() || st.size > 2_000_000) continue;
       const r = rel(p);
       const src = text?.get(r) ?? ctx.readText(p);
-      let lineOf = null;   // built on the first hit: almost every file has none
-      const hits = [];
-      for (const [label, re, klass] of PATTERNS) {
-        for (const m of src.matchAll(re)) {
-          if (placeholder(label, klass, src, m, r)) continue;
-          lineOf ??= lineIndex(src);
-          hits.push({ path: r, line: lineOf(m.index), kind: label, masked: mask(m[1] || m[0]) });
+      // Every input to a hit is this file's path and bytes, so the hits are too.
+      const hits = filecache.derived(r, shaOf(ctx, r, src), "secrets", () => {
+        let lineOf = null;   // built on the first hit: almost every file has none
+        const found = [];
+        for (const [label, re, klass] of PATTERNS) {
+          for (const m of src.matchAll(re)) {
+            if (placeholder(label, klass, src, m, r)) continue;
+            lineOf ??= lineIndex(src);
+            found.push({ path: r, line: lineOf(m.index), kind: label, masked: mask(m[1] || m[0]) });
+          }
         }
-      }
+        return found;
+      });
       if (!hits.length) continue;
       out.push(finding({
         severity: "critical", files: [r], key: r,
