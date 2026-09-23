@@ -6,7 +6,7 @@
 // installed for nothing on every CI run.
 import fs from "node:fs";
 import path from "node:path";
-import { corpus, finding, importGraph, packageJson, specsOf } from "./_shared.js";
+import { cachedSpecs, corpus, finding, importGraph, packageJson } from "./_shared.js";
 
 // dist name -> import name where they differ. The rest follow `-` -> `_`, lower.
 const PY_ALIAS = { pillow: "PIL", beautifulsoup4: "bs4", pyyaml: "yaml", "scikit-learn": "sklearn", "python-dotenv": "dotenv",
@@ -77,7 +77,7 @@ function python(ctx, text, r) {
   const deps = pyDeps(src, r);
   if (!deps.length) return null;
   const imported = new Set();
-  for (const [o, t] of text) if (o.endsWith(".py")) for (const s of specsOf(o, t)) {
+  for (const [o, t] of text) if (o.endsWith(".py")) for (const s of cachedSpecs(ctx, o, t)) {
     if (s.kind !== "abs") continue;
     for (const m of s.multi || [s.spec]) imported.add(m.split(".")[0]);
   }
