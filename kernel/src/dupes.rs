@@ -3,8 +3,7 @@
 //! 8-line sliding windows hashed, files with a distinct-line ratio under 0.25
 //! skipped (data tables and generated code duplicate legitimately).
 use crate::json::Json;
-use crate::sha1::sha1;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 #[allow(unused_imports)]
 use std::collections::BTreeSet as _BTreeSet;
 use std::fs;
@@ -38,11 +37,16 @@ pub fn normalise(line: &str, hash_comment: bool) -> String {
     if t.is_empty() || t.chars().all(|c| "{}()[];,".contains(c)) { String::new() } else { t }
 }
 
+/// Lines covered by windows of `win` lines starting at `starts`.
+fn covered(starts: &mut Vec<usize>, win: usize) -> usize {
+    starts.sort_unstable(); starts.dedup();
+    starts.windows(2).map(|p| (p[1] - p[0]).min(win)).sum::<usize>() + if starts.is_empty() { 0 } else { win }
+}
+
 pub fn op_dupes(input: &Json) -> Json {
     let win = input.num("window", 8.0) as usize;
     let min_shared = input.num("min_shared_lines", 24.0) as usize;
     let min_distinct = input.num("min_distinct_ratio", 0.25);
-    let mut index: HashMap<String, Vec<(usize, usize)>> = HashMap::new(); // hash -> (file idx, line)
     let files = input.str_list("paths");
     let hash_langs = input.str_list("hash_comment_paths");
     let is_hash: std::collections::BTreeSet<&String> = hash_langs.iter().collect();
@@ -58,30 +62,40 @@ pub fn op_dupes(input: &Json) -> Json {
         }
         norm.push(lines);
     }
-    for &fi in &kept {
-        let lines = &norm[fi];
-        for i in 0..=lines.len() - win {
-            let joined: Vec<&str> = lines[i..i + win].iter().map(|(_, l)| l.as_str()).collect();
-            let h = sha1(joined.join("\n").as_bytes());
-            index.entry(h).or_default().push((fi, i));
-        }
+    // A window is keyed by its lines' interned ids, not a sha1 of the joined
+    // text: no line holds a "\n", so equal id runs are exactly equal joined
+    // windows, and hashing ~380k joined windows was 3.8 s of a 6.5 s django run.
+    let mut ids_of: HashMap<&str, u32> = HashMap::new();
+    let ids: Vec<Vec<u32>> = kept.iter().map(|&fi| norm[fi].iter().map(|(_, l)| {
+        let n = ids_of.len() as u32;
+        *ids_of.entry(l.as_str()).or_insert(n)
+    }).collect()).collect();
+    let mut index: HashMap<&[u32], Vec<(usize, usize)>> = HashMap::new(); // window -> (file idx, line)
+    for (k, &fi) in kept.iter().enumerate() {
+        let w = &ids[k];
+        for i in 0..=w.len() - win { index.entry(&w[i..i + win]).or_default().push((fi, i)); }
     }
-    // pair -> covered normalised-line indexes on each side, plus the first shared window
-    let mut pairs: BTreeMap<(usize, usize), (BTreeSet<usize>, BTreeSet<usize>, (usize, usize))> = BTreeMap::new();
+    // pair -> the start of every shared window on each side, plus the first
+    // shared window. The covered-line count is the union of [start, start+win)
+    // over those starts, taken once per pair below.
+    let mut pairs: HashMap<(usize, usize), (Vec<usize>, Vec<usize>, (usize, usize))> = HashMap::new();
     for locs in index.values() {
         if locs.len() < 2 { continue; }
         for a in 0..locs.len() { for b in a + 1..locs.len() {
             let (fa, ia) = locs[a]; let (fb, ib) = locs[b];
             if fa == fb { continue; }
             let (k, la, lb) = if fa < fb { ((fa, fb), ia, ib) } else { ((fb, fa), ib, ia) };
-            let e = pairs.entry(k).or_insert_with(|| (BTreeSet::new(), BTreeSet::new(), (la, lb)));
-            for x in 0..win { e.0.insert(la + x); e.1.insert(lb + x); }
+            let e = pairs.entry(k).or_insert_with(|| (Vec::new(), Vec::new(), (la, lb)));
+            e.0.push(la); e.1.push(lb);
             if la < e.2 .0 { e.2 = (la, lb); }
         } }
     }
+    // Key order first: the stable sort below breaks shared_lines ties by it.
+    let mut pairs: Vec<_> = pairs.into_iter().collect();
+    pairs.sort_unstable_by_key(|(k, _)| *k);
     let mut out_pairs = Vec::new();
-    for ((fa, fb), (ca, cb, (la, lb))) in pairs {
-        let shared = ca.len() + cb.len();
+    for ((fa, fb), (mut ca, mut cb, (la, lb))) in pairs {
+        let shared = covered(&mut ca, win) + covered(&mut cb, win);
         if shared < min_shared { continue; }
         let mut o = Json::obj();
         o.set("a", files[fa].clone().into()); o.set("b", files[fb].clone().into());
