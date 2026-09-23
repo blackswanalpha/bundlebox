@@ -111,6 +111,28 @@ function render(s){
     {h:"Kind",f:r=>esc(r.kind||"")},
   ],"Nothing open.");
 
+  const g = s.gears || {gears:[],recent:[]};
+  $("#gears").innerHTML = rows(g.gears,[
+    {h:"Gear",f:r=>'<span class="mono">'+esc(r.gear)+"</span>"},
+    {h:"24h",num:1,f:r=>r.day},
+    {h:"7d",num:1,f:r=>r.week},
+    {h:"All",num:1,f:r=>r.total},
+    {h:"Failed",num:1,f:r=>r.failed},
+    {h:"Avg s",num:1,f:r=>r.avg_seconds},
+    {h:"Last trigger",f:r=>esc(r.last_trigger)},
+    {h:"Last verdict",f:r=>'<span class="pill '+(r.last_verdict==="clean"?"ok":"unknown")+'">'+esc(r.last_verdict||"?")+"</span>"},
+    {h:"Last run",num:1,f:r=>when(r.last_at)},
+  ],"No gear has run. bb pipeline run intake --apply")
+  + (g.recent.length ? "<h3>Latest runs</h3>" + rows(g.recent,[
+    {h:"Gear",f:r=>'<span class="mono">'+esc(r.gear)+"</span>"+(r.chained.length?'<div class="mono muted">→ '+esc(r.chained.join(" → "))+"</div>":"")},
+    {h:"Trigger",f:r=>esc(r.trigger)},
+    {h:"Verdict",f:r=>esc(r.verdict)},
+    {h:"Ran",num:1,f:r=>r.ran},
+    {h:"Failed",num:1,f:r=>r.failed},
+    {h:"Seconds",num:1,f:r=>r.seconds},
+    {h:"When",num:1,f:r=>when(r.at)},
+  ],"") : "");
+
   $("#agents").innerHTML = rows(s.agents,[
     {h:"Call",f:r=>'<div>'+esc(r.problem||"")+'</div><div class="mono muted">'+esc(r.id)+"</div>"},
     {h:"Reason",f:r=>esc(r.reason||"")},

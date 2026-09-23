@@ -13,6 +13,7 @@ export { script } from "./script.js";
 
 const SECTIONS = [
   ["The pipeline", "pipeline", "Every stage before the agent is free. A pipeline fails by skipping, not by erroring, so each stage is judged on whether its exit criterion holds now — not on whether it ran once."],
+  ["Pipelines in use", "gears", "Which gears ran, how often and on what trigger, read off gear_runs.jsonl. A gear with no run this week is declared but not used."],
   ["Sessions", "sessions", "What each session was asked to do, what it used, and what the local path had already done for it. Tokens are measured off the transcript; displaced turns are an estimate and the two are never added."],
   ["Boards", "boards", "A corpus run against the running system. A detector asks what the files say; these ask what the service does."],
   ["What went red", "red", ""],
