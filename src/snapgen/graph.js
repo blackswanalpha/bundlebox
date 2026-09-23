@@ -50,21 +50,27 @@ const INDEXES = ["index.js", "index.mjs", "index.ts", "index.tsx", "__init__.py"
  *  blast radius. */
 export function resolve(from, spec) {
   if (!spec) return null;
-  let cand;
-  if (spec.startsWith(".")) cand = path.resolve(path.dirname(from), spec);
-  else if (spec.includes("/") || spec.includes(".")) {
-    // A dotted python/java path, or a repo-root-relative one.
-    cand = path.join(ROOT, spec.replace(/\./g, "/"));
-  } else return null;
+  const rel = spec.startsWith(".");
+  if (!rel && !spec.includes("/") && !spec.includes(".")) return null;
+  // A relative spec depends on the importing file's directory; a dotted or
+  // root-relative one on nothing but itself. django repeats a few hundred
+  // specs across thousands of import lines, and each miss builds 23 paths.
+  const key = rel ? path.dirname(from) + "\0" + spec : spec;
+  if (_resolved.has(key)) return _resolved.get(key);
+  // A dotted python/java path, or a repo-root-relative one.
+  const cand = rel ? path.resolve(path.dirname(from), spec) : path.join(ROOT, spec.replace(/\./g, "/"));
   const tries = [cand, ...SYMBOL_SUFFIX.map((s) => cand + s), ...INDEXES.map((i) => path.join(cand, i))];
   const known = fileSet();
-  for (const t of tries) if (known.has(t)) return t;
-  return null;
+  let hit = null;
+  for (const t of tries) if (known.has(t)) { hit = t; break; }
+  _resolved.set(key, hit);
+  return hit;
 }
 
 let _files = null;
+const _resolved = new Map();
 const fileSet = () => _files || (_files = new Set(codeFiles()));
-export function reset() { _files = null; _graph = null; }
+export function reset() { _files = null; _graph = null; _resolved.clear(); }
 
 let _graph = null;
 /** The whole graph, computed once per process.
