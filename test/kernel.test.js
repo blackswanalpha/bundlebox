@@ -70,6 +70,20 @@ test("dupes: kernel finds the same pair with the same shared line count as js", 
   assert.equal(k.pairs[0].shared_lines, jsFindings[0].evidence.shared_lines);
 });
 
+// Two verbs' help tables differ in every string, and blanking strings made them
+// the same rows: 360 of 378 pairs on this tree were that. Neither side reports them.
+test("dupes: help tables are not a pair on either side", async () => {
+  const { literalWindow } = await import("../src/detectors/duplicate-blocks.js");
+  const { dupesJs } = await import("../src/oversight/rules.js");
+  const table = (v) => `export const commands = {\n  ${v}: {\n    help: "what ${v} does",\n    usage: "bb ${v} [--json]",\n    long: [\n${Array.from({ length: 12 }, (_, i) => `      "  bb ${v} step${i}   line ${i} of ${v}",`).join("\n")}\n    ].join("\\n"),\n    run: cmd,\n  },\n};\n`;
+  fs.mkdirSync(path.join(root, "tables"), { recursive: true });
+  const ps = ["one", "two"].map((v) => { const p = path.join(root, "tables", `${v}.js`); fs.writeFileSync(p, table(v)); return p; });
+  assert.ok(literalWindow(['help:"",', 'usage:"",', "long:[", '"",', '"",', '"",', '"",', '"",']));
+  assert.ok(!literalWindow(["constv=f(x);", 'log("",v);', "if(v){", "returnv;", "a=1;", "b=2;", "c=3;", "d=4;"]));
+  assert.equal(dupesJs(ps).pairs.length, 0);
+  if (have) assert.equal(kernel.call("dupes", { paths: ps, window: 8, min_shared_lines: 24, min_distinct_ratio: 0.25, hash_comment_paths: [] }).pairs.length, 0);
+});
+
 test("symbols: kernel indexes a JS function and a Python class", { skip: !have }, () => {
   const k = kernel.call("symbols", { paths: files });
   const names = k.symbols.map((s) => s.name);
