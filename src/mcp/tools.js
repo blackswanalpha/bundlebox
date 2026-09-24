@@ -8,7 +8,7 @@ import * as store from "../core/store.js";
 import { text as estimateText, files as estimateFiles } from "../tokens/estimate.js";
 import { human } from "../core/util.js";
 
-const lazy = async (file) => { try { return await import(file); } catch (e) { return { __missing: String(e.message || e).split("\n")[0] }; } };
+const lazy = async (file) => { try { return await import(file); } catch (e) { return { __missing: String(e.message || e).split("\n")[0] }; } };  // the reason travels in __missing
 const missing = (m, what) => `${what} is not available on this install: ${m.__missing}`;
 const strs = (v) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(",").map((s) => s.trim()).filter(Boolean) : []);
 

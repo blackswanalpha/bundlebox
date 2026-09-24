@@ -20,7 +20,7 @@ export const DIR = () => path.join(BB_DIR, "genesis");
 export const PACKS = () => path.join(OUT, "genesis");
 export const worldPath = (id) => path.join(DIR(), id, "world.json");
 
-export const ids = () => { try { return fs.readdirSync(DIR()).filter((d) => fs.existsSync(worldPath(d))).sort(); } catch { return []; } };
+export const ids = () => { try { return fs.readdirSync(DIR()).filter((d) => fs.existsSync(worldPath(d))).sort(); } catch { return []; } };  // no genesis dir yet: no worlds
 export const world = (id) => readJson(worldPath(id), null);
 export const current = (id = "") => id || readJson(path.join(DIR(), "current.json"), {})?.id || ids()[0] || "";
 
@@ -95,7 +95,7 @@ export function derive({ doc = "", prompt = "", finding = "", ticket = "", name 
 }
 
 /** A finding row or a pasted ticket -> the same world model. */
-export function deriveRow({ finding = "", ticket = "", name = "", base = "" } = {}) {
+function deriveRow({ finding = "", ticket = "", name = "", base = "" } = {}) {
   const kind = finding ? "finding" : "ticket";
   const got = finding ? findingRow(String(finding)) : ticketRow(String(ticket));
   if (got.why) return { rc: 2, why: got.why };
@@ -146,7 +146,7 @@ export function plan(id, { corpusId = "", limit = 40 } = {}) {
   const w = world(id);
   if (!w) return { rc: 2, why: `no world \`${id}\`` };
   const cid = corpusId || id;
-  const c = corpus.load(cid) || { scenarios: [] };
+  const c = corpus.load(cid) || { scenarios: [] };  // a world with no corpus has no scenarios
   // The persona's `excluded` travels with the scenarios: a capability a corpus
   // refuses to run (it spends, or it writes to the machine) is reported as out
   // of scope with its reason, not as a gap that can never close.

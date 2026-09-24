@@ -38,7 +38,7 @@ export function window(row) {
   const p = String(row.path || "").split(":")[0];
   if (!p) return "";
   let lines;
-  try { lines = fs.readFileSync(abs(p), "utf8").split("\n"); } catch { return ""; }
+  try { lines = fs.readFileSync(abs(p), "utf8").split("\n"); } catch { return ""; }  // file moved or deleted since the row: no excerpt
   const at = Math.max(lineOf(row), 1);
   const from = Math.max(at - WINDOW, 1), to = Math.min(at + WINDOW, lines.length);
   return lines.slice(from - 1, to).map((l, i) => `${from + i}${from + i === at ? ">" : " "} ${l}`).join("\n");
@@ -103,7 +103,7 @@ export function call({ state, questions }, { timeout = TIMEOUT_MS, retries = RET
     encoding: "utf8", timeout: (timeout + MAX_WAIT_MS) * (retries + 1) + 2000, maxBuffer: 16 * 1024 * 1024 });
   if (r.status !== 0 || !r.stdout) return null;
   let out;
-  try { out = JSON.parse(r.stdout); } catch { return null; }
+  try { out = JSON.parse(r.stdout); } catch { return null; }  // a garbled reply is no answer, same as a non-200
   if (out.status !== 200 || !out.json || typeof out.json.answers !== "object") return null;
   return { answers: out.json.answers, ms: Date.now() - t0, attempts: out.attempts || 1 };
 }

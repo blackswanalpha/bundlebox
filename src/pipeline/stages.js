@@ -27,17 +27,17 @@ import { shouldRun, REPEATABLES } from "../recom/repeatable.js";
 import { list as corpusList } from "../cookbook/corpus.js";
 import { reachable } from "./facts.js";
 
-const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
+const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };  // 0 reads as never
 const newest = (dir, suffix = ".json") => {
   let best = 0;
   const walk = (d) => {
-    let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }  // not there yet
     for (const e of ents) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith(suffix)) best = Math.max(best, mtime(p)); }
   };
   walk(dir);
   return best;
 };
-const countFiles = (dir, suffix = ".json") => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith(suffix)) n++; } }; walk(dir); return n; };
+const countFiles = (dir, suffix = ".json") => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith(suffix)) n++; } }; walk(dir); return n; };  // not there yet
 const ago = (t) => (t ? `${Math.round((Date.now() - t) / 60000)}m ago` : "never");
 
 /** The base the first corpus that declares one runs against.

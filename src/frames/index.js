@@ -30,7 +30,7 @@ export function evals() {
   const byId = new Map();
   for (const dir of [SHIPPED(), LOCAL()]) {
     let names = [];
-    try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort(); } catch { continue; }
+    try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort(); } catch { continue; } // no evals in this directory
     // A local eval with the same id REPLACES the shipped one rather than
     // running beside it: two thresholds for one measurement is two answers.
     for (const f of names) { const v = readJson(path.join(dir, f), null); if (v) byId.set(v.id || f.replace(/\.json$/, ""), { ...v, id: v.id || f.replace(/\.json$/, ""), file: rel(path.join(dir, f)) }); }

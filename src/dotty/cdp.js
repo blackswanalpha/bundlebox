@@ -95,7 +95,7 @@ export class WS {
       const text = this._frag.toString("utf8");
       this._frag = Buffer.alloc(0);
       let msg;
-      try { msg = JSON.parse(text); } catch { continue; }
+      try { msg = JSON.parse(text); } catch { continue; } // a non-JSON frame is not a CDP message
       (this.onMessage || (() => {}))(msg);
     }
   }

@@ -30,7 +30,7 @@ const SHEBANG_SUFFIX = [".js", ".mjs", ".cjs", ".py", ".ts", ".rb", ".pl", ".bas
 
 export function hasShebang(p) {
   let fd;
-  try { fd = fs.openSync(p, "r"); const b = Buffer.alloc(2); const n = fs.readSync(fd, b, 0, 2, 0); return n === 2 && b[0] === 0x23 && b[1] === 0x21; } catch { return false; } finally { if (fd !== undefined) fs.closeSync(fd); }
+  try { fd = fs.openSync(p, "r"); const b = Buffer.alloc(2); const n = fs.readSync(fd, b, 0, 2, 0); return n === 2 && b[0] === 0x23 && b[1] === 0x21; } catch { return false; } finally { if (fd !== undefined) fs.closeSync(fd); }  // unreadable is not executable
 }
 
 export function candidates() {
@@ -45,7 +45,7 @@ export function candidates() {
 /** The header block, or null when the file carries no `@tag`. */
 export function parse(p) {
   let head;
-  try { head = fs.readFileSync(p, "utf8").split("\n", HEADER_LINES); } catch { return null; }
+  try { head = fs.readFileSync(p, "utf8").split("\n", HEADER_LINES); } catch { return null; }  // unreadable: no header
   const got = {}, unknown = [];
   for (const line of head) {
     const m = TAG_LINE.exec(line);

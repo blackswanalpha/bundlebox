@@ -141,7 +141,7 @@ export const takeDetail = () => { const d = _published; _published = null; retur
 export function yieldOf(key, detail = null) {
   const fn = YIELD[key] || YIELD[String(key).split(" ")[0]];
   if (!fn) return { produced: null, produces: [key], reads: [], turns: 0, digest: null };
-  try { return { digest: null, ...fn(detail) }; } catch { return { produced: null, produces: [key], reads: [], turns: 0, digest: null }; }
+  try { return { digest: null, ...fn(detail) }; } catch { return { produced: null, produces: [key], reads: [], turns: 0, digest: null }; } // never throws: a broken counter must not fail the verb it counts
 }
 
 /** Has this exact answer been given already? A repeat displaces nothing.
@@ -186,7 +186,7 @@ export function relabel(labels) {
   if (!ids.length) return 0;
   const file = path.join(VAR, "episodes.jsonl");
   let text;
-  try { text = fs.readFileSync(file, "utf8"); } catch { return 0; }
+  try { text = fs.readFileSync(file, "utf8"); } catch (e) { if (e.code === "ENOENT") return 0; throw e; }
   let n = 0;
   const outLines = text.split("\n").map((line) => {
     if (!line.trim()) return line;

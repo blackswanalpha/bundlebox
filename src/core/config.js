@@ -47,7 +47,6 @@ export const DEFAULTS = {
     agent: "auto",            // claude | codex | gemini | aider | opencode | cursor | copilot | custom | auto
     max_parallel: 4,
     model: "",                // empty = the agent's default
-    fallback_model: "",
     lean_session: true,
     permission_mode: "acceptEdits",
     max_turns: 120,
@@ -88,11 +87,9 @@ export const DEFAULTS = {
     allow_push: true,
     allow_merge: false,
     draft_pr: true,
-    branch_prefix: "bb/",
-    conventional_commits: true,
     protected: ["main", "master", "develop", "release"],
   },
-  remote: { enabled: false, ttl_min: 30, fetch_timeout: 120, pr_limit: 30, stale_pr_days: 14 },
+  remote: { enabled: false },
   kernel: {
     // What PROVES a change. Auto-detected from package.json/Makefile/pyproject when empty.
     gates: {},
@@ -367,7 +364,6 @@ export const DEFAULTS = {
     // record made from a failed run would gate on a fact about nothing.
     record_on_success: true,
   },
-  cron: { sweep_every_min: 30, autonomous_fix: false },
 };
 
 let _cache = null;

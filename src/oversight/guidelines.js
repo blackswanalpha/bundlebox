@@ -66,7 +66,7 @@ export const CATALOGUE = {
   "swallowed-errors": {
     title: "Never drop a failure",
     rule: "An empty catch is a bug. Record, degrade, or rethrow, and say which in the catch body.",
-    why: "`catch (e) {}` and `except: pass` decide that a failure does not need to be visible, once, silently, at a keystroke, and nothing downstream can tell it happened.",
+    why: "`catch (e) {}` and `except: pass` decide that a failure does not need to be visible, once, silently, at a keystroke, and nothing downstream can tell it happened.",  // quoted example, not a catch
     check: (doc, t) => { const { b } = medians(doc); return `This tree's median is ${fmt(b.median_swallows)} swallowed errors per file and the bar is ${fmt(bar(t, "swallows", b.median_swallows))}. Every catch body you write has at least one statement, and if that statement is a comment it says why the failure is safe to ignore.`; },
   },
   "commented-code": {

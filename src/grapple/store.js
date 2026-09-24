@@ -57,7 +57,7 @@ export const patternKey = (detector, shape) => sha1(`${detector}|${normaliseShap
  *  the rest is whatever the detector had. Never throws: an event log that can
  *  break a hook is a hook that stops being installed. */
 export function record(kind, fields = {}) {
-  try { return store.append(EVENTS, { kind: String(kind), ...fields }); } catch { return null; }
+  try { return store.append(EVENTS, { kind: String(kind), ...fields }); } catch { return null; }  // never throws, see above
 }
 export function events({ limit = 0, kind = "", session = "" } = {}) {
   let rows = store.rows(EVENTS, { limit });

@@ -274,7 +274,7 @@ export function viaArc(payload) {
  *  compute costs one signal in the next brief, and failing the echos over it
  *  would cost every other one. */
 function locateOf(events, cfg) {
-  try { return locate.measure(events, { cfg }); } catch { return null; }
+  try { return locate.measure(events, { cfg }); } catch { return null; } // documented never-throws, above
 }
 
 export async function run({ cfg = load(), limit = 0, only = [] } = {}) {

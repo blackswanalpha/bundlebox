@@ -101,7 +101,7 @@ export function write(area, ch) {
 export function ids() {
   try { return fs.readdirSync(DIR(), { withFileTypes: true })
     .filter((e) => e.isDirectory() && fs.existsSync(path.join(DIR(), e.name, "charter.json")))
-    .map((e) => e.name).sort(); } catch { return []; }
+    .map((e) => e.name).sort(); } catch { return []; } // no charters directory yet
 }
 
 /** A charter written against a tree that has since moved. The charter is the

@@ -59,7 +59,7 @@ export function tree(cwd = ROOT) {
   // branch with commits nobody else can see is the thing `git log` was checking.
   const up = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd);
   const against = up.rc === 0 ? up.out.trim() : (base && base !== br ? base : "");
-  const ahead = against ? lines(git(["rev-list", "--count", `${against}..HEAD`], cwd).out.trim())[0] || "0" : null;
+  const ahead = against ? lines(git(["rev-list", "--count", `${against}..HEAD`], cwd).out.trim())[0] || null : null;
   const last = git(["log", "-1", "--format=%h %s"], cwd).out.trim();
   return { repo: true, branch: br, base, upstream: up.rc === 0 ? against : "", dirty: dirty.length,
     dirty_files: dirty.slice(0, 6).map((f) => `${f.status}:${f.path}`), diff: stat, staged, ahead: ahead === null ? null : Number(ahead), last };

@@ -64,7 +64,7 @@ export const MODULES = [
 
 export const ALIASES = { gc: "janitor", memory: "janitor", blackice: "auditor", audit: "auditor", scenarios: "cookbook", corpus: "cookbook", board: "mainboard", mb: "mainboard", frames: "frames", dataframes: "frames", cc: "console", usage: "monitor", sg: "pipeline", switchgear: "pipeline", learn: "buckmaster", bm: "buckmaster", bridgeswap: "bridge", scripttag: "scripts", st: "scripts", ctx: "context" };
 
-const version = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
+const version = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0"; // a package.json with no version is a dev checkout
 
 export async function loadCommands() {
   const cmds = {};

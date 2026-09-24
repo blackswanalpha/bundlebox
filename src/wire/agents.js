@@ -228,12 +228,12 @@ export const SKILLS_DIR = () => path.join(PKG_ROOT, "skills");
 export function skills() {
   let names;
   try { names = fs.readdirSync(SKILLS_DIR(), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
-  catch { return []; }
+  catch { return []; }  // no skills dir: no skills
   const out = [];
   for (const name of names) {
     const dir = path.join(SKILLS_DIR(), name);
     let files;
-    try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort(); } catch { continue; }
+    try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort(); } catch { continue; }  // removed since readdir
     if (!files.includes("SKILL.md")) continue;               // a directory with no SKILL.md is not a skill
     out.push({ name, dir, files });
   }
@@ -380,7 +380,7 @@ export const ORDER = Object.keys(AGENTS);
  *  windsurf, amp) are probed by binary name only. */
 export async function detectAgents() {
   let which;
-  try { ({ which } = await import("../core/exec.js")); } catch { return []; }
+  try { ({ which } = await import("../core/exec.js")); } catch (e) { if (e.code !== "ERR_MODULE_NOT_FOUND") throw e; return []; }
   const out = [];
   for (const name of ORDER) {
     const a = AGENTS[name];

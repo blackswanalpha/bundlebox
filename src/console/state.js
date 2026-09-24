@@ -107,7 +107,7 @@ export function state({ sessions = 25, fold = false, write = true } = {}) {
 
   return {
     at: now(), root: rel(ROOT), workspace: path.basename(ROOT),
-    version: readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0",
+    version: readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0", // a package.json with no version is a dev checkout
     pipeline: stages.gaps(),
     gears: usage.summary(),
     window: monitor.snapshot({ fold }),

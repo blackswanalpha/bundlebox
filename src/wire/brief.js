@@ -135,7 +135,7 @@ const MAX_LOG = 4000;
 /** The logged briefs, oldest first. A torn line is one brief, not the file. */
 export function logged({ limit = MAX_LOG } = {}) {
   let text;
-  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return []; }
+  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return []; }  // no log yet
   const out = [];
   for (const l of text.split("\n").filter(Boolean).slice(-limit)) {
     try { const r = JSON.parse(l); if (r && Array.isArray(r.scope)) out.push(r); } catch { /* one brief */ }
@@ -146,11 +146,11 @@ export function logged({ limit = MAX_LOG } = {}) {
 /** Drop the oldest half past the cap, from the same call that appends. */
 export function rotateLog({ max = MAX_LOG } = {}) {
   let text;
-  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return 0; }
+  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return 0; }  // no log yet
   const lines = text.split("\n").filter(Boolean);
   if (lines.length <= max) return 0;
   const keep = lines.slice(Math.floor(lines.length / 2));
-  try { fs.writeFileSync(LOG(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }
+  try { fs.writeFileSync(LOG(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }  // best-effort rotate: next append retries
 }
 
 /** Never throws and never blocks activation: a brief that failed to log is a
@@ -171,7 +171,7 @@ export function log(rec) {
     }) + "\n");
     rotateLog({});
     return true;
-  } catch { return false; }
+  } catch { return false; }  // hook path: false tells the caller it was not logged
 }
 
 export function activate(rec) {
@@ -183,10 +183,10 @@ export function activate(rec) {
     fs.renameSync(p + ".tmp" + process.pid, p);
     log(rec);
     return true;
-  } catch { return false; }
+  } catch { return false; }  // hook path: false tells the caller it was not saved
 }
 
-const readRec = (p) => { try { const r = JSON.parse(fs.readFileSync(p, "utf8")); return r && r.v === 1 ? r : null; } catch { return null; } };
+const readRec = (p) => { try { const r = JSON.parse(fs.readFileSync(p, "utf8")); return r && r.v === 1 ? r : null; } catch { return null; } };  // missing or torn record: no brief
 const fresh = (rec, maxAgeMin) => {
   const age = (Date.now() - Date.parse(rec.at || 0)) / 60000;
   return Number.isFinite(age) && age <= maxAgeMin;
@@ -399,7 +399,7 @@ function innerFilter(pathArg, glob) {
 
 const SYMBOL_TABLES = () => {
   const dir = path.join(OUT, "snapgen");
-  try { return fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)).map((n) => path.join(dir, n)); } catch { return []; }
+  try { return fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)).map((n) => path.join(dir, n)); } catch { return []; }  // snapgen not run yet
 };
 
 /** `name  file:line` rows from the built symbol tables that match any term.
@@ -589,7 +589,7 @@ const deny = (reason) => ({ permissionDecision: "deny", permissionDecisionReason
 export function prune({ keep = 40 } = {}) {
   const dir = path.join(OUT, "pinpoint");
   let names;
-  try { names = fs.readdirSync(dir).filter((n) => n.endsWith(".md")).sort(); } catch { return 0; }
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith(".md")).sort(); } catch { return 0; }  // nothing to prune
   let gone = 0;
   for (const n of names.slice(0, Math.max(0, names.length - keep))) { try { fs.unlinkSync(path.join(dir, n)); gone++; } catch { /* next time */ } }
   return gone;

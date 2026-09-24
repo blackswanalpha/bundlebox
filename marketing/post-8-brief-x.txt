@@ -1,0 +1,48 @@
+# X. Attach post-8-brief.mp4 to the single post or to 1/ of the thread.
+
+## Single post
+
+Ask an AI assistant to fix one bug and it reads file after file first. You pay for every word.
+
+bundlebox does that reading on your computer, for free, and hands the AI one short note.
+
+12 real tasks: $4.33 of reading became $0.16.
+
+npm i -g bundlebox
+
+## Thread
+
+1/
+Ask an AI coding assistant to fix one bug and watch what it does first.
+
+It opens file after file and reads them top to bottom. Sometimes twice. You pay for all of it.
+
+2/
+AI assistants charge by the word they read. Most of your bill is the AI looking around, not the AI writing the fix.
+
+3/
+So I built bundlebox. It does the looking on your own computer, for free.
+
+Then it gives the AI one short note: which files matter, which lines, and how to check the fix worked.
+
+4/
+I tried it on 12 real tasks.
+
+Without bundlebox, the AI read 866,600 tokens. $4.33.
+With it, 32,700 tokens. $0.16.
+
+Same tasks. About 26x less reading.
+
+5/
+The note also says what it doesn't know. If there is no test to check the fix, it says so instead of guessing.
+
+One question is cheaper than one wrong assumption.
+
+6/
+One caveat: those 12 tasks came from bundlebox's own project, so it had home advantage. On an outside benchmark it found the right files more often but read more to do it. I publish both.
+
+7/
+Works with Claude Code, Codex, Gemini CLI, Cursor, Copilot and more. Free and open source.
+
+npm i -g bundlebox
+github.com/blackswanalpha/bundlebox

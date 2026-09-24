@@ -58,7 +58,7 @@ export function wired() {
   const found = [];
   for (const { agent, file, keys } of CONFIGS()) {
     let doc;
-    try { doc = JSON.parse(fs.readFileSync(file, "utf8")); } catch { continue; }
+    try { doc = JSON.parse(fs.readFileSync(file, "utf8")); } catch { continue; }  // agent not installed, or config unparseable: no entry
     for (const key of keys) {
       const entry = at(doc, key)?.artemis;
       if (!entry) continue;
@@ -81,7 +81,7 @@ export function wired() {
   // adding a parser for one lookup.
   for (const file of [home(".codex", "config.toml"), path.join(ROOT, ".codex", "config.toml")]) {
     let text;
-    try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
+    try { text = fs.readFileSync(file, "utf8"); } catch { continue; }  // codex not configured
     if (/^\s*\[mcp_servers\.artemis\]/m.test(text)) found.push({ agent: "codex", file, key: "mcp_servers.artemis", command: "", cwd: "", project_exists: null });
   }
   return found;

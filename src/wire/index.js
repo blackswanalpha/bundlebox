@@ -201,7 +201,7 @@ export function removeYamlRead(before) {
 
 // ── planning ────────────────────────────────────────────────────────────────
 
-const readOrNull = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } };
+const readOrNull = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } };  // absence is the answer
 const absOf = (p, root) => (path.isAbsolute(p) ? p : path.join(root, p));
 
 function transform(f, before, mode) {
@@ -294,7 +294,7 @@ export function status(names, { root = ROOT, scope = "project" } = {}) {
  *  log is the only place this shows, so status reads it. */
 export function binaryCheck({ log = path.join(VAR, "hooks.log") } = {}) {
   let rows = [];
-  try { rows = fs.readFileSync(log, "utf8").split("\n").filter((l) => / unknown event$/.test(l)); } catch { return null; }
+  try { rows = fs.readFileSync(log, "utf8").split("\n").filter((l) => / unknown event$/.test(l)); } catch { return null; }  // no hook log: nothing to report
   if (!rows.length) return null;
   const events = [...new Set(rows.map((l) => l.split(" ")[1]).filter(Boolean))];
   return { unknown: rows.length, events, last: rows.at(-1).split(" ")[0] };

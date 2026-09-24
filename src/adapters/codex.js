@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { detectBin, num, parseJson, jsonLines, blockText, turn, isDir } from "./index.js";
 
-export const SESSIONS = path.join(os.homedir(), ".codex", "sessions");
+const SESSIONS = path.join(os.homedir(), ".codex", "sessions");
 
 const usageOf = (u) => ({
   // Codex reports input INCLUDING the cached part; split it so the rows agree
@@ -75,7 +75,7 @@ export default {
       const first = buf.toString("utf8", 0, n).split("\n")[0];
       const o = parseJson(first);
       return o?.type === "session_meta" ? (o.payload?.cwd || null) : null;
-    } catch { return null; } finally { if (fd !== undefined) fs.closeSync(fd); }
+    } catch { return null; } /* unreadable or not a codex session: no cwd */ finally { if (fd !== undefined) fs.closeSync(fd); }
   },
 
   readTranscript(file) {
@@ -112,4 +112,4 @@ export default {
   },
 };
 
-function ls(d) { try { return fs.readdirSync(d).filter((x) => !x.startsWith(".")).sort(); } catch { return []; } }
+function ls(d) { try { return fs.readdirSync(d).filter((x) => !x.startsWith(".")).sort(); } catch { return []; } } // no directory, no sessions

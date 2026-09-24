@@ -66,7 +66,7 @@ export default {
     const text = ctx._cache?.corpus;
     for (const p of candidates(ctx)) {
       if (BINARY.test(p)) continue;
-      let st; try { st = fs.statSync(p); } catch { continue; }
+      let st; try { st = fs.statSync(p); } catch { continue; } // vanished since listing
       if (!st.isFile() || st.size > 2_000_000) continue;
       const r = rel(p);
       const src = text?.get(r) ?? ctx.readText(p);

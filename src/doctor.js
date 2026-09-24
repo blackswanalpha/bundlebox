@@ -15,7 +15,7 @@ const row = (name, state, value, fix = "") => ({ name, state, value, fix });
 function du(dir) {
   let n = 0;
   const stack = [dir];
-  while (stack.length) { const d = stack.pop(); let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+  while (stack.length) { const d = stack.pop(); let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; } /* unreadable: not counted */
     for (const e of ents) { const p = path.join(d, e.name); if (e.isDirectory()) stack.push(p); else { try { n += fs.statSync(p).size; } catch { /* gone */ } } } }
   return n;
 }

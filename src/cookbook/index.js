@@ -36,7 +36,7 @@ export function boardFiles(id = "") {
   try {
     return fs.readdirSync(BOARDS()).filter((f) => f.endsWith(".json") && (!id || f.startsWith(`${id}-`))).sort()
       .map((f) => path.join(BOARDS(), f));
-  } catch { return []; }
+  } catch { return []; } // no boards run yet
 }
 export const boards = (id, { limit = KEEP } = {}) => boardFiles(id).slice(-limit).map((f) => readJson(f, null)).filter(Boolean);
 export const latest = (id) => { const f = boardFiles(id); return f.length ? readJson(f[f.length - 1], null) : null; };
@@ -108,7 +108,7 @@ export async function runCorpus(id, opts = {}) {
   if (!input.base) return { rc: 2, why: "no base: pass --base, or put one in persona.json. Nothing is guessed" };
   if (!input.scenarios.length) return { rc: 2, why: "nothing selected to run" };
   const t0 = Date.now();
-  const res = await runEngine(input, { engine: opts.engine || "auto" });
+  const res = await runEngine(input, { engine: opts.engine || "auto" }); // no --engine given, not a failure
   const board = { corpus: id, at: now(), ...res, selected: ids ? ids.length : input.scenarios.length, of: c.scenarios.length,
     selection: selection ? { budget_steps: selection.budget_steps, steps_selected: selection.steps_selected, basis: selection.basis } : null };
   const file = store_board(board);
