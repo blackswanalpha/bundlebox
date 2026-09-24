@@ -16,7 +16,7 @@ import { load, readJson, writeJson } from "../core/config.js";
 import { human, median, now, stamp, sha1 } from "../core/util.js";
 import * as store from "../core/store.js";
 import { capacity } from "../compile/context.js";
-import { normalise } from "../detectors/duplicate-blocks.js";
+import { normalise, literalWindow } from "../detectors/duplicate-blocks.js";
 import { kcall } from "../snapgen/tables.js";
 import * as metrics from "./metrics.js";
 
@@ -24,6 +24,7 @@ export const DIR = path.join(OUT, "oversight");
 export const latestPath = () => path.join(DIR, "latest.json");
 export const RULES = ["god-file", "bloat", "duplication", "vibe-coded", "suppression", "swallowed-errors", "commented-code", "comment-poor"];
 export const DETECTORS = new Set(RULES.map((r) => `oversight:${r}`));
+export const BOARD_OWNED = new Set(["oversight:god-file", "oversight:duplication"]);
 
 /** Thresholds as data. `*_x_median` multiplies the tree's own median; `*_floor`
  *  is the absolute minimum the bar can be. Window facts (`god_payload_share`)
@@ -64,7 +65,9 @@ export function dupesJs(paths, { window = 8, min_shared_lines = 24, min_distinct
     if (norm.length < W) continue;
     if (new Set(norm.map((n) => n.text)).size / norm.length < min_distinct_ratio) continue;
     for (let i = 0; i + W <= norm.length; i++) {
-      const h = sha1(norm.slice(i, i + W).map((n) => n.text).join("\n")).slice(0, 16);
+      const w = norm.slice(i, i + W).map((n) => n.text);
+      if (literalWindow(w)) continue;
+      const h = sha1(w.join("\n")).slice(0, 16);
       if (!locs.has(h)) locs.set(h, []);
       locs.get(h).push({ p, i });
     }
@@ -256,7 +259,10 @@ export function scan({ trees = null, write = false, cfg = load() } = {}) {
   const p = path.join(DIR, `${stamp()}.json`);
   writeJson(p, doc);
   writeJson(latestPath(), { ...doc, file: rel(p) });
-  if (write) store.mergeFindings(findings, { detectors: DETECTORS });
+  // god-file and duplicate-blocks already put these two on the board, with an
+  // actuator plan each; a second row per file doubled the list without adding a
+  // fact. They stay in the document, where guidelines read them.
+  if (write) store.mergeFindings(findings.filter((f) => !BOARD_OWNED.has(f.detector)), { detectors: DETECTORS });
   return { ...doc, file: rel(p), written: write };
 }
 

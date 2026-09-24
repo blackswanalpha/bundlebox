@@ -6,6 +6,8 @@ import * as store from "./core/store.js";
 import { emit, out, warn } from "./core/log.js";
 import { load } from "./core/config.js";
 import { human, table } from "./core/util.js";
+import { ROOT } from "./core/paths.js";
+import { gitx } from "./git/repo.js";
 import { REGISTRY, SEVERITY, explain, runAll, triage } from "./detectors/index.js";
 import { ACTUATORS, DESTRUCTIVE, actuate } from "./actuators/index.js";
 
@@ -48,16 +50,20 @@ export const commands = {
     },
   },
   findings: {
-    help: "list findings",
+    help: "list findings, worst first; within a severity, the files changed most in 90 days first",
     usage: "bb findings [--detector x] [--severity s] [--status open|resolved|fixed|wontfix|all] [--limit n] [--json]",
     run: async ({ flags }) => {
       const status = flags.status || "open";
-      const limit = Number(flags.limit) || 50;
+      const limit = Number(flags.limit) || 20;
       let rows = store.get("findings", []);
       if (status !== "all") rows = rows.filter((f) => f.status === status);
       if (flags.detector) rows = rows.filter((f) => list(flags.detector).includes(f.detector));
       if (flags.severity) rows = rows.filter((f) => (SEVERITY[f.severity] ?? 0) >= (SEVERITY[flags.severity] ?? 0));
-      rows.sort((a, b) => (SEVERITY[b.severity] ?? 0) - (SEVERITY[a.severity] ?? 0) || a.detector.localeCompare(b.detector));
+      // A finding in a file nobody touches costs nothing until someone does; one
+      // in a file edited every week is paid for on every edit. Churn breaks ties.
+      const hot = churn();
+      const heat = (f) => Math.max(0, ...(f.files || [f.path]).map((p) => hot.get(p) || 0));
+      rows.sort((a, b) => (SEVERITY[b.severity] ?? 0) - (SEVERITY[a.severity] ?? 0) || heat(b) - heat(a) || a.detector.localeCompare(b.detector));
       const shown = rows.slice(0, limit);
       if (flags.json) { emit({ count: rows.length, findings: shown }); return 0; }
       if (!rows.length) { out(`  no ${status} findings`); return 0; }
@@ -133,3 +139,12 @@ export const commands = {
     },
   },
 };
+
+/** Commits per path over the last 90 days, from one `git log`. Empty outside a repo. */
+function churn() {
+  const r = gitx(["log", "--since=90.days", "--name-only", "--format="], ROOT, { timeout: 30000 });
+  const m = new Map();
+  if (r.rc !== 0) return m;
+  for (const l of r.out.split("\n")) if (l) m.set(l, (m.get(l) || 0) + 1);
+  return m;
+}
