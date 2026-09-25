@@ -309,6 +309,21 @@ export function covers(spans, from, to) {
  *  Returns a PreToolUse decision, or null to say nothing and let the read
  *  through. `capacity` is the working window; the share below which a whole
  *  file is too cheap to argue about. */
+/** The task as a pasteable shell argument. `problem` is the raw prompt, paste
+ *  tags and newlines included, and the reuse checks compare it verbatim, so it
+ *  is cleaned here and not in record(). */
+export function taskArg(problem, max = 80) {
+  const t = String(problem || "")
+    .replace(/<[\\/]?pasted_content\b[^>]*>/g, " ")
+    .replace(/["\\$`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return sp > max / 2 ? cut.slice(0, sp) : cut;
+}
+
 export function readVerdict(rec, filePath, { offset = 0, limit = 0, capacity = 0, minShare = 0.02 } = {}) {
   if (!rec || !filePath) return null;
   const f = norm(filePath);
@@ -326,7 +341,7 @@ export function readVerdict(rec, filePath, { offset = 0, limit = 0, capacity = 0
   tally(rec, "reads", key);
 
   if (rec.cut.includes(f)) {
-    return { permissionDecision: "ask", permissionDecisionReason: `bundlebox: ${f} was cut from the pinpoint scope to make the unit fit one window (${rec.verdict}, ~${human(rec.projected)} projected). The brief says to name it and why before opening it. Opening it widens the unit past what was budgeted; \`bb pinpoint "${rec.problem.slice(0, 80)}" --files ${f}\` re-budgets the task with it in scope instead.` };
+    return { permissionDecision: "ask", permissionDecisionReason: `bundlebox: ${f} was cut from the pinpoint scope to make the unit fit one window (${rec.verdict}, ~${human(rec.projected)} projected). The brief says to name it and why before opening it. Opening it widens the unit past what was budgeted; \`bb pinpoint "${taskArg(rec.problem)}" --files ${f}\` re-budgets the task with it in scope instead.` };
   }
 
   if (!mine.length) return null;                            // nothing quoted for this file
