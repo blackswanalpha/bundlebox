@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { git, run } from "../core/exec.js";
+import { call as kernelCall } from "../core/kernel.js";
 import { load } from "../core/config.js";
 import { ROOT } from "../core/paths.js";
 
@@ -37,17 +38,29 @@ export const branchExists = (branch, cwd = ROOT) => git(["rev-parse", "--verify"
 export function addWorktree(wt, branch, { from = "", existing = false, cwd = ROOT } = {}) {
   fs.mkdirSync(path.dirname(wt), { recursive: true });
   if (fs.existsSync(wt)) removeWorktree(wt, { cwd });
-  let r;
+  let r, via = "js";
   if (existing) {
     git(["fetch", "--quiet", "origin", branch], cwd);
     r = git(["worktree", "add", "-B", branch, wt, `origin/${branch}`], cwd);
-  } else r = git(["worktree", "add", "-b", branch, wt, from || baseRef(cwd)], cwd);
+  } else {
+    // The kernel's `worktree` op adds and seeds (the gitignored files a gate
+    // needs, `kernel.seed`) in one process. It falls back to HEAD when the start
+    // point is missing; here that is a failure, since HEAD is whatever the main
+    // checkout happens to be on.
+    const start = from || baseRef(cwd);
+    const k = kernelCall("worktree", { path: wt, branch, base: start, apply: true, repo: cwd, seed: load().kernel?.seed || [] });
+    if (k && k.ok && !(k.notes || []).some((n) => String(n).includes("unavailable"))) { r = { rc: 0 }; via = "kernel"; }
+    else {
+      if (k && k.ok) { removeWorktree(wt, { cwd }); git(["branch", "-D", branch], cwd); return { ok: false, why: `start point ${start} unavailable` }; }
+      r = git(["worktree", "add", "-b", branch, wt, start], cwd);
+    }
+  }
   if (r.rc !== 0) return { ok: false, why: (r.err || r.out).trim().slice(0, 300) };
   const nm = path.join(cwd, "node_modules");
   if (fs.existsSync(nm) && !fs.existsSync(path.join(wt, "node_modules"))) {
     try { fs.symlinkSync(nm, path.join(wt, "node_modules"), "dir"); } catch { /* the gate reports what is missing */ }
   }
-  return { ok: true };
+  return { ok: true, via };
 }
 
 export function removeWorktree(wt, { cwd = ROOT } = {}) {

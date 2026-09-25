@@ -22,6 +22,8 @@ import * as foreman from "../foreman/index.js";
 import * as ironguard from "../ironguard/index.js";
 import { git } from "../core/exec.js";
 import { addWorktree, removeWorktree, openPr, gh, writable } from "../sentinel/git.js";
+import * as policy from "../sentinel/policy.js";
+import * as links from "../sentinel/links.js";
 
 export const ROUNDS = "sentinel-rounds";
 const FAILED = new Set(["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "ERROR", "STARTUP_FAILURE"]);
@@ -122,17 +124,25 @@ export async function review({ apply = false, rounds = 0, cfg = load() } = {}) {
   const rows = [];
   for (const pr of (list.data || []).filter((p) => String(p.headRefName).startsWith("bb/"))) {
     const need = needsRound(pr);
-    if (!need.changes && !need.failed.length) continue;
     const s = state[pr.number] || { rounds: 0, sig: "" };
-    if (s.rounds >= max) { rows.push({ pr: pr.number, state: "needs-human", why: `${s.rounds} rounds, the cap is ${max}` }); continue; }
+    const base = { changes: need.changes, failed: need.failed.length, rounds: s.rounds, max, last_sig: s.sig, writable: writable(pr.headRefName, cfg) };
+    // The Python expert decides; asked once before the network reads (clean or
+    // capped needs no feedback) and once after, with the feedback's signature.
+    const pre = policy.round(base);
+    if (pre.state === "clean") continue;
+    if (pre.state === "needs-human" || pre.state === "refused") { rows.push({ pr: pr.number, state: pre.state, why: pre.why }); continue; }
     const fb = gather(pr);
     const sig = sha1(JSON.stringify([fb.reviews.map((r) => r.id || r.submittedAt), fb.comments.map((c) => c.id || c.createdAt), fb.inline.map((c) => c.id), fb.failed.map((f) => `${f.name || f.context}:${f.completedAt || ""}`)]));
-    if (sig === s.sig) { rows.push({ pr: pr.number, state: "waiting", why: "no new feedback since the last round" }); continue; }
-    if (!writable(pr.headRefName, cfg)) { rows.push({ pr: pr.number, state: "refused", why: "not a bb/ branch" }); continue; }
-    const round = s.rounds + 1;
+    const d = policy.round({ ...base, sig });
+    if (d.state !== "run") { rows.push({ pr: pr.number, state: d.state, why: d.why }); continue; }
+    const round = d.round;
     const wt = path.join(VAR, "worktrees", `review-pr${pr.number}`);
+    // arc: the symbols the reviewers named, located, so the lane reads ranges
+    // instead of searching for them.
+    const text = feedbackBrief(pr, fb);
+    const located = links.locatedBlock(await links.locate(text));
     const lane = { id: `pr${pr.number}-r${round}`, run_id: `review-${new Date().toISOString().slice(0, 10)}`, branch: pr.headRefName, worktree: wt,
-      units: [{ id: `review-${pr.number}-${round}`, title: `PR #${pr.number} round ${round}`, brief: feedbackBrief(pr, fb), acceptance: String(cfg.sentinel?.gate || "npm run lint && npm test") }] };
+      units: [{ id: `review-${pr.number}-${round}`, title: `PR #${pr.number} round ${round}`, brief: text + located, acceptance: String(cfg.sentinel?.gate || "npm run lint && npm test") }] };
     if (!apply) { rows.push({ pr: pr.number, state: "would-run", round, lane: lane.id }); continue; }
     const add = addWorktree(wt, pr.headRefName, { existing: true });
     if (!add.ok) { rows.push({ pr: pr.number, state: "error", why: add.why }); continue; }

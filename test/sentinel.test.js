@@ -130,13 +130,13 @@ test("a failed gated run is never recorded", () => {
   assert.equal(autoRecord("x/y", ["true"], { ran: false, rc: null }).state, "not recorded");
 });
 
-test("A1: a certain fix lands on bb/auto-fix/<date>, the base branch is untouched", () => {
+test("A1: a certain fix lands on bb/auto-fix/<date>, the base branch is untouched", async () => {
   assert.equal(branchFor("2026-09-25", (b) => b === "bb/auto-fix/2026-09-25"), "bb/auto-fix/2026-09-25-2");
   assert.ok(body({ fixed: [{ id: "f", name: "strip-debug-line", path: "a.js" }], gate: { command: "true", rc: 0 }, guard: { hits: [], files: 1, added: 0, removed: 1 }, types: ["strip-debug-line"] })
     .includes("<!-- bb-fix-types: strip-debug-line -->"));
-  const dry = autoFix({ candidates: [{ id: "f1", detector: "merge-markers", auto_fix: "resolve-identical-conflict" }], apply: false, date: "2026-09-25" });
+  const dry = await autoFix({ candidates: [{ id: "f1", detector: "merge-markers", auto_fix: "resolve-identical-conflict" }], apply: false, date: "2026-09-25" });
   assert.equal(dry.state, "would-fix");
-  const r = autoFix({ candidates: [{ id: "f1", detector: "merge-markers", auto_fix: "resolve-identical-conflict" }], apply: true, date: "2026-09-25", root });
+  const r = await autoFix({ candidates: [{ id: "f1", detector: "merge-markers", auto_fix: "resolve-identical-conflict" }], apply: true, date: "2026-09-25", root });
   assert.equal(r.state, "committed", JSON.stringify(r));
   assert.deepEqual(r.types, ["resolve-identical-conflict"]);
   assert.equal(r.gate.rc, 0);
@@ -145,5 +145,139 @@ test("A1: a certain fix lands on bb/auto-fix/<date>, the base branch is untouche
   assert.ok(sh("show", "main:src/a.js").stdout.includes("<<<<<<<"), "main keeps its markers");
   assert.equal(sh("rev-parse", "--abbrev-ref", "HEAD").stdout.trim(), "main", "the main checkout never moved");
   assert.ok(!fs.existsSync(path.join(root, ".bundlebox/var/worktrees/auto-fix-2026-09-25")), "the worktree is cleaned up");
-  assert.equal(autoFix({ candidates: [], apply: true }).state, "nothing");
+  assert.equal((await autoFix({ candidates: [], apply: true })).state, "nothing");
+});
+
+// ── the three languages and the two links ──────────────────────────────────
+
+const policy = await import("../src/sentinel/policy.js");
+const expert = await import("../src/core/expert.js");
+const kernel = await import("../src/core/kernel.js");
+const links = await import("../src/sentinel/links.js");
+const emit = await import("../src/lathe/emit.js");
+const scriptsIx = await import("../src/scripts/index.js");
+
+const both = (fn) => { const py = fn(); process.env.BB_SENTINEL_JS = "1"; try { return [py, fn()]; } finally { delete process.env.BB_SENTINEL_JS; } };
+
+test("the Python expert and the JS mirror decide the same tiers, steps, phases and rounds", { skip: !expert.available() && "python3 not found" }, () => {
+  const f = (id, auto_fix, severity, est) => ({ id, status: "open", detector: `d${id}`, auto_fix, severity, est_tokens: est, kind: "fix", precision: "exact", seen_count: 3 });
+  const rows = [f("1", "strip-debug-line", "low", 10), f("2", "fix-doc-links", "high", 10), f("3", null, "critical", 900), f("4", null, "critical", 100), f("5", "plan-file-split", "medium", 5)];
+  const [py, js] = both(() => policy.tier(rows, { top: 2, cfg: {} }));
+  assert.equal(py.via, "python");
+  assert.equal(js.via, "js");
+  const ids = (r) => ({ free: r.free.map((x) => x.id), local: r.local.map((x) => x.id), agent: r.agent.map((x) => x.id), held: r.held, d: r.d, detectors: r.detectors });
+  assert.deepEqual(ids(py), ids(js));
+  for (const o of ["merged", "rejected", "reverted"]) {
+    const [a, b] = both(() => policy.step({ streak: 2, merged: 2, rejected: 0, reverted: 0, level: "draft", last: "merged" }, o, 3, autonomy.step));
+    assert.deepEqual(a, b, o);
+  }
+  for (const st of [{ free: 1, scripts: 0, agent: 2, spend: true, spend_ok: true }, { free: 0, scripts: 0, agent: 0, spend: false }, { free: 0, scripts: 1, agent: 3, spend: true, spend_ok: false, missing: ["bridge.enabled"] }]) {
+    const [a, b] = both(() => policy.phases(st));
+    assert.deepEqual({ run: a.run, skip: a.skip }, { run: b.run, skip: b.skip }, JSON.stringify(st));
+  }
+  for (const st of [{ changes: false, failed: 0 }, { changes: true, rounds: 3, max: 3 }, { changes: true, rounds: 1, max: 3, sig: "x", last_sig: "x", writable: true }, { failed: 1, rounds: 0, max: 3, sig: "y", last_sig: "", writable: true }, { changes: true, rounds: 0, max: 3, sig: "y", writable: false }]) {
+    const [a, b] = both(() => policy.round(st));
+    delete a.via; delete b.via;
+    assert.deepEqual(a, b, JSON.stringify(st));
+  }
+});
+
+test("the kernel's diffscan and the JS collector return the same change", { skip: !kernel.available() && "no kernel" }, () => {
+  w("src/new.js", "export const n = 1;\n");
+  w("src/a.js", "export const a = 2;\n");
+  const k = ironguard.collect({ cwd: root, base: "main" });
+  const j = ironguard.collect({ cwd: root, base: "main", kernel: false });
+  if (k.via !== "kernel") return;   // an installed bbk older than diffscan: the fallback is the contract
+  const norm = (c) => JSON.stringify(c.files.map((f) => [f.path, f.added, f.removed, f.binary]).sort());
+  assert.equal(norm(k), norm(j));
+  sh("checkout", "--", "src/a.js"); fs.rmSync(path.join(root, "src/new.js"));
+});
+
+test("lathe writes a habit as a Python script that stops at the first failing step", { skip: !expert.available() && "python3 not found" }, () => {
+  const s = emit.scriptFor({ items: ["true", "exit 3", "echo never"], support: 5, sessions: 2, confidence: 0.9 }, { kind: "shell", lang: "py" });
+  assert.equal(s.name.endsWith(".py"), true);
+  assert.match(s.text, /^#!\/usr\/bin\/env python3$/m);
+  assert.match(s.text, /^# @safe false$/m);
+  const p = path.join(root, "habit.py");
+  fs.writeFileSync(p, s.text);
+  const r = spawnSync(expert.python()[0], [...expert.python().slice(1), p], { encoding: "utf8" });
+  assert.equal(r.status, 3, r.stdout + r.stderr);
+  assert.ok(!r.stdout.includes("$ echo never"));
+  fs.rmSync(p);
+  assert.match(emit.scriptFor({ items: ["a", "b"], support: 1, sessions: 1 }, {}).text, /^#!\/usr\/bin\/env bash$/m, "sh stays the default for a proposal");
+});
+
+test("a script tagged @fixes and @safe true is found for its detector, and arc names are located", async () => {
+  w("scripts/fix-docs.sh", "#!/usr/bin/env bash\n# @tag fix-docs\n# @title rewrite the doc links\n# @fixes doc-links\n# @safe true\necho hi > fixed.txt\n");
+  fs.chmodSync(path.join(root, "scripts/fix-docs.sh"), 0o755);
+  w("scripts/unsafe.sh", "#!/usr/bin/env bash\n# @tag unsafe\n# @title nope\n# @fixes doc-links\n# @safe false\n");
+  const rows = await links.scriptsFor(["doc-links"]);
+  assert.deepEqual(rows.map((r) => r.tag), ["fix-docs"], "@safe false is never run");
+  assert.deepEqual(scriptsIx.parse(path.join(root, "scripts/fix-docs.sh")).fixes, ["doc-links"]);
+  assert.deepEqual(links.identifiers("rename `loadPlan` and fix readJson; also the_thing and runner.execute, not the word"), ["loadPlan", "readJson", "the_thing", "execute"]);
+  assert.equal(links.locatedBlock([]), "");
+  // Run through the shebang's interpreter: Windows does not read `#!`.
+  assert.deepEqual(links.argvFor(path.join(root, "scripts/fix-docs.sh")), ["bash", path.join(root, "scripts/fix-docs.sh")]);
+  assert.match(links.locatedBlock([{ file: "src/a.js", line: 3, symbol: "a" }]), /src\/a\.js:3  a/);
+  fs.rmSync(path.join(root, "scripts"), { recursive: true });
+});
+
+test("A1 runs a safe tagged script in the worktree and lands its change on the branch", async () => {
+  w("scripts/touch.sh", "#!/usr/bin/env bash\n# @tag touch-it\n# @title add a file\n# @fixes doc-drift\n# @safe true\necho made > made.txt\n");
+  fs.chmodSync(path.join(root, "scripts/touch.sh"), 0o755);
+  sh("add", "scripts"); sh("commit", "-qm", "script");
+  const rows = await links.scriptsFor(["doc-drift"]);
+  const r = await autoFix({ candidates: [], scripts: rows, apply: true, date: "2026-09-26", root });
+  assert.equal(r.state, "committed", JSON.stringify(r));
+  assert.deepEqual(r.types, ["script:touch-it"]);
+  // With a kernel on the box, it owns the worktree and the gate.
+  if (kernel.available()) { assert.equal(r.worktree_via, "kernel"); assert.equal(r.gate.via, "kernel"); }
+  assert.equal(sh("show", "bb/auto-fix/2026-09-26:made.txt").stdout.trim(), "made");
+  assert.ok(!fs.existsSync(path.join(root, "made.txt")), "the script ran in the worktree, not the checkout");
+});
+
+// ── certain actuators, and foreman's window ────────────────────────────────
+
+const act = await import("../src/actuators/index.js");
+const detect = await import("../src/grapple/detect.js");
+
+test("flatten-filter-map is certain: it matches brackets, refuses side effects, and never writes what does not parse", () => {
+  assert.ok(act.CERTAIN.has("flatten-filter-map"));
+  // The regex it replaced cut `.map(x => f(x))` at the first `)` and wrote `[f(x]`.
+  assert.equal(act.rewriteFilterMap("const y = rows.filter((r) => r.ok).map((r) => String(r.id));").line, "const y = rows.flatMap(r => (r.ok) ? [String(r.id)] : []);");
+  assert.equal(act.rewriteFilterMap("const u = xs.filter(x => x.s.includes(\")\")).map(x => x.t.trim());").line, "const u = xs.flatMap(x => (x.s.includes(\")\")) ? [x.t.trim()] : []);");
+  assert.equal(act.rewriteFilterMap("xs.filter(Boolean).map(String)").line, "xs.flatMap(v => (v) ? [String(v)] : [])");
+  for (const [src, why] of [
+    ["rows.filter((r) => r.ok).map((r) => f(r))", /call to `f`/],
+    ["xs.filter(x => (n += 1) > 2).map(x => x)", /assignment/],
+    ["xs.filter((x, i) => i > 0).map((x) => x)", /one-parameter arrow/],
+    ["xs.filter((a) => a).map((b) => b)", /differently/],
+    ["xs.filter(Boolean).map(tail)", /one-parameter arrow/],
+    ["xs.filter(x => x.ok).map(x => { return x; })", /expression body/],
+    ["xs.filter(x => x.ok).map(x => `${log(x)}`)", /call to `log`/],
+  ]) assert.match(act.rewriteFilterMap(src).why || "", why, src);
+  assert.equal(act.impure("x.a && !seen.has(x.b)"), "");
+  assert.match(act.impure("x === y ? `${x}` : 'a(b)'"), /^$/, "words in strings are not calls");
+  w("src/fm.js", "export const f = (xs) => xs.filter((x) => x.ok).map((x) => x.id);\n");
+  const r = act.flattenFilterMap({ path: "src/fm.js", evidence: { hits: [{ line: 1, rule: "filter-then-map" }] } }, { apply: true });
+  assert.equal(r.changed, true, JSON.stringify(r));
+  assert.equal(fs.readFileSync(path.join(root, "src/fm.js"), "utf8"), "export const f = (xs) => xs.flatMap(x => (x.ok) ? [x.id] : []);\n");
+  const ts = act.flattenFilterMap({ path: "src/fm.ts", evidence: { hits: [{ line: 1, rule: "filter-then-map" }] } });
+  assert.equal(ts.changed, false);
+  fs.rmSync(path.join(root, "src/fm.js"));
+});
+
+test("foreman's window is this prompt's turns, in relative paths, with the session's own edits in scope", () => {
+  const at = (m) => `2026-09-25T05:${String(m).padStart(2, "0")}:00.000Z`;
+  const ev = [
+    ...Array.from({ length: 60 }, (_, i) => ({ kind: "tool", session_id: "S", at: at(0), tool: "Read", file: path.join(root, `old/${i}.js`), hash: "h" })),
+    { kind: "tool", session_id: "S", at: at(10), tool: "Read", file: path.join(root, "src/a.js"), hash: "a" },
+    { kind: "tool", session_id: "S", at: at(11), tool: "Write", file: path.join(root, "src/new.js"), edit: true, hash: "b" },
+    { kind: "tool", session_id: "OTHER", at: at(12), tool: "Read", file: "x", hash: "c" },
+  ];
+  const w0 = detect.windowOf(ev, { scope: ["src/a.js"], session: "S", since: at(5) });
+  assert.equal(w0.turns.length, 2, "turns from an earlier prompt are not evidence about this one");
+  assert.deepEqual(w0.turns.map((t) => t.file), ["src/a.js", "src/new.js"], "absolute paths compared relative, as the scope is");
+  assert.deepEqual(w0.scope.sort(), ["src/a.js", "src/new.js"], "a file the session wrote is in scope");
+  assert.equal(detect.windowOf(ev, { session: "S" }).turns.length, detect.WINDOW_TURNS, "no brief: the most recent turns, bounded");
 });
