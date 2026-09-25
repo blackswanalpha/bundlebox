@@ -235,3 +235,49 @@ test("A1 runs a safe tagged script in the worktree and lands its change on the b
   assert.equal(sh("show", "bb/auto-fix/2026-09-26:made.txt").stdout.trim(), "made");
   assert.ok(!fs.existsSync(path.join(root, "made.txt")), "the script ran in the worktree, not the checkout");
 });
+
+// ── certain actuators, and foreman's window ────────────────────────────────
+
+const act = await import("../src/actuators/index.js");
+const detect = await import("../src/grapple/detect.js");
+
+test("flatten-filter-map is certain: it matches brackets, refuses side effects, and never writes what does not parse", () => {
+  assert.ok(act.CERTAIN.has("flatten-filter-map"));
+  // The regex it replaced cut `.map(x => f(x))` at the first `)` and wrote `[f(x]`.
+  assert.equal(act.rewriteFilterMap("const y = rows.filter((r) => r.ok).map((r) => String(r.id));").line, "const y = rows.flatMap(r => (r.ok) ? [String(r.id)] : []);");
+  assert.equal(act.rewriteFilterMap("const u = xs.filter(x => x.s.includes(\")\")).map(x => x.t.trim());").line, "const u = xs.flatMap(x => (x.s.includes(\")\")) ? [x.t.trim()] : []);");
+  assert.equal(act.rewriteFilterMap("xs.filter(Boolean).map(String)").line, "xs.flatMap(v => (v) ? [String(v)] : [])");
+  for (const [src, why] of [
+    ["rows.filter((r) => r.ok).map((r) => f(r))", /call to `f`/],
+    ["xs.filter(x => (n += 1) > 2).map(x => x)", /assignment/],
+    ["xs.filter((x, i) => i > 0).map((x) => x)", /one-parameter arrow/],
+    ["xs.filter((a) => a).map((b) => b)", /differently/],
+    ["xs.filter(Boolean).map(tail)", /one-parameter arrow/],
+    ["xs.filter(x => x.ok).map(x => { return x; })", /expression body/],
+    ["xs.filter(x => x.ok).map(x => `${log(x)}`)", /call to `log`/],
+  ]) assert.match(act.rewriteFilterMap(src).why || "", why, src);
+  assert.equal(act.impure("x.a && !seen.has(x.b)"), "");
+  assert.match(act.impure("x === y ? `${x}` : 'a(b)'"), /^$/, "words in strings are not calls");
+  w("src/fm.js", "export const f = (xs) => xs.filter((x) => x.ok).map((x) => x.id);\n");
+  const r = act.flattenFilterMap({ path: "src/fm.js", evidence: { hits: [{ line: 1, rule: "filter-then-map" }] } }, { apply: true });
+  assert.equal(r.changed, true, JSON.stringify(r));
+  assert.equal(fs.readFileSync(path.join(root, "src/fm.js"), "utf8"), "export const f = (xs) => xs.flatMap(x => (x.ok) ? [x.id] : []);\n");
+  const ts = act.flattenFilterMap({ path: "src/fm.ts", evidence: { hits: [{ line: 1, rule: "filter-then-map" }] } });
+  assert.equal(ts.changed, false);
+  fs.rmSync(path.join(root, "src/fm.js"));
+});
+
+test("foreman's window is this prompt's turns, in relative paths, with the session's own edits in scope", () => {
+  const at = (m) => `2026-09-25T05:${String(m).padStart(2, "0")}:00.000Z`;
+  const ev = [
+    ...Array.from({ length: 60 }, (_, i) => ({ kind: "tool", session_id: "S", at: at(0), tool: "Read", file: path.join(root, `old/${i}.js`), hash: "h" })),
+    { kind: "tool", session_id: "S", at: at(10), tool: "Read", file: path.join(root, "src/a.js"), hash: "a" },
+    { kind: "tool", session_id: "S", at: at(11), tool: "Write", file: path.join(root, "src/new.js"), edit: true, hash: "b" },
+    { kind: "tool", session_id: "OTHER", at: at(12), tool: "Read", file: "x", hash: "c" },
+  ];
+  const w0 = detect.windowOf(ev, { scope: ["src/a.js"], session: "S", since: at(5) });
+  assert.equal(w0.turns.length, 2, "turns from an earlier prompt are not evidence about this one");
+  assert.deepEqual(w0.turns.map((t) => t.file), ["src/a.js", "src/new.js"], "absolute paths compared relative, as the scope is");
+  assert.deepEqual(w0.scope.sort(), ["src/a.js", "src/new.js"], "a file the session wrote is in scope");
+  assert.equal(detect.windowOf(ev, { session: "S" }).turns.length, detect.WINDOW_TURNS, "no brief: the most recent turns, bounded");
+});

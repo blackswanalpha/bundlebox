@@ -34,8 +34,9 @@ export const DESTRUCTIVE = new Set(["drop-dead-knob"]);
 // person reading the diff first. Each is fed by a `precision: "exact"` detector
 // and re-checks its own case before writing: a conflict closes only when both
 // sides are byte-identical, a debug line goes only when the whole line is the
-// call. `bb fix --certain` and `bb sentinel` read this set; nothing else widens it.
-export const CERTAIN = new Set(["resolve-identical-conflict", "strip-debug-line"]);
+// call, a filter-then-map folds only when both callbacks are side-effect free
+// and the result parses. `bb fix --certain` and `bb sentinel` read this set; nothing else widens it.
+export const CERTAIN = new Set(["resolve-identical-conflict", "strip-debug-line", "flatten-filter-map"]);
 
 const PATCH_DIR = path.join(VAR, "patches");
 function writePatch(name, key, text) {
@@ -417,17 +418,140 @@ export function ignoreSecretFile(f, { apply = false } = {}) {
   return result({ changed: true, applied: apply, keeps_open: true, patch, files: [giRel], why: `${r} added to ${giRel}. The finding stays open: rotate the key` });
 }
 
-/** `.filter(x => p).map(x => f)` -> `.flatMap(x => p ? [f] : [])`, and only when
- *  both callbacks are one-parameter arrows naming the SAME parameter. The two
- *  callbacks see different indices once the filter has run, so a rewrite that
- *  renames a parameter or carries a second argument is a behaviour change
- *  wearing a refactor's clothes. Every other anti-slop rule is a type decision
- *  and declines by name. */
-const FILTER_MAP = /\.filter\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*([^;]*?)\s*\)\s*\.map\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*=>\s*([^;]*?)\s*\)/;
+/** `.filter(x => p).map(x => f)` -> `.flatMap(x => (p) ? [f] : [])`, and only
+ *  when nothing about the rewrite needs a judgement:
+ *
+ *    shape    both callbacks are one-parameter arrows with an expression body,
+ *             naming the SAME parameter. A second parameter is the index, and
+ *             the index the map sees is not the one the filter saw.
+ *    purity   neither callback assigns, increments, awaits, constructs, or
+ *             calls anything outside PURE_CALLS. The rewrite interleaves the
+ *             two passes, so a callback with a side effect the other one reads
+ *             would change behaviour; a callback with no side effects cannot.
+ *    parse    the edited file must still parse (`node --check`), so a
+ *             tokenizer gap is a declined edit, never a broken file.
+ *
+ *  The callbacks are cut out with a bracket matcher that skips strings and
+ *  templates, not a regex: the regex this replaced stopped at the first `)`,
+ *  so `.map(x => f(x))` became `[f(x]`. Every other anti-slop rule is a type
+ *  decision and declines by name. */
+export const PURE_CALLS = new Set(["String", "Number", "Boolean", "isArray", "keys", "values", "entries", "stringify", "abs", "min", "max", "round",
+  "floor", "ceil", "parseInt", "parseFloat", "isNaN", "isFinite", "includes", "has", "get", "startsWith", "endsWith", "toLowerCase", "toUpperCase",
+  "trim", "trimStart", "trimEnd", "slice", "indexOf", "lastIndexOf", "at", "some", "every", "find", "findIndex", "join", "split", "padStart",
+  "padEnd", "charAt", "concat", "toString", "toFixed", "map", "filter", "flatMap", "reduce", "localeCompare", "repeat", "replace", "replaceAll"]);
+const BARE_MAP = new Set(["String", "Number", "Boolean"]);
+const KEYWORDS = new Set(["typeof", "void", "in", "of", "instanceof", "return", "if", "while", "for", "switch", "catch"]);
+
+/** Index of the bracket closing the one at `i`, skipping strings, templates
+ *  and comments; -1 when the line ends first. */
+export function closeOf(s, i) {
+  const pairs = { "(": ")", "[": "]", "{": "}" };
+  const stack = [pairs[s[i]]];
+  for (let j = i + 1; j < s.length; j++) {
+    const c = s[j];
+    if (c === "'" || c === '"' || c === "`") { j = endOfString(s, j); if (j < 0) return -1; continue; }
+    if (c === "/" && s[j + 1] === "/") return -1;
+    if (pairs[c]) stack.push(pairs[c]);
+    else if (c === stack[stack.length - 1]) { stack.pop(); if (!stack.length) return j; }
+    else if (c === ")" || c === "]" || c === "}") return -1;
+  }
+  return -1;
+}
+function endOfString(s, i) {
+  const q = s[i];
+  for (let j = i + 1; j < s.length; j++) {
+    if (s[j] === "\\") { j++; continue; }
+    if (q === "`" && s[j] === "$" && s[j + 1] === "{") { const k = closeOf(s, j + 1); if (k < 0) return -1; j = k; continue; }
+    if (s[j] === q) return j;
+  }
+  return -1;
+}
+/** The expression with string and template TEXT blanked, `${…}` kept: what
+ *  the purity check reads, so a word inside a string is not a call. */
+export function codeOf(s) {
+  let out = "";
+  for (let j = 0; j < s.length; j++) {
+    const c = s[j];
+    if (c === "'" || c === '"') { const k = endOfString(s, j); if (k < 0) return null; out += c + " ".repeat(k - j - 1) + c; j = k; continue; }
+    if (c === "`") {
+      const k = endOfString(s, j); if (k < 0) return null;
+      let t = "`";
+      for (let x = j + 1; x < k; x++) {
+        if (s[x] === "\\") { t += "  "; x++; continue; }
+        if (s[x] === "$" && s[x + 1] === "{") { const e = closeOf(s, x + 1); if (e < 0) return null; t += "${" + s.slice(x + 2, e) + "}"; x = e; continue; }
+        t += " ";
+      }
+      out += t + "`"; j = k; continue;
+    }
+    out += c;
+  }
+  return out;
+}
+/** "" when the expression cannot cause a side effect, else why not. */
+export function impure(expr) {
+  const c = codeOf(expr);
+  if (c === null) return "an unterminated string";
+  if (/(^|[^=!<>])=(?![=>])/.test(c)) return "an assignment";
+  if (/\+\+|--/.test(c)) return "an increment";
+  if (/\b(await|yield|new|delete|this|arguments)\b/.test(c)) return "await, yield, new, delete, this or arguments";
+  if (/[)\]]\s*\(/.test(c)) return "a call on a computed value";
+  for (const m of c.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) {
+    if (KEYWORDS.has(m[1])) continue;
+    if (!PURE_CALLS.has(m[1])) return `a call to \`${m[1]}\`, which may have a side effect`;
+  }
+  return "";
+}
+/** `x => expr` or `(x) => expr` -> { param, expr }, or null. */
+export function arrowOf(arg) {
+  const m = /^\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*\)|([A-Za-z_$][\w$]*))\s*=>\s*([\s\S]*?)\s*$/.exec(arg);
+  if (!m) return null;
+  const expr = m[3];
+  if (!expr || expr.startsWith("{")) return null;
+  return { param: m[1] || m[2], expr };
+}
+
+/** One `.filter(...).map(...)` on a line -> the rewritten line, or why not. */
+export function rewriteFilterMap(line) {
+  const fi = line.search(/\.filter\s*\(/);
+  if (fi < 0) return { why: "no `.filter(` on the line" };
+  const fo = line.indexOf("(", fi), fc = closeOf(line, fo);
+  if (fc < 0) return { why: "the filter call does not close on this line" };
+  const rest = line.slice(fc + 1);
+  const mm = /^\s*\.map\s*\(/.exec(rest);
+  if (!mm) return { why: "the filter is not followed by `.map(` on this line" };
+  const mo = fc + 1 + mm[0].length - 1, mc = closeOf(line, mo);
+  if (mc < 0) return { why: "the map call does not close on this line" };
+  // A bare built-in is a callback too: `.filter(Boolean)` is `v => v` for a
+  // filter, and `.map(String)` is `v => String(v)` — neither reads the index or
+  // array arguments it is also handed, and neither has a side effect.
+  const fa = line.slice(fo + 1, fc).trim(), ma = line.slice(mo + 1, mc).trim();
+  let a = arrowOf(fa), b = arrowOf(ma);
+  const name = (b || a)?.param || "v";
+  if (!a && fa === "Boolean") a = { param: name, expr: name };
+  if (!b && BARE_MAP.has(ma)) b = { param: (a || {}).param || name, expr: `${ma}(${(a || {}).param || name})` };
+  if (!a || !b) return { why: "a callback is not a one-parameter arrow with an expression body, `Boolean` for the filter, or String/Number/Boolean for the map" };
+  if (a.param !== b.param) return { why: `the callbacks name their parameter differently (\`${a.param}\` then \`${b.param}\`); renaming one is an edit this will not make blind` };
+  const bad = impure(a.expr) || impure(b.expr);
+  if (bad) return { why: `a callback contains ${bad}; one pass would reorder it against the other` };
+  return { line: `${line.slice(0, fi)}.flatMap(${a.param} => (${a.expr}) ? [${b.expr}] : [])${line.slice(mc + 1)}`, from: line.slice(fi, mc + 1) };
+}
+
+/** Does this JavaScript still parse? `node --check` on a copy beside the
+ *  patches, with the original extension so the module type resolves the same. */
+function jsParses(r, text) {
+  const tmp = path.join(PATCH_DIR, `parse-check-${process.pid}${path.extname(r) || ".js"}`);
+  fs.mkdirSync(PATCH_DIR, { recursive: true });
+  fs.writeFileSync(tmp, text);
+  const c = run([process.execPath, "--check", tmp], { cwd: ROOT, timeout: 30000 });
+  fs.rmSync(tmp, { force: true });
+  return c.rc === 0 ? "" : (c.err || c.out || "").trim().split("\n").find((l) => /Error/.test(l)) || "does not parse";
+}
+
 export function flattenFilterMap(f, { apply = false } = {}) {
   const r = f.path, p = abs(r);
   const src = fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
   if (!src) return result({ ok: false, why: `${r} is not readable` });
+  if (!/\.(m|c)?js$/.test(r)) return result({ declined: [{ path: r, reason: "only JavaScript is rewritten: a TypeScript edit cannot be parse-checked here" }], why: "declined" });
   const lines = src.split("\n");
   const declined = [], edits = [];
   for (const h of f.evidence?.hits || []) {
@@ -435,16 +559,15 @@ export function flattenFilterMap(f, { apply = false } = {}) {
     if (h.rule !== "filter-then-map") { declined.push({ path: at, reason: `${h.rule} is a decision about a type or a seam, not a rewrite` }); continue; }
     const line = lines[h.line - 1];
     if (line === undefined) { declined.push({ path: at, reason: `${r} has no line ${h.line} now; re-run \`bb scan\`` }); continue; }
-    const m = FILTER_MAP.exec(line);
-    if (!m) { declined.push({ path: at, reason: "the two callbacks are not one-line single-parameter arrows; this rewrite does not read a block body" }); continue; }
-    const [whole, pa, cond, pb, body] = m;
-    if (pa !== pb) { declined.push({ path: at, reason: `the callbacks name their parameter differently (\`${pa}\` then \`${pb}\`); renaming one is an edit this will not make blind` }); continue; }
-    if (/\bindex\b|\bi\b\s*\)/.test(whole)) { declined.push({ path: at, reason: "a callback takes the index, and the index the map sees is not the index the filter saw" }); continue; }
-    lines[h.line - 1] = line.replace(whole, `.flatMap(${pa} => (${cond}) ? [${body}] : [])`);
-    edits.push({ line: h.line, from: whole.slice(0, 60) });
+    const w = rewriteFilterMap(line);
+    if (!w.line) { declined.push({ path: at, reason: w.why }); continue; }
+    lines[h.line - 1] = w.line;
+    edits.push({ line: h.line, from: w.from.slice(0, 60) });
   }
-  if (!edits.length) return result({ ok: !declined.length, declined, why: declined.length ? `${declined.length} declined` : "nothing rewritable left" });
+  if (!edits.length) return result({ ok: true, declined, why: declined.length ? `${declined.length} declined` : "nothing rewritable left" });
   const next = lines.join("\n");
+  const broken = jsParses(r, next);
+  if (broken) return result({ ok: false, declined: [...declined, { path: r, reason: `the edit does not parse (${broken.slice(0, 120)}); nothing was written` }], why: "verification failed" });
   const patch = writePatch("flatten-filter-map", r, unifiedDiff(src, next, { from: `a/${r}`, to: `b/${r}` }));
   if (apply) fs.writeFileSync(p, next);
   return result({ changed: true, applied: apply, edits, declined, patch, files: [r], why: `${edits.length} pass(es) collapsed, ${declined.length} declined` });
