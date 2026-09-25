@@ -9,6 +9,7 @@
 // the fact. Nothing here merges anything: it answers whether a type may.
 import * as store from "../core/store.js";
 import { load } from "../core/config.js";
+import * as policy from "./policy.js";
 
 export const DOC = "sentinel-autonomy";
 export const OUTCOMES = new Set(["merged", "rejected", "reverted"]);
@@ -33,13 +34,16 @@ export const ledger = () => { const d = store.get(DOC, {}); return d && typeof d
 export function observe(types, outcome, { cfg = load(), apply = true } = {}) {
   if (!OUTCOMES.has(outcome)) throw new Error(`outcome must be one of ${[...OUTCOMES].join(", ")}`);
   const k = threshold(cfg);
-  if (!apply) { const cur = ledger(); return Object.fromEntries(types.map((t) => [t, step(cur[t], outcome, k)])); }
-  const next = store.update(DOC, (d) => {
+  // The Python expert decides each transition; `step` above is its mirror.
+  const cur = ledger();
+  const decided = Object.fromEntries(types.map((t) => [t, policy.step(cur[t], outcome, k, step)]));
+  if (!apply) return decided;
+  store.update(DOC, (d) => {
     const doc = d && typeof d === "object" && !Array.isArray(d) ? d : {};
-    for (const t of types) doc[t] = step(doc[t], outcome, k);
+    for (const t of types) doc[t] = decided[t];
     return doc;
   }, {});
-  return Object.fromEntries(types.map((t) => [t, next[t]]));
+  return decided;
 }
 
 /** May a PR carrying these types auto-merge? Every type must be at `auto`. */

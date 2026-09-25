@@ -25,7 +25,8 @@ import { load } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { table } from "../core/util.js";
 import * as store from "../core/store.js";
-import { rank } from "./rank.js";
+import * as policy from "./policy.js";
+import * as links from "./links.js";
 import { autoFix } from "./autofix.js";
 import * as autonomy from "./autonomy.js";
 import { sync } from "./outcomes.js";
@@ -45,11 +46,18 @@ export function measured(rows = store.rows(RUNS)) {
   return { runs: rows.length, free, agent, d: free + agent ? Math.round((free / (free + agent)) * 1000) / 1000 : null };
 }
 
+/** The open detectors a safe, tagged script says it closes, outside the
+ *  free tier: the free tier already has a certain actuator. */
+const scriptDetectors = (r) => [...new Set([...r.local, ...r.agent].map((f) => f.detector))];
+
 export async function plan({ top, cfg = load() } = {}) {
-  const r = rank(store.get("findings", []), { top: top || cfg.sentinel?.top || 5, cfg });
-  const af = autoFix({ candidates: r.free, apply: false, cfg });
+  const r = policy.tier(store.get("findings", []), { top: top || cfg.sentinel?.top || 5, cfg });
+  const scripts = await links.scriptsFor(scriptDetectors(r));
+  const af = await autoFix({ candidates: r.free, scripts, apply: false, cfg });
   const { permission } = await import("../sprint/index.js");
-  return { rank: r, autofix: af, spend: permission(), autonomy: autonomy.ledger(), measured: measured() };
+  const spend = permission();
+  const ph = policy.phases({ free: r.free.length, scripts: scripts.length, agent: r.agent.length, spend: true, spend_ok: spend.ok, missing: spend.missing });
+  return { rank: r, autofix: af, spend, phases: ph, autonomy: autonomy.ledger(), measured: measured() };
 }
 
 export async function runOnce({ apply = false, spend = false, top, cfg = load() } = {}) {
@@ -57,17 +65,27 @@ export async function runOnce({ apply = false, spend = false, top, cfg = load() 
   const row = { apply, spend };
   const s = sync({ apply, cfg });
   row.sync = s.ok ? s.events.length : `skipped: ${s.why}`;
+  // A merged auto-fix changed the tree arc indexes: rebuild the tables and the
+  // index so every lookup after this one answers from the tree that exists.
+  if (apply && s.ok && s.events.some((e) => e.outcome === "merged")) row.arc = (await links.refreshArc()).state;
   await scan();
-  const r = rank(store.get("findings", []), { top: top || cfg.sentinel?.top || 5, cfg });
-  Object.assign(row, { open: r.open, free: r.free.length, local: r.local.length, agent_ranked: r.agent.length, held: r.held, d_backlog: r.d });
-  const af = autoFix({ candidates: r.free, apply, cfg });
+  const r = policy.tier(store.get("findings", []), { top: top || cfg.sentinel?.top || 5, cfg });
+  const scripts = await links.scriptsFor(scriptDetectors(r));
+  Object.assign(row, { open: r.open, free: r.free.length, local: r.local.length, agent_ranked: r.agent.length, held: r.held, d_backlog: r.d, scripts: scripts.length, policy: r.via });
+  const { permission } = await import("../sprint/index.js");
+  const perm = permission();
+  const ph = policy.phases({ free: r.free.length, scripts: scripts.length, agent: r.agent.length, spend, spend_ok: perm.ok, missing: perm.missing });
+  row.phases = ph.run;
+  const af = ph.run.includes("autofix") ? await autoFix({ candidates: r.free, scripts, apply, cfg }) : { state: "nothing", why: ph.skip.autofix };
   row.autofix = af.state;
-  row.free_closed = af.fixed?.length || 0;
+  // Closed means it reached a commit: a gate failure or a block closed nothing.
+  const landed = ["pr", "committed", "auto-merge"].includes(af.state);
+  row.free_closed = landed ? (af.fixed?.length || 0) + (af.scripts || []).filter((x) => x.rc === 0).length : 0;
   row.pr = af.pr?.url || "";
   let sprint = null, review = null;
-  if (spend) {
+  if (ph.run.includes("sprint") || ph.run.includes("review")) {
     const sp = await import("../sprint/index.js");
-    sprint = await sp.handoff({ apply, top: top || cfg.sentinel?.top, cfg });
+    sprint = ph.run.includes("sprint") ? await sp.handoff({ apply, top: top || cfg.sentinel?.top, cfg }) : { state: "skipped", why: ph.skip.sprint };
     review = await sp.review({ apply, cfg });
     row.sprint = sprint.state;
     row.agent_sent = apply && sprint.state === "ran" ? sprint.lanes || 0 : 0;
@@ -79,7 +97,7 @@ export async function runOnce({ apply = false, spend = false, top, cfg = load() 
     store.append("episodes", { kind: "sentinel", verb: "sentinel run", features: { free: r.free.length, agent: r.agent.length, spend }, rc: af.state === "error" ? 1 : 0,
       seconds: row.seconds, produced: row.free_closed, useful: row.free_closed > 0 ? 1 : 0, detail: `autofix ${af.state}` });
   }
-  return { ...row, rank: r, autofix_result: af, sprint_result: sprint, review_result: review };
+  return { ...row, skip: ph.skip, rank: r, autofix_result: af, sprint_result: sprint, review_result: review };
 }
 
 function printPlan(p) {
@@ -89,6 +107,8 @@ function printPlan(p) {
   if (p.measured.runs) out(`  d measured over ${p.measured.runs} run(s): ${p.measured.d ?? "-"} (${p.measured.free} closed free, ${p.measured.agent} sent to agents)`);
   if (r.detectors.length) out(table(r.detectors.slice(0, 10).map((d) => [d.detector, String(d.open), String(d.closable), String(d.certain)]), { header: ["detector", "open", "closable", "certain"] }));
   out(`  autofix: ${p.autofix.state}${p.autofix.branch ? ` on ${p.autofix.branch}` : ""}${p.autofix.count ? `, ${p.autofix.count} finding(s)` : ""}${p.autofix.why ? ` (${p.autofix.why})` : ""}`);
+  out(`  phases: ${p.phases.run.join(" → ")} (decided by ${p.phases.via}; rank by ${p.rank.via})`);
+  for (const [k, v] of Object.entries(p.phases.skip)) out(`    skip ${k}: ${v}`);
   out(`  spend: ${p.spend.ok ? "permitted inside the daily ceilings" : `refused, ${p.spend.missing.join(", ")} not set`}`);
   const types = Object.entries(p.autonomy);
   if (types.length) out(table(types.map(([t, v]) => [t, v.level, String(v.streak), String(v.merged), String(v.rejected), String(v.reverted)]), { header: ["fix type", "level", "streak", "merged", "rejected", "reverted"] }));

@@ -18,6 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { git } from "../core/exec.js";
+import { call as kernelCall } from "../core/kernel.js";
 import { load } from "../core/config.js";
 import { ROOT } from "../core/paths.js";
 import { out, warn, emit } from "../core/log.js";
@@ -83,10 +84,16 @@ export function parseDiff(text) {
 
 /** The change under judgement: tracked edits against the merge base, plus
  *  untracked files whole, because a new file is the easiest place to add a key. */
-export function collect({ cwd = ROOT, base = "" } = {}) {
+export function collect({ cwd = ROOT, base = "", kernel = true } = {}) {
   const ref = base || baseRef(cwd);
   const mb = git(["merge-base", "HEAD", ref], cwd);
   const from = mb.rc === 0 ? mb.out.trim() : ref;
+  // The kernel's `diffscan` does the spawn, the parse and the untracked reads
+  // in one process; the rules below stay here either way.
+  if (kernel) {
+    const k = kernelCall("diffscan", { cwd, from, max_bytes: 2_000_000 });
+    if (k && k.ok) return { ok: true, from, files: k.files || [], via: "kernel" };
+  }
   const d = git(["diff", "--no-color", "--no-ext-diff", "-U0", from], cwd);
   if (d.rc !== 0) return { ok: false, why: `git diff ${from} failed: ${(d.err || d.out).trim().slice(0, 200)}`, files: [] };
   const files = parseDiff(d.out);
@@ -97,7 +104,7 @@ export function collect({ cwd = ROOT, base = "" } = {}) {
     try { const st = fs.statSync(path.join(cwd, p)); if (!st.isFile() || st.size > 2_000_000) continue; src = fs.readFileSync(path.join(cwd, p), "utf8"); } catch { continue; }
     files.push({ path: p, added: src.split("\n").map((text, i) => ({ line: i + 1, text })), removed: 0, binary: false });
   }
-  return { ok: true, from, files };
+  return { ok: true, from, files, via: "js" };
 }
 
 /** Judge a collected change. Pure: `files` in, verdict out. */
@@ -138,7 +145,7 @@ export function judge(files, cfg = load()) {
 export function check({ cwd = ROOT, base = "", cfg = load() } = {}) {
   const c = collect({ cwd, base });
   if (!c.ok) return { ok: false, auto_ok: false, files: 0, added: 0, removed: 0, blocks: 1, reviews: 0, hits: [{ rule: "unreadable", level: "block", path: "", line: 0, note: c.why }] };
-  return { from: c.from, ...judge(c.files, cfg) };
+  return { from: c.from, via: c.via, ...judge(c.files, cfg) };
 }
 
 /** The verdict as markdown lines, for a PR body. */

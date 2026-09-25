@@ -320,6 +320,7 @@ export const DEFAULTS = {
     reach_days: 21,
     reach_min: 1,             // occurrences since it was applied, below which it is tombstoned
     apply_on_end: false,      // SessionEnd may propose; writing into scripts/ stays a decision
+    script_lang: "py",        // applied scripts: py (python3 runs each step under bash -o pipefail) or sh
   },
   bench: {
     // `bb bench run` prints the tasks where packed costs MORE than bare. This
