@@ -68,7 +68,10 @@ export function autoFix({ candidates = [], apply = false, cfg = load(), date = n
   try { results = JSON.parse(fx.out).results || []; } catch { return done({ state: "error", why: `fix output unreadable: ${(fx.err || fx.out).trim().slice(0, 200)}` }, false); }
   const fixed = results.filter((r) => r.changed && r.applied !== false);
   const status = git(["status", "--porcelain"], wt);
-  if (!fixed.length || !status.out.trim()) return done({ state: "no-change", why: "the certain actuators found nothing to change on the base branch" }, false);
+  if (!fixed.length || !status.out.trim()) {
+    const seen = results.map((r) => `${r.name}: ${r.why || (r.ok ? "no change" : "failed")}`).join("; ");
+    return done({ state: "no-change", why: `the certain actuators found nothing to change on the base branch${seen ? ` (${seen})` : ` (scan: ${sc.out.trim().split("\n").pop() || "no output"})`}` }, false);
+  }
   const types = [...new Set(fixed.map((r) => r.name))].sort();
 
   const guard = ironguard.check({ cwd: wt, base: baseRef(root, cfg), cfg });

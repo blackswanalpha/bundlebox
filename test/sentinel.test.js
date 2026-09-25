@@ -16,7 +16,11 @@ const sh = (...a) => spawnSync("git", ["-C", root, "-c", "user.email=t@t", "-c",
 w(".bundlebox/config.json", JSON.stringify({ wire: { auto_init: false }, git: { allow_push: false }, sentinel: { gate: "true", base: "main" } }));
 w(".gitignore", ".bundlebox/var/\n.bundlebox/out/\nnode_modules/\n");
 w("src/a.js", "export const a = 1;\n<<<<<<< HEAD\nexport const b = 2;\n=======\nexport const b = 2;\n>>>>>>> other\n");
-sh("init", "-q", "-b", "main"); sh("add", "."); sh("commit", "-qm", "init");
+sh("init", "-q", "-b", "main");
+// Repo-local, so the worktree autoFix cuts inherits them: a CI runner has no
+// global identity, and Windows' autocrlf would rewrite the conflict block.
+sh("config", "user.email", "t@t"); sh("config", "user.name", "t"); sh("config", "core.autocrlf", "false");
+sh("add", "."); sh("commit", "-qm", "init");
 
 const ironguard = await import("../src/ironguard/index.js");
 const autonomy = await import("../src/sentinel/autonomy.js");
