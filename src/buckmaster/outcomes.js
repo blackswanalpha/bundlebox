@@ -28,7 +28,7 @@ import { now, uniq, human, pad } from "../core/util.js";
 export const HUMAN_WINDOW_DAYS = 30;
 
 const num = (x) => (Number.isFinite(Number(x)) ? Number(x) : 0);
-const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }; // absent is not a directory
 
 /** Last row per id wins; the log stays a log. */
 export function outcomes() {

@@ -34,7 +34,7 @@ export const state = () => readJson(STATE(), {}) || {};
 const setState = (id, row) => { const s = state(); if (row) s[id] = row; else delete s[id]; writeJson(STATE(), s); return s; };
 
 
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };  // ESRCH or EPERM: not ours to count as alive
 const useSystemd = () => process.platform === "linux" && Boolean(which("systemd-run")) && Boolean(process.env.XDG_RUNTIME_DIR);
 const unit = (id) => `bb-${id}.service`;
 
@@ -96,7 +96,7 @@ const origin = (u) => {
     const x = new URL(String(u));
     const host = x.hostname === "localhost" ? "127.0.0.1" : x.hostname;
     return `${x.protocol}//${host}:${x.port || (x.protocol === "https:" ? 443 : 80)}`;
-  } catch { return ""; }
+  } catch { return ""; }  // not a URL: no origin
 };
 
 /** The declared service that answers at `base`, by health URL first and port

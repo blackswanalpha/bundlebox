@@ -45,7 +45,7 @@ export function spill(text, tool = "tool") {
     if (!fs.existsSync(file)) fs.writeFileSync(file, text, { mode: 0o600 });
     prune(dir);
     return file;
-  } catch { return ""; }
+  } catch { return ""; }  // runs in a hook: no spill, keep the full output
 }
 
 /** Newest SPILL_KEEP survive. Runs at most once per elided output. */
@@ -81,7 +81,7 @@ export function seenBefore(tool, text, sessionId, toolUseId = "") {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     writeJson(p, state);
     return dup;
-  } catch { return false; }
+  } catch { return false; }  // runs in a hook: treat as not a duplicate
 }
 
 // ── the hook ────────────────────────────────────────────────────────────────

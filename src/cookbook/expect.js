@@ -124,7 +124,7 @@ export function stdoutBody(stdout) {
   const t = String(stdout || "").trim();
   if (!t || !/^[[{]/.test(t)) return null;
   try { const v = JSON.parse(t); return v && typeof v === "object" ? v : null; }
-  catch { return null; }
+  catch { return null; } // not JSON: no body
 }
 
 export function checkCmd(expect, { rc, stdout, stderr, ms }) {

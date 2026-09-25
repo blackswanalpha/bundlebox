@@ -90,7 +90,7 @@ export function walkJs(base = ROOT, { suffixes = SOURCE_SUFFIX, maxBytes = 2_000
   while (stack.length) {
     const dir = stack.pop();
     let ents;
-    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; } // an unreadable directory is skipped by the walk
     for (const e of ents) {
       if (!includeHidden && e.name.startsWith(".") && e.name !== ".github") continue;
       if (isIgnored(e.name)) continue;
@@ -99,7 +99,7 @@ export function walkJs(base = ROOT, { suffixes = SOURCE_SUFFIX, maxBytes = 2_000
       if (e.isDirectory()) { stack.push(p); continue; }
       if (!e.isFile()) continue;
       if (suffixes && suffixes.length && !suffixes.some((s) => e.name.endsWith(s))) continue;
-      try { if (fs.statSync(p).size > maxBytes) continue; } catch { continue; }
+      try { if (fs.statSync(p).size > maxBytes) continue; } catch { continue; } // vanished mid-walk
       out.push(p);
     }
   }

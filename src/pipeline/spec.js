@@ -194,7 +194,7 @@ function pathsFn(paths) {
     for (const p of paths) {
       const a = abs(String(p));
       let st;
-      try { st = fs.statSync(a); } catch { continue; }
+      try { st = fs.statSync(a); } catch { continue; }  // a declared path that is not there matches nothing
       if (st.isDirectory()) out.push(...walk(a, { suffixes: [] }));
       else out.push(a);
     }

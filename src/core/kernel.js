@@ -25,7 +25,7 @@ export function binary() {
     path.join(PKG_ROOT, "kernel", "target", "release", exe),
     path.join(PKG_ROOT, "kernel", "bin", `${exe}`),
   ].filter(Boolean);
-  _bin = candidates.find((p) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } }) || null;
+  _bin = candidates.find((p) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } /* probe: not executable here */ }) || null;
   return _bin;
 }
 export const available = () => Boolean(binary());

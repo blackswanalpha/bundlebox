@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { detectBin, num, parseJson, promptText, readJsonFile, isDir, turn } from "./index.js";
 
-export const GEMINI_HOME = path.join(os.homedir(), ".gemini");
+const GEMINI_HOME = path.join(os.homedir(), ".gemini");
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 
 /** Usage out of any of the three shapes Gemini uses, or null. */

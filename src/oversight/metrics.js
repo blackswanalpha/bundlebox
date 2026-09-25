@@ -273,7 +273,7 @@ const loadCache = () => _cache || (_cache = readJson(cachePath(), {}) || {});
 export function measureCached(p) {
   const a = abs(p);
   let st;
-  try { st = fs.statSync(a, { bigint: true }); } catch { return null; }
+  try { st = fs.statSync(a, { bigint: true }); } catch { return null; }  // file gone: nothing to measure
   const key = `${rel(a)}|${st.mtimeNs}`;
   const c = loadCache();
   _touched.add(key);

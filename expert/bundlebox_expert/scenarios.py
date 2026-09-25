@@ -49,7 +49,7 @@ def _epoch(ts: str) -> float:
     for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             return time.mktime(time.strptime(str(ts)[:19], fmt))
-        except ValueError:
+        except ValueError:  # try the next format
             continue
     return 0.0
 

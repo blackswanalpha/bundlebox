@@ -35,14 +35,14 @@ export const dirOf = (id) => path.join(DIR(), id);
 
 export function ids() {
   try { return fs.readdirSync(DIR()).filter((d) => fs.existsSync(path.join(DIR(), d, "persona.json"))).sort(); }
-  catch { return []; }
+  catch { return []; } // no corpus directory yet
 }
 
 function walkJson(base) {
   const out = [];
   const rec = (d) => {
     let names;
-    try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } // unreadable subtree holds no scenarios
     for (const e of names.sort((a, b) => a.name.localeCompare(b.name))) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) rec(p);

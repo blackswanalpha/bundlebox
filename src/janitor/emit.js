@@ -18,6 +18,7 @@ import path from "node:path";
 import { OUT, VAR, ensureDirs } from "../core/paths.js";
 import { writeJson, readJson } from "../core/config.js";
 import { now, sha1, human, pad, table } from "../core/util.js";
+import { warn } from "../core/log.js";
 import { HALF_LIFE, KINDS } from "./heap.js";
 
 export const DIR = () => path.join(OUT, "janitor");
@@ -26,7 +27,7 @@ export const STATE = () => path.join(VAR, "janitor.json");
 
 const write = (file, text) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const prev = (() => { try { return fs.readFileSync(file, "utf8"); } catch { return null; } })();
+  const prev = (() => { try { return fs.readFileSync(file, "utf8"); } catch { return null; } })();  // not written yet
   if (prev === text) return false;
   fs.writeFileSync(file, text);
   return true;
@@ -158,7 +159,7 @@ export function appendTombstones(objects) {
     text: o.text.slice(0, 400), retracted_at: o.retracted_at,
     why: (o.meta && o.meta.retracted_why) || "", learned_at: o.learned_at,
   })).join("\n");
-  try { fs.appendFileSync(TOMBS(), lines + "\n"); } catch { return 0; }
+  try { fs.appendFileSync(TOMBS(), lines + "\n"); } catch (e) { warn(`tombstones not written, the next run re-learns ${fresh.length} retraction(s): ${e.message}`); return 0; }
   return fresh.length;
 }
 

@@ -29,7 +29,7 @@ import { VAR, OUT, rel } from "../core/paths.js";
 import { run, which } from "../core/exec.js";
 import { now } from "../core/util.js";
 
-export const DB = () => path.join(VAR, "warehouse.duckdb");
+const DB = () => path.join(VAR, "warehouse.duckdb");
 export const SQL = () => path.join(OUT, "janitor", "warehouse.sql");
 
 // The catalog. Each entry declares what one row of that file IS — the grain —
@@ -80,11 +80,11 @@ export function shapeOf(file) {
     const st = fs.statSync(file);
     if (st.size > MAX_SNIFF) return "array";       // too big to parse; arrays are the common large shape
     text = fs.readFileSync(file, "utf8");
-  } catch { return "record"; }
+  } catch { return "record"; }  // unreadable reads as a plain record, the safe shape
   const head = text.replace(/^\s+/, "")[0];
   if (head === "[") return "array";
   if (head !== "{") return "record";
-  let v; try { v = JSON.parse(text); } catch { return "record"; }
+  let v; try { v = JSON.parse(text); } catch { return "record"; }  // not JSON: a plain record
   const vals = Object.values(v || {});
   // A map is an object whose values are ALL records. One scalar field and it is
   // a document with named fields, not a keyed collection.
@@ -115,7 +115,7 @@ export function survey({ dir = VAR } = {}) {
   const present = [], unclassified = [], missing = [];
   for (const n of names) {
     const f = path.join(dir, n);
-    let st; try { st = fs.statSync(f); } catch { continue; }
+    let st; try { st = fs.statSync(f); } catch { continue; }  // removed since readdir
     const c = known.get(n);
     const row = { file: n, path: f, bytes: st.size, mtime: new Date(st.mtimeMs).toISOString(), rows: 0 };
     if (n.endsWith(".jsonl")) {
@@ -258,7 +258,7 @@ ORDER BY week DESC, rows DESC`,
   },
 };
 
-export const hasDuckdb = () => which("duckdb");
+const hasDuckdb = () => which("duckdb");
 
 /** Write the schema, and run it when there is a binary to run it with. */
 export function build({ dir = VAR, out = SQL(), materialise = false, query = "", db = DB(), timeout = 120000 } = {}) {

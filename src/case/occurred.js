@@ -30,7 +30,7 @@ import { execFileSync } from "node:child_process";
 import { ROOT } from "../core/paths.js";
 import * as echos from "../echos/index.js";
 
-export const NONE = { at: null, via: "none" };
+const NONE = { at: null, via: "none" };
 
 /** path -> ISO date of the last commit that touched it.
  *

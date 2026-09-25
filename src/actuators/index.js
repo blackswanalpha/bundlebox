@@ -164,7 +164,7 @@ export function syncTrunk(f, { apply = false, cfg } = {}) {
 // with a zero-token receipt attached.
 
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const parses = (s) => { try { JSON.parse(s); return true; } catch { return false; } };
+const parses = (s) => { try { JSON.parse(s); return true; } catch { return false; } }; // probe: the throw is the answer
 
 /** Drop the `export` keyword from a declaration this corpus never imports.
  *  The detector marked which lines carry the one rewritable form; this re-tests

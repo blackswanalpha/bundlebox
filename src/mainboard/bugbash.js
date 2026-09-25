@@ -180,7 +180,7 @@ export function routesFrom(cfg = {}, base = "") {
     // The label becomes the finding id, so it has to survive being one: a
     // finding keyed `BB-http://host/x-blank` cannot be matched on the next run
     // and files a second copy every time.
-    const fallback = (() => { try { return new URL(url).pathname.replace(/^\/|\/$/g, "") || "root"; } catch { return "root"; } })();
+    const fallback = (() => { try { return new URL(url).pathname.replace(/^\/|\/$/g, "") || "root"; } catch { return "root"; } })();  // an unparseable URL still needs a stable id
     out.push({ label: slug(String(row.label || row.id || fallback)), url });
   }
   return out;

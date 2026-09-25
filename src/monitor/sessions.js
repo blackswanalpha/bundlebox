@@ -52,7 +52,7 @@ export function titleOf(file) {
   catch { return ""; }           // an unreadable transcript is an untitled session, not a crash
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
-    let o; try { o = JSON.parse(line); } catch { continue; }
+    let o; try { o = JSON.parse(line); } catch { continue; }  // a torn line is one row, not the file
     const role = o.role || o.message?.role || o.type;
     if (role !== "user") continue;
     let t = TEXTY(o.message?.content ?? o.content ?? o.text ?? "").trim();

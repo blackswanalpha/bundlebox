@@ -283,7 +283,7 @@ export function remove(id) {
 
 export function list() {
   let text;
-  try { text = fs.readFileSync(path.join(OUT_DIR, "index.md"), "utf8"); } catch { return []; }
+  try { text = fs.readFileSync(path.join(OUT_DIR, "index.md"), "utf8"); } catch { return []; }  // no sessions written yet
   return text.split("\n").filter((l) => l.startsWith("- `")).map((l) => ({ session: (l.match(/`([^`]+)`/) || [])[1] || "", line: l.slice(2) }));
 }
 

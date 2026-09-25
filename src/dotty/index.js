@@ -150,7 +150,7 @@ export async function shot({ label = "shot", url = "", dir = null, flags = {} } 
       expression: "JSON.stringify({title: document.title, url: location.href, w: innerWidth, h: innerHeight})",
       returnByValue: true,
     }).catch(() => null);
-    const meta = (() => { try { return JSON.parse(info.result.value); } catch { return {}; } })();
+    const meta = (() => { try { return JSON.parse(info.result.value); } catch { return {}; } })(); // no page info: the row falls back to the target's
 
     const frame = inspect(buf);
     const row = {
@@ -318,7 +318,10 @@ async function measure(session) {
     return JSON.stringify(out);
   })()`;
   const r = await session.call("Runtime.evaluate", { expression: expr, returnByValue: true }, { timeout: 20000 }).catch(() => null);
-  try { return JSON.parse(r.result.value); } catch { return { url: "", title: "", viewportMeta: true, innerW: 0, innerH: 0, scrollW: 0, overflow: 0, text: "", textLen: 0, images: 0, noAlt: [], noAltCount: 0, interactive: 0, small: [], smallCount: 0, unlabelled: [], unlabelledCount: 0 }; }
+  try { return JSON.parse(r.result.value); } catch (e) { // warned, and `unmeasured` stops the zeros reading as a pass
+    warn(`dotty: page measure failed (${r ? e.message : "Runtime.evaluate returned nothing"})`);
+    return { unmeasured: true, url: "", title: "", viewportMeta: null, innerW: 0, innerH: 0, scrollW: 0, overflow: 0, text: "", textLen: 0, images: 0, noAlt: [], noAltCount: 0, interactive: 0, small: [], smallCount: 0, unlabelled: [], unlabelledCount: 0 };
+  }
 }
 
 const MARK = (b) => (b === true ? "BLANK" : b === null ? "UNCHECKED" : "ok");

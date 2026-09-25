@@ -69,7 +69,7 @@ export function terms(problem) {
   }
   return out;
 }
-const pathHits = (ts) => ts.filter((t) => t.includes("/") || /\.[a-z]{1,4}$/.test(t)).map((t) => abs(t)).filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } }).map(rel);
+const pathHits = (ts) => ts.filter((t) => t.includes("/") || /\.[a-z]{1,4}$/.test(t)).map((t) => abs(t)).filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } }).map(rel);  // a token that names no file is not a path hit
 
 /** How many files the content search names. */
 export const GREP_CAP = 12;

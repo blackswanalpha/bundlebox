@@ -42,8 +42,8 @@ export function context(gearName) {
  */
 export function scenarioFacts() {
   const out = { corpora: null, corpus_base: null, base_up: null, scenarios: null, world: null, services: null };
-  const dirs = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return null; } };
-  const countJson = (p) => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const q = path.join(d, x.name); if (x.isDirectory()) walk(q); else if (x.name.endsWith(".json")) n++; } }; walk(p); return n; };
+  const dirs = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return null; } };  // null is "not there" in this record
+  const countJson = (p) => { let n = 0; const walk = (d) => { let e; try { e = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of e) { const q = path.join(d, x.name); if (x.isDirectory()) walk(q); else if (x.name.endsWith(".json")) n++; } }; walk(p); return n; };  // unreadable dir counts as empty
 
   const cb = path.join(BB_DIR, "cookbook");
   const corpora = dirs(cb);
@@ -80,7 +80,7 @@ export function scenarioFacts() {
  *  under 100ms, and only when a base is declared. */
 export function reachable(base, { timeout = 1500 } = {}) {
   let u;
-  try { u = new URL(String(base)); } catch { return null; }
+  try { u = new URL(String(base)); } catch { return null; }  // not a URL: reachability unknown
   const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
   const script = `const s=require("node:net").connect({host:process.argv[1],port:Number(process.argv[2])});`
     + `s.setTimeout(${Math.max(100, Number(timeout) || 1500)});`

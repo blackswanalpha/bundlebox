@@ -98,7 +98,7 @@ export function record(payload, { shapesOf }) {
 /** The recorded rows, newest last. */
 export function rows({ limit = MAX_ROWS } = {}) {
   let text;
-  try { text = fs.readFileSync(FILE(), "utf8"); } catch { return []; }
+  try { text = fs.readFileSync(FILE(), "utf8"); } catch { return []; }  // nothing recorded yet
   const lines = text.split("\n").filter(Boolean);
   const out = [];
   for (const l of lines.slice(-limit)) {
@@ -122,11 +122,11 @@ export function runs({ limit = MAX_ROWS } = {}) {
  *  hook that appends, so nothing else has to remember to. */
 export function rotate({ max = MAX_ROWS } = {}) {
   let text;
-  try { text = fs.readFileSync(FILE(), "utf8"); } catch { return 0; }
+  try { text = fs.readFileSync(FILE(), "utf8"); } catch { return 0; }  // nothing recorded yet
   const lines = text.split("\n").filter(Boolean);
   if (lines.length <= max) return 0;
   const keep = lines.slice(Math.floor(lines.length / 2));
-  try { fs.writeFileSync(FILE(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }
+  try { fs.writeFileSync(FILE(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }  // best-effort rotate: next append retries
 }
 
 export function stat() {
@@ -134,5 +134,5 @@ export function stat() {
     const st = fs.statSync(FILE());
     const r = rows({});
     return { rows: r.length, bytes: st.size, sessions: new Set(r.map((x) => x.s)).size, since: r.length ? r[0].at : "" };
-  } catch { return { rows: 0, bytes: 0, sessions: 0, since: "" }; }
+  } catch { return { rows: 0, bytes: 0, sessions: 0, since: "" }; }  // nothing recorded yet
 }

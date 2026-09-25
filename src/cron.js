@@ -95,7 +95,7 @@ export async function unsafeVerbs(gearName = CRON_GEAR, { spend = false } = {}) 
       for (const c of g.chain) stack.push(c.gear);
     }
     return bad;
-  } catch { return []; }
+  } catch (e) { return [`${gearName}: the pipeline spec did not load (${e.message}), so nothing proves it safe`]; }
 }
 
 /** Whether the three config keys a `spends` stage needs are set, asked without

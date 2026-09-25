@@ -21,7 +21,7 @@ const OPS = {
   in: (a, b) => (Array.isArray(b) ? b.some((x) => String(x) === String(a)) : false),
   "not-in": (a, b) => (Array.isArray(b) ? !b.some((x) => String(x) === String(a)) : true),
   contains: (a, b) => String(a ?? "").includes(String(b)),
-  matches: (a, b) => { try { return new RegExp(String(b)).test(String(a ?? "")); } catch { return false; } },
+  matches: (a, b) => { try { return new RegExp(String(b)).test(String(a ?? "")); } catch { return false; } }, // an invalid pattern matches nothing
   exists: (a) => a !== null && a !== undefined && a !== "",
 };
 export const OPERATORS = Object.keys(OPS);

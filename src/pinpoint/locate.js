@@ -269,5 +269,5 @@ export function cached() {
   try {
     const r = JSON.parse(fs.readFileSync(CACHE(), "utf8"));
     return r && r.verdict ? r : null;
-  } catch { return null; }
+  } catch { return null; }  // no cache or a torn one: recompute
 }

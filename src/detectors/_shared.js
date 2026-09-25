@@ -260,7 +260,7 @@ export function gitAvailable(ctx) {
 /** Parsed root package.json or null. One parse; five detectors read it. */
 export function packageJson(ctx) {
   return cache(ctx, "packageJson", () => {
-    try { return JSON.parse(fs.readFileSync(path.join(ctx.root, "package.json"), "utf8")); } catch { return null; }
+    try { return JSON.parse(fs.readFileSync(path.join(ctx.root, "package.json"), "utf8")); } catch { return null; } // no package.json: not a node project
   });
 }
 /** basename -> [rel] over EVERY file in the tree (no suffix filter), because a

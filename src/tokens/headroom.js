@@ -68,7 +68,7 @@ async function getJson(p, { port: pt = 0, timeout = 2000 } = {}) {
     const r = await fetch(baseUrl(pt) + p, { signal: AbortSignal.timeout(timeout) });
     if (!r.ok) return null;
     return await r.json();
-  } catch { return null; }
+  } catch { return null; }  // proxy down or slow: null means no reading
 }
 
 /** Is anything bound to the port. Cheaper than a GET, and a refused connect is a clean "no". */

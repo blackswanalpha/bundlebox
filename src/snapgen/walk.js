@@ -18,7 +18,7 @@ export const MAX_TABLE_TOKENS = 40000;
  *  "force the JS path" impossible to test, and would hide a broken install. */
 export function kcall(op, payload) {
   const forced = process.env.BB_KERNEL;
-  if (forced) { try { fs.accessSync(forced, fs.constants.X_OK); } catch { return null; } }
+  if (forced) { try { fs.accessSync(forced, fs.constants.X_OK); } catch { return null; } }  // BB_KERNEL not executable: the JS path, as forced
   return kernel.call(op, payload);
 }
 
@@ -38,5 +38,5 @@ export const has = (n) => fs.existsSync(path.join(ROOT, n));
 
 export const topOf = (p) => { const r = rel(p); const i = r.indexOf("/"); return i < 0 ? "." : r.slice(0, i); };
 export function subdirs(dir) {
-  try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".") && !isIgnored(e.name)).map((e) => e.name).sort(); } catch { return []; }
+  try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".") && !isIgnored(e.name)).map((e) => e.name).sort(); } catch { return []; }  // unreadable dir: no subdirs
 }
