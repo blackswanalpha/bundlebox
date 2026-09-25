@@ -215,6 +215,27 @@ export const GEARS = [
       { verb: "run", flags: { pr: true }, description: "the plan as it would run with --pr; nothing spawns without --apply" },
     ],
   }),
+  // A1 on the tick: the certain fixes, on a branch, behind the gate, as a draft
+  // PR. `apply` is the stage's own flag because a stage never inherits the
+  // gear's. Free: `sentinel run` without `--spend` opens no session, and
+  // `bb/auto-fix/<date>` is the only ref it writes, never the base branch.
+  gear({
+    name: "autofix", description: "the fixes that cannot go wrong, closed on bb/auto-fix/<date> behind lint and tests, as a draft PR",
+    on: ["cron", "hand"],
+    stages: [
+      { verb: "sentinel", args: ["run"], flags: { apply: true }, description: "sync PR outcomes, scan, rank, certain fixes on a branch, gate, ironguard, draft PR" },
+    ],
+  }),
+  // Sentinel whole: the free phases, then the agent tier as lanes and the
+  // review rounds (A2, A3), inside the daily ceilings the three keys set.
+  gear({
+    name: "sentinel", description: "the overseer: free phases first, then the top findings as lanes and review feedback as more lanes",
+    on: ["hand"], spends: true,
+    stages: [
+      { verb: "sentinel", args: ["run"], flags: { apply: true, spend: true }, spends: true,
+        description: "autofix, then sprint lanes with --apply --pr and review rounds, refused when a ceiling key is missing" },
+    ],
+  }),
   // The one gear that spends, and the only one. Each pack opens an agent
   // session, and the bridge's ceiling and window guard are what stand between a
   // tick and a bill. `--run --spend` are the verb's own flags; without them the

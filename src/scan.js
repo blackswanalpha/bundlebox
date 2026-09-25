@@ -7,7 +7,7 @@ import { emit, out, warn } from "./core/log.js";
 import { load } from "./core/config.js";
 import { human, table } from "./core/util.js";
 import { REGISTRY, SEVERITY, explain, runAll, triage } from "./detectors/index.js";
-import { ACTUATORS, DESTRUCTIVE, actuate } from "./actuators/index.js";
+import { ACTUATORS, CERTAIN, DESTRUCTIVE, actuate } from "./actuators/index.js";
 
 const worst = (fs) => fs.reduce((w, f) => ((SEVERITY[f.severity] ?? 0) > (SEVERITY[w] ?? -1) ? f.severity : w), "");
 const list = (v) => (typeof v === "string" ? v.split(",").map((s) => s.trim()).filter(Boolean) : []);
@@ -90,11 +90,13 @@ export const commands = {
   },
   fix: {
     help: "run local actuators over findings that name one (dry run without --apply)",
-    usage: "bb fix [--apply] [--detector x] [--id id] [--force] [--json]",
+    usage: "bb fix [--apply] [--certain] [--detector x] [--id id] [--force] [--json]",
     run: async ({ flags }) => {
       const cfg = load();
       const apply = !!flags.apply;
       let rows = store.openFindings().filter((f) => f.auto_fix);
+      // Only the actuators that cannot go wrong: what a worker may apply unread.
+      if (flags.certain) rows = rows.filter((f) => CERTAIN.has(f.auto_fix));
       if (flags.detector) rows = rows.filter((f) => list(flags.detector).includes(f.detector));
       if (flags.id) rows = rows.filter((f) => f.id === flags.id || f.id.startsWith(String(flags.id)));
       // Every open finding that names an actuator, promotable or not. The

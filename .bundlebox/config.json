@@ -1,6 +1,7 @@
 {
   "lanes": {
-    "agent": "claude"
+    "agent": "claude",
+    "daily_budget_usd": 20
   },
   "kernel": {
     "gates": {
@@ -20,6 +21,7 @@
     }
   },
   "bridge": {
-    "enabled": true
+    "enabled": true,
+    "daily_budget_usd": 5
   }
 }

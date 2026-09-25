@@ -30,6 +30,13 @@ import * as plans from "./plans.js";
 // a person pass `--force` before it runs.
 export const DESTRUCTIVE = new Set(["drop-dead-knob"]);
 
+// Actuators that cannot go wrong, and the only ones a worker may apply with no
+// person reading the diff first. Each is fed by a `precision: "exact"` detector
+// and re-checks its own case before writing: a conflict closes only when both
+// sides are byte-identical, a debug line goes only when the whole line is the
+// call. `bb fix --certain` and `bb sentinel` read this set; nothing else widens it.
+export const CERTAIN = new Set(["resolve-identical-conflict", "strip-debug-line"]);
+
 const PATCH_DIR = path.join(VAR, "patches");
 function writePatch(name, key, text) {
   fs.mkdirSync(PATCH_DIR, { recursive: true });

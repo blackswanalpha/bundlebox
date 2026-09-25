@@ -57,6 +57,9 @@ export const MODULES = [
   ["uptake", "./uptake/index.js"],
   ["grapple", "./grapple/index.js"],
   ["foreman", "./foreman/index.js"],
+  ["ironguard", "./ironguard/index.js"],
+  ["sprint", "./sprint/index.js"],
+  ["sentinel", "./sentinel/index.js"],
   ["cron", "./cron.js"],
   ["selftest", "./selftest.js"],
   ["kernel", "./kernel-cmd.js"],
@@ -95,22 +98,22 @@ export async function loadCommands() {
 //   writes    changes files in the workspace itself, and only with --apply
 //   records   writes artefacts under .bundlebox/ and touches no source file
 //   reads     reads and reports; nothing on disk changes
-const SPENDS = { run: "--apply", bridge: "--run --spend" };
+const SPENDS = { run: "--apply", bridge: "--run --spend", sprint: "--apply", sentinel: "--spend" };
 // Verbs that can change a file a human wrote. Everything here is a dry run
 // until --apply; that is the whole contract and the column states it once.
 const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs", "janitor", "finish"]);
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
-  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "intent", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple", "foreman"]);
+  "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "oversight", "intent", "auditor", "buckmaster", "lathe", "console", "pipeline", "scripts", "sieve", "grapple", "foreman", "ironguard"]);
 // The groups, in the order a factory uses them, with the question each answers.
 const CHAPTERS = [
-  ["govern", "What is the bar, before anything is written?", ["auditor"]],
+  ["govern", "What is the bar, before anything is written?", ["auditor", "ironguard"]],
   ["look", "What is in this tree?", ["init", "doctor", "env", "scan", "findings", "explain", "triage", "case", "oversight", "designlabs"]],
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "intent", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "frames", "failsafe"]],
-  ["spend", "What costs money, and how much is left?", ["run", "bridge", "monitor", "session", "headroom", "agents"]],
-  ["ship", "What closes the loop?", ["foreman", "finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],
+  ["spend", "What costs money, and how much is left?", ["run", "sprint", "bridge", "monitor", "session", "headroom", "agents"]],
+  ["ship", "What closes the loop?", ["sentinel", "foreman", "finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
 ];
 
