@@ -11,6 +11,7 @@
 //           PR merges, the tables and the index are rebuilt so the next lookup
 //           answers from the tree that now exists.
 import fs from "node:fs";
+import path from "node:path";
 import { load } from "../core/config.js";
 import { abs, rel } from "../core/paths.js";
 import { run as exec } from "../core/exec.js";
@@ -35,13 +36,25 @@ export async function scriptsFor(detectors) {
   return rows.filter((r) => r.safe && (r.fixes || []).some((d) => want.has(d)));
 }
 
+/** The argv that runs a script: its shebang's interpreter, then the file.
+ *  Spawning the file itself works only where the OS reads shebangs; on
+ *  Windows a `.sh` handed to cmd.exe ran nothing and still exited 0. */
+export function argvFor(p) {
+  let first = "";
+  try { first = fs.readFileSync(p, "utf8").split("\n", 1)[0]; } catch { return [p]; }
+  const m = /^#!\s*(\S+)(?:\s+(\S+))?/.exec(first);
+  if (!m) return [p];
+  const interp = /(^|\/)env$/.test(m[1]) && m[2] ? m[2] : path.basename(m[1]);
+  return [interp, p];
+}
+
 /** Run one script from the main checkout's copy, with the worktree as its cwd,
  *  and write the episode `bb scripts run` would. */
 export async function runScript(row, cwd, { timeout = 1800000 } = {}) {
   const p = abs(row.path);
   if (!fs.existsSync(p)) return { tag: row.tag, rc: 2, why: `${row.path} is gone` };
   const t0 = Date.now();
-  const r = exec([p], { cwd, timeout });
+  const r = exec(argvFor(p), { cwd, timeout });
   const seconds = Math.round((Date.now() - t0) / 10) / 100;
   const episodes = await import("../buckmaster/episodes.js");
   episodes.write({ kind: "script", verb: `script:${row.tag}`, stage: row.tag, gear: "sentinel", features: { safe: 1, fixes: (row.fixes || []).join(",") },

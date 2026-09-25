@@ -216,6 +216,8 @@ test("a script tagged @fixes and @safe true is found for its detector, and arc n
   assert.deepEqual(scriptsIx.parse(path.join(root, "scripts/fix-docs.sh")).fixes, ["doc-links"]);
   assert.deepEqual(links.identifiers("rename `loadPlan` and fix readJson; also the_thing and runner.execute, not the word"), ["loadPlan", "readJson", "the_thing", "execute"]);
   assert.equal(links.locatedBlock([]), "");
+  // Run through the shebang's interpreter: Windows does not read `#!`.
+  assert.deepEqual(links.argvFor(path.join(root, "scripts/fix-docs.sh")), ["bash", path.join(root, "scripts/fix-docs.sh")]);
   assert.match(links.locatedBlock([{ file: "src/a.js", line: 3, symbol: "a" }]), /src\/a\.js:3  a/);
   fs.rmSync(path.join(root, "scripts"), { recursive: true });
 });
