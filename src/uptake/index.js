@@ -41,7 +41,7 @@ import { instructions } from "../wire/agents.js";
 export const READ_FLOOR = 5;
 
 const SNAPGEN = () => path.join(OUT, "snapgen");
-const exists = (p) => { try { return fs.existsSync(p); } catch { return false; } };
+const exists = (p) => { try { return fs.existsSync(p); } catch { return false; } };  // absence is the answer
 
 /** Commands that open a file, and commands that search for one. A session that
  *  runs `sed -n 1,80p src/x.js` has opened a file exactly as much as one that
@@ -207,7 +207,7 @@ export function report({ cfg = load(), since = "" } = {}) {
   const unseen = entries.unknown || [];
   const defs = surfaces(cfg);
   const rows = defs.map((s) => ({ id: s.id, what: s.what, observable: s.observable, why: s.why || "",
-    installed: (() => { try { return Boolean(s.installed()); } catch { return false; } })(),
+    installed: (() => { try { return Boolean(s.installed()); } catch { return false; } })(),  // a probe that throws has not been installed
     chances: 0, fired: 0, misses: [] }));
   const byId = new Map(rows.map((r) => [r.id, r]));
   const sessions = [];

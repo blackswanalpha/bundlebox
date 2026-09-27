@@ -132,7 +132,7 @@ export function quality(h) {
  *  index should rank worse, not rank nothing. */
 export function centrality(file) {
   try { return Math.min((graph.graph().inn.get(abs(file)) || new Set()).size, 8) * 0.4; }
-  catch { return 0; }
+  catch { return 0; }  // no index: rank worse, not nothing
 }
 
 export const DECAY = 0.55;
@@ -270,7 +270,7 @@ export function neighbours(scored) {
   for (const [f, sc] of seeds) {
     if (sc <= 0) continue;
     let edges;
-    try { edges = g.out.get(abs(f)) || []; } catch { continue; }
+    try { edges = g.out.get(abs(f)) || []; } catch { continue; }  // no index: no edges from this seed
     for (const e of edges) {
       const n = rel(e);
       if (!n || scored.has(n) || n === f) continue;               // direct evidence outranks being adjacent to it

@@ -253,7 +253,7 @@ export async function backfill(limit, maxMb) {
     bm = await import("../buckmaster/index.js");
     ledger = await import("../tokens/ledger.js");
     fs2 = fs;
-  } catch { return []; }
+  } catch (e) { if (e.code !== "ERR_MODULE_NOT_FOUND") throw e; return []; }
   const cap = maxMb * 1024 * 1024;
   const entries = ledger.transcripts()
     .map((t) => { let size = 0, m = 0; try { const st = fs2.statSync(t.file); size = st.size; m = st.mtimeMs; } catch { /* gone */ } return { ...t, size, m }; })
@@ -346,7 +346,7 @@ export async function learn({ maxEpisodes = 4000, transcripts = 0, maxTranscript
 const varied = (rows) => (rows || []).filter((p) => new Set(p.items || []).size > 1);
 
 export function model() {
-  try { return JSON.parse(fs.readFileSync(MODEL(), "utf8")); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(MODEL(), "utf8")); } catch { return null; }  // no model built yet, or a torn write: rebuild
 }
 
 // ── the verb ────────────────────────────────────────────────────────────────

@@ -88,7 +88,7 @@ export function ambiguity(b) {
   let fired = 0;
   for (const s of SIGNALS) {
     let hit = false;
-    try { hit = !!s.test(b); } catch { continue; }
+    try { hit = !!s.test(b); } catch { continue; }  // never throws, see above: a broken signal is not fired
     if (!hit) continue;
     fired += s.weight;
     let why = "";

@@ -27,7 +27,7 @@ export const MAX_COMMANDS = 8;
 export const MAX_QUESTIONS = 3;
 
 const readJsonl = (p) => {
-  let text; try { text = fs.readFileSync(p, "utf8"); } catch { return []; }
+  let text; try { text = fs.readFileSync(p, "utf8"); } catch { return []; }  // no file yet
   const out = [];
   for (const l of text.split("\n")) { if (!l.trim()) continue; try { out.push(JSON.parse(l)); } catch { /* a torn row */ } }
   return out;
@@ -144,7 +144,7 @@ export function read({ sessionId = "" } = {}) {
   try {
     const raw = fs.readFileSync(PATH(sessionId), "utf8");
     return raw.replace(/^# narrative[^\n]*\n\n?/, "").trim();
-  } catch { return ""; }
+  } catch { return ""; }  // no narrative for this session yet
 }
 
 /** What to inject after a compaction: the frozen page if one was written,

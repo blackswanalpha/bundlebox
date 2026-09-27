@@ -95,7 +95,7 @@ export function latest(id = "") {
   try {
     const fs2 = fs.readdirSync(RUNS()).filter((f) => f.endsWith(".json") && (!id || f.startsWith(`${id}-`))).sort();
     return fs2.length ? readJson(path.join(RUNS(), fs2[fs2.length - 1]), null) : null;
-  } catch { return null; }
+  } catch { return null; }  // no runs yet
 }
 
 export function simulate(id, { base = "", seconds = 0, levels = "", write = true } = {}) {

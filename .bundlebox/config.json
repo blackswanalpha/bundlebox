@@ -23,5 +23,8 @@
   "bridge": {
     "enabled": true,
     "daily_budget_usd": 5
+  },
+  "foreman": {
+    "hook": "steer"
   }
 }

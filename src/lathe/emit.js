@@ -24,7 +24,7 @@ const file = (...p) => path.join(DIR(), ...p);
 /** Which artefacts are on disk now. */
 export function onDisk() {
   const want = ["scripts.md", "snippets.md", "autocomplete.md", "boilerplate.md"];
-  return want.map((n) => file(n)).filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
+  return want.map((n) => file(n)).filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });  // absence is the answer
 }
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);

@@ -20,9 +20,13 @@ import * as store from "../src/core/store.js";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p, d = null) => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, p), "utf8")); } catch { return d; } };
 
-const SWE = read(".bundlebox/bench/swebench/latest.json");
+// A scheduled run rewrites `latest.json` with whatever --n it was installed
+// with, so a page built from it silently changes size between builds. Pin the
+// run with BB_SWEBENCH_RUN when the page is meant to stand next to a review.
+const SWE = read(process.env.BB_SWEBENCH_RUN || ".bundlebox/bench/swebench/latest.json"); // unpinned: the cron-owned run, per the note above
 const LOCAL = read(".bundlebox/out/bench/latest.json");
 const HISTORY = store.rows("bench", { limit: 1000 });
+const BOARD = read("bench/deepswe/leaderboard.json");
 if (!SWE || !LOCAL) { console.error("no bench run on disk. `bb bench run` and `bb bench swebench run` first."); process.exit(2); }
 
 // ── numbers ────────────────────────────────────────────────────────────────
@@ -167,6 +171,67 @@ function trendPanel({ title, points, t0, t1, mark, fmt, last }) {
     + dots
     + `<text x="${L}" y="${H - 5}" class="tick">${esc(day(t0))}</text>`
     + `<text x="${W - R}" y="${H - 5}" class="tick" text-anchor="end">${esc(day(t1))}</text>`);
+}
+
+/** A value with its published interval. Somebody else's measurement, drawn with
+ *  the uncertainty they reported rather than as a bare number. */
+function dotsCI({ rows, max = 100, unit = "%", fmt }) {
+  const RH = 21, L = 128, R = 58, T = 8, B = 16;
+  const H = T + rows.length * RH + B, pw = W - L - R;
+  const x = (v) => L + (v / max) * pw;
+  const step = max / 4;
+  const grid = [0, 1, 2, 3, 4].map((i) => Math.round(i * step)).map((v) =>
+    `<line x1="${r1(x(v))}" y1="${T}" x2="${r1(x(v))}" y2="${T + rows.length * RH}" class="grid"/>`
+    + `<text x="${r1(x(v))}" y="${H - 4}" class="tick" text-anchor="middle">${v}${unit}</text>`).join("");
+  const body = rows.map((d, i) => {
+    const y = T + i * RH + RH / 2;
+    const k = d.kind || (d.hi ? "bare" : "neu");
+    return `<text x="0" y="${y + 4}" class="rowlab${d.hi ? " hi" : ""}${d.kind === "bb" ? " bbrow" : ""}">${esc(d.label)}</text>`
+      + (d.ci ? `<line x1="${r1(x(Math.max(0, d.v - d.ci)))}" y1="${y}" x2="${r1(x(Math.min(max, d.v + d.ci)))}" y2="${y}" class="whisk ${k}"/>` : "")
+      + `<circle cx="${r1(x(d.v))}" cy="${y}" r="4.5" class="dot ${k}${d.open ? " open" : ""}"`
+      + ` data-k="${esc(d.label)}" data-v="${esc(fmt(d))}"></circle>`
+      + `<text x="${W - R + 8}" y="${y + 4}" class="val">${d.prefix || ""}${d.v}${unit}`
+      + (d.ci ? `<tspan class="pm"> ±${d.ci}</tspan>` : "") + `</text>`;
+  }).join("");
+  return svg(H, grid + body);
+}
+
+/** The smallest true difference a run of N paired tasks could separate from
+ *  noise. Arithmetic over the board's own baseline, not a result. */
+function powerCurve({ series, at }) {
+  const H = 232, L = 52, R = 96, T = 12, B = 34;
+  const pw = W - L - R, ph = H - T - B, hiY = 50;
+  const ns = series[0].points.map((p) => p.n);
+  const lo = Math.min(...ns), hi = Math.max(...ns);
+  const lx = (n) => L + ((Math.log10(n) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo))) * pw;
+  const y = (v) => T + ph - (Math.min(v, hiY) / hiY) * ph;
+  const grid = [0, 10, 20, 30, 40, 50].map((v) =>
+    `<line x1="${L}" y1="${r1(y(v))}" x2="${W - R}" y2="${r1(y(v))}" class="grid"/>`
+    + `<text x="${L - 8}" y="${r1(y(v)) + 4}" class="tick" text-anchor="end">${v}</text>`).join("");
+  const marker = at ? `<line x1="${r1(lx(at))}" y1="${T}" x2="${r1(lx(at))}" y2="${T + ph}" class="mark"/>`
+    + `<text class="mk" x="${r1(lx(at)) + 5}" y="${T + 10}">${at} tasks — the whole corpus</text>` : "";
+  // The three curves converge at the right, so their end labels collide. Push
+  // them apart from the bottom up and keep each one's colour.
+  const ends = series.map((s2) => ({ s2, y: y(s2.points[s2.points.length - 1].d) }))
+    .sort((a, b) => b.y - a.y);
+  ends.forEach((e, i) => { if (i && ends[i - 1].y - e.y < 13) e.y = ends[i - 1].y - 13; });
+  const endY = new Map(ends.map((e) => [e.s2.step, e.y]));
+  const body = series.map((s2) => {
+    const d = s2.points.map((p, i) => `${i ? "L" : "M"}${r1(lx(p.n))},${r1(y(p.d))}`).join("");
+    const end = s2.points[s2.points.length - 1];
+    const dots = s2.points.map((p) => `<circle class="hit" cx="${r1(lx(p.n))}" cy="${r1(y(p.d))}" r="7"`
+      + ` data-k="${p.n} tasks · ${Math.round(s2.pd * 100)}% discordance"`
+      + ` data-v="resolves ${r1(p.d)} pts"></circle>`).join("");
+    return `<path d="${d}" class="ln ramp${s2.step}"/>`
+      + `<text x="${W - R + 8}" y="${r1(endY.get(s2.step)) + 4}" class="val ramp${s2.step}">${Math.round(s2.pd * 100)}%</text>` + dots;
+  }).join("");
+  const ticks = series[0].points.filter((p) => [10, 113, 500].includes(p.n))
+    .map((p) => `<text x="${r1(lx(p.n))}" y="${H - 14}" class="tick" text-anchor="middle">${p.n}</text>`).join("");
+  return svg(H, grid + marker + body + ticks
+    + `<text x="${L}" y="${H - 1}" class="tick">tasks per arm (log)</text>`
+    + `<text x="${W - R + 8}" y="${T + 8}" class="tick">arms</text>`
+    + `<text x="${W - R + 8}" y="${T + 20}" class="tick">disagree</text>`
+    + `<text x="${L - 46}" y="${T - 1}" class="tick">pts</text>`);
 }
 
 const svg = (h, body) => `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img" preserveAspectRatio="xMinYMin meet">${body}</svg>`;
@@ -314,6 +379,83 @@ if (histDefault.length > 2) figs.push(fig({
   note: `${histDefault.length} runs on this repository's findings, ${histSwe.length} on SWE-bench. Localisation is the line that moved on its own merits: ${r1(sweRecall[0].recall)}% of gold files on the first recorded run, ${r1(sweRecall[sweRecall.length - 1].recall)}% on the last. The baseline change did not touch it.`,
 }));
 
+// ── DeepSWE: someone else's board, and what it would take to join it ──────
+//
+// No bundlebox row appears here and that is deliberate. Every number in this
+// section is either read off the public board or is arithmetic over it; a
+// resolve rate this tree has not measured does not get drawn beside ones that
+// were, whatever it would look like.
+const deepswe = [];
+if (BOARD) {
+  const R = BOARD.rows.map(([model, effort, score, ci, usd, toks, steps]) =>
+    ({ model, effort, score, ci, usd, toks, steps, claude: /^claude-/.test(model) }));
+  const byScore = R.slice().sort((a, b) => b.score - a.score);
+  const son = R.find((r) => r.model === "claude-sonnet-5");
+  const medTok = [...R].sort((a, b) => a.toks - b.toks)[Math.floor(R.length / 2)].toks;
+
+  // What a run could separate from noise. BOTH ARMS RUN THE SAME TASKS, so the
+  // test is McNemar's on the pairs that disagree, not two independent
+  // proportions. The unpaired form this file used first needed 376 tasks for
+  // ten points where the paired form needs 116; it was answering a question
+  // nobody was asking. The paired answer depends on the discordance rate, which
+  // nothing here has measured, so it is carried as a band rather than a number.
+  const za2 = 1.959964, zb = 0.8416212;
+  const nPaired = (d, pd) => Math.pow(za2 * Math.sqrt(pd) + zb * Math.sqrt(Math.max(pd - d * d, 1e-9)), 2) / (d * d);
+  const DISC = [0.15, 0.25, 0.35];
+  const solveP = (N, pd) => { let lo = 1e-4, hi = Math.min(0.95 * pd, 0.45);
+    for (let i = 0; i < 300; i++) { const m = (lo + hi) / 2; if (nPaired(m, pd) > N) lo = m; else hi = m; } return hi * 100; };
+  // the bar on the full corpus, at the middle discordance assumption
+  const BAR = solveP(BOARD.tasks, 0.25);
+  const BAR_LO = solveP(BOARD.tasks, DISC[0]), BAR_HI = solveP(BOARD.tasks, DISC[2]);
+  const nNI = (m, pd) => Math.ceil(Math.pow(za2 + zb, 2) * pd / (m * m));
+  const NS = [10, 25, 50, 113, 250, 500, 1000];
+
+  deepswe.push(fig({
+    id: "board", kicker: `published · ${BOARD.tasks} tasks · ${BOARD.as_of}`,
+    title: "DeepSWE, as the board reports it",
+    lead: `A real resolve rate on ${BOARD.tasks} long-horizon tasks, ${esc(BOARD.scoring)}, all on ${esc(BOARD.scaffold)}. <b>These are Datacurve's measurements, not ours</b> — read off <a href="${esc(BOARD.source)}">the public board</a> and reproduced nowhere in this repository. Anthropic models are marked.`,
+    legend: false,
+    chart: dotsCI({ rows: [...byScore.map((r) => ({ label: r.model, v: r.score, ci: r.ci, hi: r.claude })),
+        { label: "claude-sonnet-5 (bundlebox)", v: Math.round(son.score + BAR), ci: Math.round((BAR_HI - BAR_LO) / 2),
+          kind: "bb", open: true, prefix: "\u2265", note: "threshold, not a score" }]
+        .sort((a, b) => b.v - a.v),
+      fmt: (d) => (d.kind === "bb" ? `${d.v}% — the least this corpus could tell apart from ${son.score}%` : `${d.v}% ±${d.ci}`) }),
+    note: `The board's own reading is that leading coding benchmarks are saturating at the frontier: the top nine sit inside eight points of each other with intervals of ±1 to ±6, so most of that ordering is not separable. <b>${son.model}</b> scores <b>${son.score}% ±${son.ci}</b>.<br><br>The hollow green row is <b>not a result and not a prediction</b>. bundlebox has never been run on this benchmark. It marks the <b>bar</b>: on all ${BOARD.tasks} tasks the smallest gain separable from ${son.score}% is ${r1(BAR_LO)}-${r1(BAR_HI)} points depending on how often the two arms disagree, so anything below about <b>${Math.round(son.score + BAR)}%</b> would be indistinguishable from changing nothing. It is drawn so the empty space is visible rather than implied.`,
+    tbl: table(["model", "score", "$/task", "tokens/task", "steps"],
+      [...byScore.map((r) => [r.model, `${r.score}% ±${r.ci}`, `$${r.usd.toFixed(2)}`, tok(r.toks), String(r.steps)]),
+       ["claude-sonnet-5 (bundlebox)", `\u2265${Math.round(son.score + BAR)}% to be detectable — never run`, "—", "—", "—"]]),
+  }));
+
+  deepswe.push(fig({
+    id: "board-context", kicker: "published · the axis bundlebox acts on",
+    title: "Context per task, on the same board",
+    lead: `bundlebox changes neither the model, the scaffold nor the task. It changes what goes in the window. So this is the column where it could act at all — and it is the column <b>${son.model}</b> is worst on.`,
+    legend: false,
+    chart: dotsCI({ rows: byScore.map((r) => ({ label: r.model, v: Math.round(r.toks / 1000), hi: r.claude })),
+      max: 220, unit: "k", fmt: (d) => `${d.v}k tokens per task` }),
+    note: `<b>${son.model}</b> spends <b>${tok(son.toks)}</b> tokens and <b>$${son.usd.toFixed(2)}</b> across <b>${son.steps}</b> steps per task — ${r1(son.toks / medTok)}× the median of ${tok(medTok)}, and the dearest row on the board — to land ${son.score}%. Nothing here says bundlebox would move that. It says this is where a change would have to show up.`,
+  }));
+
+  // (the power maths is hoisted above the first figure; see Z/p0/BAR)
+
+  deepswe.push(fig({
+    id: "power", kicker: "derived · arithmetic over the board",
+    title: "What a run here could actually tell you",
+    lead: `Both arms run the same tasks, so the test is McNemar's on the tasks where they disagree. How many that is — the <b>discordance rate</b> — is not known until a run happens, so this is drawn as a band across three assumptions rather than one line. <b>Derived, not measured.</b>`,
+    legend: false,
+    chart: powerCurve({
+      series: DISC.map((pd, i) => ({
+        pd, step: i,
+        points: NS.map((n) => ({ n, d: solveP(n, pd) })),
+      })),
+      at: BOARD.tasks,
+    }),
+    note: `On all ${BOARD.tasks} tasks the smallest gain separable from ${son.score}% is <b>${r1(BAR_LO)} to ${r1(BAR_HI)} points</b> depending on how often the arms disagree — about <b>${r1(BAR)}</b> at the middle assumption. A <b>10-point</b> gain needs ${nNI(0.10, DISC[0])} to ${nNI(0.10, DISC[2])} tasks, so this corpus is borderline for ten points and adequate for fifteen. Treating the two arms as independent samples instead of pairs would put that figure near 376 and understate the benchmark badly.`,
+    tbl: table(["tasks per arm", "15% discordance", "25%", "35%"],
+      NS.map((n) => [String(n), `${r1(solveP(n, 0.15))} pts`, `${r1(solveP(n, 0.25))} pts`, `${r1(solveP(n, 0.35))} pts`])),
+  }));
+}
+
 // ── page ───────────────────────────────────────────────────────────────────
 const tiles = [
   ["context per task", `${st.saved_pct}%`, `less than bare — ${tok(per.swe.bare)} → ${tok(per.swe.bb)} tokens`],
@@ -336,6 +478,7 @@ const html = `<!doctype html>
   --ink:#141414; --muted:#63615b; --faint:#908d86; --rule:#e4e1da; --bg:#faf9f6; --panel:#fff;
   --accent:#1f7a5c; --accent-soft:#e9f2ee; --code-bg:#f4f2ec;
   --s-bare:#B04A28; --s-bb:#1baf7a;
+  --ramp-1:#8fd9bd; --ramp-2:#34a780; --ramp-3:#0d5c43;
   --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
   --mono:"SF Mono","JetBrains Mono",ui-monospace,"Liberation Mono",Menlo,monospace;
 }
@@ -343,11 +486,13 @@ const html = `<!doctype html>
   --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
   --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
   --s-bare:#C05428; --s-bb:#199e70;
+  --ramp-1:#0f6b4e; --ramp-2:#2f9d76; --ramp-3:#7fd4b4;
 }}
 :root[data-theme="dark"]{
   --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
   --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
   --s-bare:#C05428; --s-bb:#199e70;
+  --ramp-1:#0f6b4e; --ramp-2:#2f9d76; --ramp-3:#7fd4b4;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
@@ -395,7 +540,25 @@ svg.chart + svg.chart{margin-top:22px}
 .chart .tick{font:10.5px var(--mono);fill:var(--faint)}
 .chart .cat{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;fill:var(--faint)}
 .chart .val{font:12px var(--mono);fill:var(--ink);font-weight:500}
-.chart .hit{fill:transparent;stroke:none}\n.chart .mark{stroke:var(--faint);stroke-width:1;stroke-dasharray:3 3}\n.chart .mk{font:10px var(--mono);fill:var(--faint)}
+.chart .hit{fill:transparent;stroke:none}
+.chart .dot{stroke:var(--panel);stroke-width:1.5}
+.chart .dot.neu{fill:var(--faint)}
+.chart .dot.bare{fill:var(--s-bare)}
+.chart .dot.bb{fill:var(--s-bb)}
+.chart .dot.bb.open{fill:var(--panel);stroke:var(--s-bb);stroke-width:2.5;stroke-dasharray:2.4 2}
+.chart .rowlab.bbrow{fill:var(--s-bb);font-weight:600}
+.chart .ln.ramp0{stroke:var(--ramp-1)}
+.chart .ln.ramp1{stroke:var(--ramp-2)}
+.chart .ln.ramp2{stroke:var(--ramp-3)}
+.chart .val.ramp0{fill:var(--ramp-1)}
+.chart .val.ramp1{fill:var(--ramp-2)}
+.chart .val.ramp2{fill:var(--ramp-3)}
+.chart .whisk{stroke-width:2;stroke-linecap:round;opacity:.42}
+.chart .whisk.neu{stroke:var(--faint)}
+.chart .whisk.bare{stroke:var(--s-bare)}
+.chart .rowlab{font:12px var(--mono);fill:var(--muted)}
+.chart .rowlab.hi{fill:var(--s-bare);font-weight:600}
+.chart .pm{fill:var(--faint);font-size:10.5px}\n.chart .mark{stroke:var(--faint);stroke-width:1;stroke-dasharray:3 3}\n.chart .mk{font:10px var(--mono);fill:var(--faint)}
 .legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--muted);margin:0 0 12px}
 .legend span{display:inline-flex;align-items:center;gap:7px}
 .sw{width:11px;height:11px;border-radius:3px;display:inline-block;flex:0 0 11px}
@@ -450,6 +613,14 @@ ${tiles.map(([k, v, s]) => `  <div class="tile"><p class="k">${esc(k)}</p><p cla
 ${figs.join("\n")}
 </section>
 
+${deepswe.length ? `<section>
+  <p class="kicker">DeepSWE</p>
+  <h2>A benchmark this page has no number on</h2>
+  <p class="lead">Everything above is a context measurement: what goes in the window, and whether the right files are in it. It is deliberately <b>not</b> a resolve rate. <a href="${esc(BOARD.source)}">DeepSWE</a> is a resolve rate, on ${BOARD.tasks} long-horizon tasks with program-based verifiers — the measurement this repository keeps saying it does not make.</p>
+  <p class="lead">So the board is here as published, the column bundlebox would act on is marked, and the size of run it would take to say anything is worked out. <b>No bundlebox row is drawn</b>, because none has been measured. The arm is written and the harness is validated; what is missing is the trials.</p>
+${deepswe.join("\n")}
+</section>` : ""}
+
 <section class="method">
   <p class="kicker">Method</p>
   <h2>How the two arms are run</h2>
@@ -484,11 +655,11 @@ node scripts/benchmark-page.mjs  <span style="color:var(--faint)"># rebuild this
 <script>
 (function(){
   var root=document.documentElement,tg=document.getElementById("tgl");
-  try{var sv=localStorage.getItem("bb-theme");if(sv)root.setAttribute("data-theme",sv);}catch(e){}
+  try{var sv=localStorage.getItem("bb-theme");if(sv)root.setAttribute("data-theme",sv);}catch(e){/* storage blocked: the OS theme applies */}
   tg.addEventListener("click",function(){
     var dark=root.getAttribute("data-theme")==="dark"||(!root.getAttribute("data-theme")&&matchMedia("(prefers-color-scheme:dark)").matches);
     var next=dark?"light":"dark";root.setAttribute("data-theme",next);
-    try{localStorage.setItem("bb-theme",next);}catch(e){}
+    try{localStorage.setItem("bb-theme",next);}catch(e){/* storage blocked: the choice lasts this view only */}
   });
 
   var tip=document.getElementById("tip");

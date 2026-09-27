@@ -178,7 +178,7 @@ export function prune(objects, { apply = false } = {}) {
   for (const [source, objs] of want) {
     // os.homedir(), not process.env.HOME: the latter is unset on Windows.
     const file = source.startsWith("~") ? path.join(os.homedir(), source.slice(1)) : abs(source);
-    let text; try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
+    let text; try { text = fs.readFileSync(file, "utf8"); } catch { continue; }  // source file gone since parse: nothing to rewrite
     const lines = text.split(/\r?\n/);
     const targets = new Map(objs.map((o) => [normalize(o.text), o]));
     const cut = [];

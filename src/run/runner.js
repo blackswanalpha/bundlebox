@@ -218,7 +218,7 @@ function setLane(laneId, runId, patch) {
 function pushAndPr(lane, cfg) {
   if (!cfg.git?.allow_push) return { ok: false, why: "git.allow_push = false" };
   const cwd = lane.worktree || lane.cwd || ROOT;
-  const p = git(["push", "-u", "origin", lane.branch || "HEAD"], cwd);
+  const p = git(["push", "-u", "origin", lane.branch || "HEAD"], cwd);  // no branch recorded: push the checkout
   if (p.rc !== 0) return { ok: false, why: (p.err || p.out).trim().slice(0, 300) };
   const args = ["pr", "create", "--fill", ...(cfg.git?.draft_pr ? ["--draft"] : [])];
   const r = run(["gh", ...args], { cwd, timeout: 120000 });

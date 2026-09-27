@@ -107,7 +107,7 @@ export function extractText(response) {
       else if (v && typeof v === "object") { const t = extractText(v); if (t) parts.push(t); }
     }
     if (parts.length) return parts.join("\n");
-    try { return JSON.stringify(response); } catch { return null; }
+    try { return JSON.stringify(response); } catch { return null; }  // circular or BigInt: nothing to measure
   }
   return String(response);
 }

@@ -75,7 +75,7 @@ def limits(cfg: dict | None = None) -> dict:
         if k in user:
             try:
                 out[k] = max(0, int(user[k]))
-            except (TypeError, ValueError):
+            except (TypeError, ValueError):  # a non-integer override keeps the default
                 pass
     return out
 

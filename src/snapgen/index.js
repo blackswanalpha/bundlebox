@@ -32,7 +32,7 @@ export async function build({ only = null, force = false, index = true } = {}) {
 }
 export async function stale({ only = null } = {}) { return runner.stale(registry(), { only }); }
 
-const onDisk = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+const onDisk = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };  // absence is the answer
 
 /** [{file, symbol, line, term}] from the built symbols tables. Terms under four
  *  characters are ignored: `get` matches half of any tree. */

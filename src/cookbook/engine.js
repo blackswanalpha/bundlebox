@@ -35,7 +35,7 @@ function bodyJson(raw) {
   const t = String(raw || "").trim();
   if (!t) return {};
   try { const v = JSON.parse(t); return Array.isArray(v) ? { _list: v } : (v && typeof v === "object" ? v : { _value: v }); }
-  catch { return { _text: t }; }
+  catch { return { _text: t }; } // not JSON: the body is kept as text
 }
 
 class Pacer {

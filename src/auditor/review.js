@@ -56,7 +56,7 @@ export const KIND_DOMAINS = {
 export function reviewsFor(area) {
   const dir = path.join(DIR(), slug(area));
   let names = [];
-  try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "charter.md").sort(); } catch { return []; }
+  try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "charter.md").sort(); } catch { return []; } // no reviews for this area yet
   return names.map((f) => {
     const m = /^([a-z]+)-(\d{8}T\d{6}Z)\.md$/.exec(f);
     const meta = readJson(path.join(dir, f.replace(/\.md$/, ".json")), {}) || {};

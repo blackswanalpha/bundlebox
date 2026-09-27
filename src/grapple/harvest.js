@@ -179,7 +179,7 @@ export function scanAt(rev, { log = () => {} } = {}) {
 
 const revDate = (rev) => {
   try { return execFileSync("git", ["log", "-1", "--format=%cI", rev], { cwd: ROOT, encoding: "utf8", timeout: 15000, stdio: ["ignore", "pipe", "ignore"] }).trim(); }
-  catch { return ""; }
+  catch { return ""; }  // unknown rev or no git: undated
 };
 
 /** Label each historical contested row by what git did to it since.

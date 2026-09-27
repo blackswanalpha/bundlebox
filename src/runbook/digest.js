@@ -213,7 +213,7 @@ export function buckets() {
 export function logFiles(dir, id = "") {
   if (id) { const p = path.join(dir, `${id}.log`); return fs.existsSync(p) ? [p] : []; }
   try { return fs.readdirSync(dir).filter((f) => /\.(log|logcat)$/.test(f)).sort().map((f) => path.join(dir, f)); }
-  catch { return []; }
+  catch { return []; }  // no log dir yet
 }
 
 /** The JS half: same offsets, same scanner, same buckets. */

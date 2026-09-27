@@ -42,12 +42,12 @@ function janitorArtefact(name, maxAgeHours) {
     const st = fs.statSync(f);
     if ((Date.now() - st.mtimeMs) / 3600000 > maxAgeHours) return null;
     return fs.readFileSync(f, "utf8");
-  } catch { return null; }
+  } catch { return null; }  // hook: missing or unreadable artefact is no notice
 }
 const COMPACTED = () => path.join(VAR, "janitor-compacted.json");
 
 function readStdin() {
-  try { const s = fs.readFileSync(0, "utf8"); return s.trim() ? JSON.parse(s) : {}; } catch { return {}; }
+  try { const s = fs.readFileSync(0, "utf8"); return s.trim() ? JSON.parse(s) : {}; } catch { return {}; }  // hook: bad stdin must not crash the session
 }
 function log(event, msg) {
   try { ensureDirs(); fs.appendFileSync(path.join(VAR, "hooks.log"), `${now()} ${event} ${msg}\n`); } catch { /* the log is a courtesy */ }
@@ -85,7 +85,7 @@ function looksLikeProject(root) {
   for (const m of MANIFESTS) if (fs.existsSync(path.join(resolved, m))) return m;
   let kids = [];
   try { kids = fs.readdirSync(resolved, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).slice(0, 40); }
-  catch { return ""; }
+  catch { return ""; }  // hook: unreadable root, no manifest hint
   for (const k of kids) for (const m of MANIFESTS) if (fs.existsSync(path.join(resolved, k.name, m))) return `${k.name}/${m}`;
   return "";
 }
@@ -206,7 +206,7 @@ function memoryRotNotice(cfg) {
   if (!cfg.janitor?.notify) return "";
   const raw = janitorArtefact("diagnostics.json", Number(cfg.janitor.max_age_hours) || 168);
   if (!raw) return "";
-  let d; try { d = JSON.parse(raw); } catch { return ""; }
+  let d; try { d = JSON.parse(raw); } catch { return ""; }  // hook: a torn artefact is no notice
   return rotNotice(d.diagnostics || []);
 }
 
@@ -256,7 +256,7 @@ export function compactionBands(cfg, { sessionId = "" } = {}) {
  *  to do, and a harness with no SessionStart(compact) gets it at the prompt. */
 function restateAfterCompaction(payload, cfg, hookEventName) {
   if (!cfg.janitor?.restate_rules && cfg.janitor?.narrative === false) return false;
-  let mark; try { mark = JSON.parse(fs.readFileSync(COMPACTED(), "utf8")); } catch { return false; }
+  let mark; try { mark = JSON.parse(fs.readFileSync(COMPACTED(), "utf8")); } catch { return false; }  // hook: no compaction mark
   if (!mark || !mark.at) return false;
   const session = String(payload.session_id || "");
   if (session && mark.session_id && mark.session_id !== session) return false;
@@ -380,7 +380,7 @@ export async function buildSpace({ force = false } = {}) {
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)); } catch { return { built: false, why: "no symbol tables" }; }
   if (!names.length) return { built: false, why: "no symbol tables" };
-  const newest = Math.max(...names.map((n) => { try { return fs.statSync(path.join(dir, n)).mtimeMs; } catch { return 0; } }));
+  const newest = Math.max(...names.map((n) => { try { return fs.statSync(path.join(dir, n)).mtimeMs; } catch { return 0; } }));  // hook: removed since readdir
   let have = 0; try { have = fs.statSync(rank.SPACE()).mtimeMs; } catch { /* none yet */ }
   if (!force && have >= newest) return { built: false, why: "current", tables: names.length };
   const tables = {}; for (const n of names) { try { tables[n] = fs.readFileSync(path.join(dir, n), "utf8"); } catch { /* one table */ } }

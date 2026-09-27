@@ -95,7 +95,7 @@ export function registry(dir) {
 
   reg.add({
     name: "corpus", group: "design", description: "what the reference corpus holds, per source, and which entries are bookmarks rather than research",
-    inputs: () => { try { return fs.readdirSync(path.join(dir, "corpus")).map((n) => path.join(dir, "corpus", n)); } catch { return []; } },
+    inputs: () => { try { return fs.readdirSync(path.join(dir, "corpus")).map((n) => path.join(dir, "corpus", n)); } catch { return []; } }, // no corpus captured yet
     build: () => {
       const rows = intake(dir);
       if (!rows.length) return "The corpus is empty. `bb designlabs plan <question>` writes the brief that fills it.\n";

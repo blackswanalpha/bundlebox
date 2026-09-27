@@ -104,7 +104,7 @@ function declaredDeps() {
     const blk = /dependencies\s*=\s*\[([\s\S]*?)\]/.exec(toml);
     for (const m of (blk ? blk[1] : "").matchAll(/["']([A-Za-z0-9_.-]+)\s*([^"']*)["']/g)) out.push({ name: m[1], version: m[2].trim() || "*", manifest: "pyproject.toml" });
   }
-  if (has("requirements.txt")) for (const line of readText(path.join(ROOT, "requirements.txt")).split("\n")) { const m = /^\s*([A-Za-z0-9_.-]+)\s*([=<>!~]=?[^#\s]*)?/.exec(line); if (m && !line.trim().startsWith("#") && !line.trim().startsWith("-")) out.push({ name: m[1], version: m[2] || "*", manifest: "requirements.txt" }); }
+  if (has("requirements.txt")) for (const line of readText(path.join(ROOT, "requirements.txt")).split("\n")) { const m = /^\s*([A-Za-z0-9_.-]+)\s*([=<>!~]=?[^#\s]*)?/.exec(line); if (m && !line.trim().startsWith("#") && !line.trim().startsWith("-")) out.push({ name: m[1], version: m[2] || "*", manifest: "requirements.txt" }); }  // has() checked the file exists
   if (has("Cargo.toml")) {
     const blk = /\[dependencies\]([\s\S]*?)(?=\n\[|$)/.exec(readText(path.join(ROOT, "Cargo.toml")));
     for (const m of (blk ? blk[1] : "").matchAll(/^\s*([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]+)"|\{[^}]*version\s*=\s*"([^"]+)")/gm)) out.push({ name: m[1], version: m[2] || m[3] || "*", manifest: "Cargo.toml" });

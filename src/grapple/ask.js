@@ -47,7 +47,7 @@ export function unsettled(rec) {
   if (!rec) return [];
   if (rec.ambiguity && Array.isArray(rec.ambiguity.reasons)) return rec.ambiguity.reasons.map((r) => ({ id: String(r.id), weight: Number(r.weight) || 1, why: String(r.why || "") }));
   let md = "";
-  try { md = fs.readFileSync(String(rec.path || ""), "utf8"); } catch { return []; }
+  try { md = fs.readFileSync(String(rec.path || ""), "utf8"); } catch { return []; }  // brief gone: no open questions to ask
   const i = md.indexOf("## What this brief does not settle");
   if (i < 0) return [];
   const body = md.slice(i).split("\n## ")[0];

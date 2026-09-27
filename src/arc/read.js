@@ -33,10 +33,10 @@ let cache = null;
  *  answers many. */
 export function open(file = FILE()) {
   let st;
-  try { st = fs.statSync(file); } catch { return null; }
+  try { st = fs.statSync(file); } catch { return null; } // no index yet: the guards scan the tables
   if (cache && cache.file === file && cache.mtime === st.mtimeMs && cache.size === st.size) return cache;
   let buf;
-  try { buf = fs.readFileSync(file); } catch { return null; }
+  try { buf = fs.readFileSync(file); } catch { return null; } // removed between the stat and the read
   if (buf.length < HEADER || buf.toString("latin1", 0, 4) !== MAGIC) return null;
   const count = buf.readUInt32LE(4);
   const poolLen = buf.readUInt32LE(8);

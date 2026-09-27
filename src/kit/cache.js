@@ -31,7 +31,7 @@ export function fingerprintJs(inputs) {
     const r = rel(p);
     if (rows.has(r)) continue;
     let st;
-    try { st = fs.statSync(p, { bigint: true }); } catch { continue; }
+    try { st = fs.statSync(p, { bigint: true }); } catch { continue; }  // removed since listing
     if (!st.isFile()) continue;
     rows.set(r, `${r}:${st.mtimeNs}:${st.size}`);
   }
@@ -43,11 +43,11 @@ export function inputsOf(fp) {
   return Number.isFinite(n) ? n : 0;
 }
 
-export const metaPath = (name) => path.join(VAR, "kit", `${name}.json`);
+const metaPath = (name) => path.join(VAR, "kit", `${name}.json`);
 export const readMeta = (name) => readJson(metaPath(name), null) || {};
 export function writeMeta(name, meta) { writeJson(metaPath(name), meta); return metaPath(name); }
 
-const onDisk = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+const onDisk = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };  // absence is the answer
 
 /** Fresh means the recorded fingerprint equals the current one AND the artefact
  *  it describes is on disk. Metadata without its artefact is a deleted table. */
