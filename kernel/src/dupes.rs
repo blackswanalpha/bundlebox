@@ -43,6 +43,17 @@ fn covered(starts: &mut Vec<usize>, win: usize) -> usize {
     starts.windows(2).map(|p| (p[1] - p[0]).min(win)).sum::<usize>() + if starts.is_empty() { 0 } else { win }
 }
 
+/// The JS `literalWindow()`: a row is a string literal, optionally keyed
+/// (`help:"",`), with only `,;+)]` after it. A window where half or more rows
+/// are literals is a help or data table once string contents are blanked.
+fn literal_row(t: &str) -> bool {
+    let key = t.find(':').filter(|&i| i > 0 && t[..i].chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$'));
+    let rest = match key { Some(i) => &t[i + 1..], None => t };
+    let rest = ["\"\"", "''", "``"].iter().find_map(|q| rest.strip_prefix(q));
+    matches!(rest, Some(r) if r.chars().all(|c| ",;+)]".contains(c)))
+}
+pub fn literal_window(rows: &[&str]) -> bool { rows.iter().filter(|t| literal_row(t)).count() * 2 >= rows.len() }
+
 pub fn op_dupes(input: &Json) -> Json {
     let win = input.num("window", 8.0) as usize;
     let min_shared = input.num("min_shared_lines", 24.0) as usize;
@@ -73,7 +84,11 @@ pub fn op_dupes(input: &Json) -> Json {
     let mut index: HashMap<&[u32], Vec<(usize, usize)>> = HashMap::new(); // window -> (file idx, line)
     for (k, &fi) in kept.iter().enumerate() {
         let w = &ids[k];
-        for i in 0..=w.len() - win { index.entry(&w[i..i + win]).or_default().push((fi, i)); }
+        let lines: Vec<&str> = norm[fi].iter().map(|(_, l)| l.as_str()).collect();
+        for i in 0..=w.len() - win {
+            if literal_window(&lines[i..i + win]) { continue; }
+            index.entry(&w[i..i + win]).or_default().push((fi, i));
+        }
     }
     // pair -> the start of every shared window on each side, plus the first
     // shared window. The covered-line count is the union of [start, start+win)

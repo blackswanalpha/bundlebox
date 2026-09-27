@@ -134,7 +134,8 @@ test("scan --write merges into the store with the oversight detectors", async ()
   const doc = ov.scan({ trees: ["."], write: true });
   const store = await import("../src/core/store.js");
   const open = store.openFindings().filter((f) => f.detector.startsWith("oversight:"));
-  assert.equal(open.length, doc.findings.length);
+  assert.equal(open.length, doc.findings.filter((f) => !ov.BOARD_OWNED.has(f.detector)).length);
+  assert.ok(!open.some((f) => f.detector === "oversight:duplication"), "duplicate-blocks owns the board row");
   assert.ok(open.every((f) => f.seen_count >= 1 && f.id));
 });
 
