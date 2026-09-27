@@ -193,12 +193,12 @@ test("built-in gears load, user gears.json replaces by name, skip_if_fresh stage
   // whenever somebody last ran `bb console build` by hand.
   assert.deepEqual(gears.factory.chain.map((c) => c.gear), ["intake", "orient", "measure", "buckmaster", "watch"]);
   for (const g of Object.values(gears)) for (const s of g.stages) if (s.skip_if_fresh) assert.equal(typeof s.inputs, "function", `${g.name}/${s.name}`);
-  // `practice` is the one built-in that can cost money, and it is the one that
-  // declares it. Every other gear is free, which is what lets a cron line run
-  // them unattended.
+  // `practice` and `sentinel` are the built-ins that can cost money, and they
+  // are the ones that declare it. Every other gear is free, which is what lets
+  // a cron line run them unattended.
   assert.equal(gears.practice.spends, true);
-  assert.deepEqual(Object.values(gears).filter((g) => g.spends).map((g) => g.name), ["practice"]);
-  assert.deepEqual(gears.practice.on, ["hand"], "nothing bb ships installs a line that spends");
+  assert.deepEqual(Object.values(gears).filter((g) => g.spends).map((g) => g.name).sort(), ["practice", "sentinel"]);
+  for (const g of ["practice", "sentinel"]) assert.deepEqual(gears[g].on, ["hand"], "nothing bb ships installs a line that spends");
   fs.unlinkSync(path.join(root, ".bundlebox", "gears.json"));
   assert.ok(SKIP_BELOW < 0.5);
 });

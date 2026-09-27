@@ -273,6 +273,21 @@ export const DEFAULTS = {
     hook_every: 10,           // tool calls between assessments, per session
     hook_jev: false,          // a Jev call here is paid inside the session
   },
+  sentinel: {
+    // The overseer (`bb sentinel`): the free path first, agents for the rest.
+    gate: "npm run lint && npm test",  // what an auto-fix branch must pass before a PR
+    base: "",                 // the branch fixes start from and PRs target; empty = origin's HEAD
+    top: 5,                   // findings handed to lanes per run (A6)
+    max_rounds: 3,            // review-feedback lanes per PR before it waits for a person (A3)
+    autonomy_after: 5,        // clean merges in a row before a fix type may auto-merge (A5)
+  },
+  ironguard: {
+    // The security gate every Sentinel branch passes before a push. Paths are
+    // prefixes or globs over the diff; a hit in `protected` blocks, always.
+    protected: [".github/workflows/", ".bundlebox/config.json", ".env", "*.pem", "*.key", "id_rsa", ".npmrc"],
+    max_files: 40,            // a diff wider than this is not an unattended change
+    max_lines: 800,
+  },
   lathe: {
     // The automation engine's input. The PostToolUse hook appends the SHAPE of
     // each shell command — `git commit`, never the message — because mining the
@@ -302,6 +317,7 @@ export const DEFAULTS = {
     reach_days: 21,
     reach_min: 1,             // occurrences since it was applied, below which it is tombstoned
     apply_on_end: false,      // SessionEnd may propose; writing into scripts/ stays a decision
+    script_lang: "py",        // applied scripts: py (python3 runs each step under bash -o pipefail) or sh
   },
   bench: {
     // `bb bench run` prints the tasks where packed costs MORE than bare. This

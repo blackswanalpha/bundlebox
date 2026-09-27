@@ -40,6 +40,10 @@ const MARK = "# bundlebox";
  *  adding `run` to `factory` must not turn a cron line into a spending loop. */
 export const CRON_GEAR = "factory";
 export const SPENDING_VERBS = new Set(["run", "bridge"]);
+/** Verbs that spend only under one flag: `sentinel run` is free until `--spend`,
+ *  `sprint` until `--apply`. A stage carrying that flag is a spending stage. */
+export const SPENDING_FLAGS = { sentinel: "spend", sprint: "apply" };
+export const spendsBy = (st) => SPENDING_VERBS.has(st.verb) || Boolean(SPENDING_FLAGS[st.verb] && st.flags?.[SPENDING_FLAGS[st.verb]]);
 
 /** The lines `install` writes, one per gear. Two, because a gear declaring
  *  `on: cron` was an eligibility and not a schedule: `factory` was the only
@@ -52,6 +56,9 @@ export const SPENDING_VERBS = new Set(["run", "bridge"]);
 export const CRON_ENTRIES = [
   { gear: "factory", every: 30, gate: true, log: "factory.log" },
   { gear: "full", every: 360, gate: false, log: "full.log" },
+  // A1. Daily, off the hour so the shared flock is not already held by the
+  // lines that fire on it; it pushes a branch and opens a draft PR, never main.
+  { gear: "autofix", every: 1440, at: 75, gate: false, log: "autofix.log" },
 ];
 
 /** The lines `--spend` adds on top, and the only lines that can cost anything.
@@ -65,6 +72,8 @@ export const CRON_ENTRIES = [
  *  number, not a measured one, and it is the slowest cadence here on purpose. */
 export const SPEND_ENTRIES = [
   { gear: "practice", every: 1440, gate: false, log: "practice.log", spends: true },
+  // A2: Sentinel whole, the lanes included. After `autofix` has had its hour.
+  { gear: "sentinel", every: 1440, at: 135, gate: false, log: "sentinel.log", spends: true },
 ];
 
 export const entriesFor = ({ spend = false } = {}) => (spend ? [...CRON_ENTRIES, ...SPEND_ENTRIES] : CRON_ENTRIES);
@@ -89,7 +98,7 @@ export async function unsafeVerbs(gearName = CRON_GEAR, { spend = false } = {}) 
       if (!g || seen.has(g.name)) continue;
       seen.add(g.name);
       for (const st of g.stages) {
-        if (SPENDING_VERBS.has(st.verb) && !st.spends) bad.push(`${g.name}/${st.verb}`);
+        if (spendsBy(st) && !st.spends) bad.push(`${g.name}/${st.verb}`);
         else if (st.spends && !spend) bad.push(`${g.name}/${st.verb} declares \`spends\`; --spend installs it`);
       }
       for (const c of g.chain) stack.push(c.gear);
@@ -117,24 +126,29 @@ export const GATE_ID = "cron/factory";
 // A cron schedule for a cadence in minutes: every N minutes under an hour,
 // on the hour every H hours past it. Anything else rounds to the nearest.
 
-export function schedule(every) {
+export function schedule(every, at = 0) {
   const m = Math.max(1, Math.round(Number(every) || 30));
   if (m < 60) return `*/${Math.min(59, m)} * * * *`;
+  // `at` is minutes past midnight (or past the hour, for an hourly cadence):
+  // lines that would all fire at 00:00 contend for one flock and all but one skip.
+  const off = Math.max(0, Math.round(Number(at) || 0));
   // A day or more is midnight. `*/24` is not a thing cron does with it: the
   // hour field caps at 23, so it would fire at 00:00 AND 23:00 — twice, on the
   // one cadence where somebody asked for once.
-  if (m >= 1440) return "0 0 * * *";
+  if (m >= 1440) return `${off % 60} ${Math.floor(off / 60) % 24} * * *`;
   const h = Math.max(1, Math.min(23, Math.round(m / 60)));
-  return `0 */${h} * * *`;
+  return `${off % 60} */${h} * * *`;
 }
 
-export function line({ every = 30, root = ROOT, gate = true, gear = CRON_GEAR, log: logName = "" } = {}) {
+export function line({ every = 30, at = 0, root = ROOT, gate = true, gear = CRON_GEAR, log: logName = "" } = {}) {
   const bb = which("bb") || path.join(PKG_ROOT, "bin", "bb");
   const lock = path.join(HOME, "cron.lock"), log = path.join(HOME, "logs", logName || `${gear}.log`);
   const flock = which("flock") ? `flock -n ${lock} ` : "";
   const work = `${JSON.stringify(bb)} pipeline run ${gear} --apply --quiet`;
-  const cmd = gate ? `${JSON.stringify(bb)} recom gate ${GATE_ID} -- ${work}` : work;
-  return `${schedule(every)} cd ${JSON.stringify(root)} && ${flock}${cmd} >> ${JSON.stringify(log)} 2>&1  ${MARK} ${root}`;
+  // `--record`: a run that succeeds writes its own record (A4), so the next
+  // tick can answer from it instead of printing how to write one.
+  const cmd = gate ? `${JSON.stringify(bb)} recom gate ${GATE_ID} --record -- ${work}` : work;
+  return `${schedule(every, at)} cd ${JSON.stringify(root)} && ${flock}${cmd} >> ${JSON.stringify(log)} 2>&1  ${MARK} ${root}`;
 }
 
 /** Every line `install` writes. `--every` moves the factory line only; the

@@ -20,11 +20,32 @@
 // believe the record.
 import { spawnSync } from "node:child_process";
 import { out, warn, emit } from "../core/log.js";
-import { check, get } from "./index.js";
+import { check, get, record } from "./index.js";
 
 /** Decide, then act. Returns what happened, so `--json` and the table share one
  *  code path and cannot disagree. */
-export function gate(id, argv, { force = false, apply = true, before = null } = {}) {
+/** What a record made by the worker itself depends on when there is no earlier
+ *  record to take them from: the head commit, the tree, the config. The three
+ *  facts `bb cron` already says the gate re-probes. */
+export const DEFAULT_DEPENDS = ["git_head:.", "git_paths:.:.", "file_sha:.bundlebox/config.json"];
+
+/** A4: the run's own record, written from what it printed rather than from a
+ *  person filling in a template. Only a success is recorded: a record of a
+ *  failure would come back `fresh` and stop the next tick from retrying. */
+export function autoRecord(id, argv, r, output = "") {
+  if (r.rc !== 0 || !r.ran) return { rc: 0, state: "not recorded", why: r.ran ? `exited ${r.rc}` : "did not run" };
+  const prev = get(id);
+  const lines = String(output).split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+  const summary = lines.slice(-1)[0]?.trim() || `\`${argv.join(" ")}\` exited 0`;
+  return record({
+    id, title: prev?.title || argv.join(" ").slice(0, 120), outcome: "works",
+    summary: summary.slice(0, 300), steps: [argv.join(" ")], evidence: lines.slice(-8).map((l) => l.slice(0, 200)),
+    depends: prev?.depends?.length ? prev.depends : DEFAULT_DEPENDS,
+    saved_wall_s: Math.round(r.seconds || 0), saved_tokens: prev?.saved_tokens || 0,
+  }, { apply: true });
+}
+
+export function gate(id, argv, { force = false, apply = true, before = null, capture = false } = {}) {
   const rec = get(id);
   const verdict = rec ? check(id) : { id, verdict: "missing", moved: [], unreadable: [] };
   const wouldRun = force || verdict.verdict !== "fresh";
@@ -52,8 +73,13 @@ export function gate(id, argv, { force = false, apply = true, before = null } = 
 
   // stdio inherited: the command being gated is the interesting output, and
   // capturing it would make this verb a second, worse terminal.
-  const r = spawnSync(argv[0], argv.slice(1), { stdio: "inherit", shell: false });
-  return { ...decision, ran: true, rc: r.status ?? (r.error ? 127 : 1), error: r.error ? String(r.error.message) : "" };
+  // `capture` is for `--record`: the output is the evidence the record is made
+  // from, so it is read here and then written through unchanged.
+  const t0 = Date.now();
+  const r = spawnSync(argv[0], argv.slice(1), capture ? { encoding: "utf8", shell: false, maxBuffer: 64 * 1024 * 1024 } : { stdio: "inherit", shell: false });
+  if (capture) { if (r.stdout) process.stdout.write(r.stdout); if (r.stderr) process.stderr.write(r.stderr); }
+  return { ...decision, ran: true, rc: r.status ?? (r.error ? 127 : 1), error: r.error ? String(r.error.message) : "",
+    seconds: (Date.now() - t0) / 1000, output: capture ? String(r.stdout || "") : "" };
 }
 
 export async function cmd({ _, flags, rest }) {
@@ -68,9 +94,10 @@ export async function cmd({ _, flags, rest }) {
     for (const u of d.unreadable) out(`    ${u.probe}: ${u.why}`);
     out(`  running: ${d.command}\n`);
   };
-  const r = gate(id, argv, { force: !!flags.force, apply: flags.dryRun !== true, before: say });
+  const r = gate(id, argv, { force: !!flags.force, apply: flags.dryRun !== true, before: say, capture: !!flags.record });
+  const rec = flags.record && r.ran ? autoRecord(id, argv, r, r.output) : null;
 
-  if (flags.json) { emit(r); return r.ran ? r.rc : 0; }
+  if (flags.json) { emit({ ...r, output: undefined, record: rec }); return r.ran ? r.rc : 0; }
 
   if (!r.ran && r.verdict === "fresh" && !r.forced) {
     out(`  fresh  ${id} — every declared fact reads as it did, so nothing ran.`);
@@ -91,7 +118,10 @@ export async function cmd({ _, flags, rest }) {
     return 0;
   }
   if (r.error) { warn(r.error); return r.rc; }
-  if (r.rc === 0) {
+  if (rec) {
+    out(rec.state === "recorded" ? `\n  recorded ${id} from this run (${rec.facts} facts): the next gate answers from it.`
+      : rec.state === "not recorded" ? `\n  not recorded: ${rec.why}` : `\n  could not record ${id}: ${rec.why}`);
+  } else if (r.rc === 0) {
     out(`\n  it worked. Record it so the next session does not pay for it again:`);
     out(`    bb recom template ${id} > run.json   # then fill in depends, summary, saved_*`);
     out(`    bb recom record --from run.json --apply`);

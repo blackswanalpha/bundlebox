@@ -424,3 +424,12 @@ test("sweep clears expired session records and leaves the log alone", () => {
   brief.sweep({ maxAgeMin: -1 });
   assert.equal(brief.logged({}).length, before);
 });
+
+test("taskArg: the suggested re-pinpoint command is one clean shell argument", () => {
+  const raw = 'ensure to also include \n\n<pasted_content id="8842">\n A1. Let "cron" close $fixes the `gap`\n<\\pasted_content id="8842">';
+  const a = brief.taskArg(raw);
+  assert.equal(a, "ensure to also include A1. Let cron close fixes the gap");
+  assert.doesNotMatch(a, /[\n"$`\\<>]/);
+  const long = brief.taskArg("word ".repeat(40));
+  assert.ok(long.length <= 80 && long.endsWith("word"));
+});

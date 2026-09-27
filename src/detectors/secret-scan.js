@@ -30,7 +30,7 @@ const TEMPLATE_PATH = /\.(example|template|sample|dist)$|(^|\/)\.env\.example$/i
 const BINARY = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|tgz|jar|apk|ttf|otf|woff2?|lottie|mp[34]|wasm|so|dylib|exe|bin)$/i;
 const B64_RUN = /[A-Za-z0-9+/]{40,}/;
 
-function placeholder(label, klass, src, m, r) {
+export function placeholder(label, klass, src, m, r) {
   const value = m[1] || m[0];
   if (label === "private key") {
     // A header counts only when key material follows it. `stub` is four chars.

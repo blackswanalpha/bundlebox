@@ -41,13 +41,22 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
  *    @needs is the binaries the commands name.
  *    @tag is `lathe`, so `bb scripts` can list what was proposed rather than
  *    written by a person. */
-export function scriptFor(pattern, { kind = "shell" } = {}) {
+/** The first line of a Python script's body. `lathe apply` puts its note
+ *  above this line, as it does above `set -euo pipefail` in a shell one. */
+export const PY_BODY = "import subprocess, sys";
+
+/** `lang` is `sh` or `py`. A Python script runs the same steps in order, each
+ *  under `bash -o pipefail -c` so a pipe cannot hide a failure, and stops at the
+ *  first step that fails with that step's exit code: `set -euo pipefail`, kept. */
+export function scriptFor(pattern, { kind = "shell", lang = "sh" } = {}) {
   const items = pattern.items || [];
   const name = slug(items.join("-")) || "habit";
   const body = kind === "verb" ? items.map((v) => `bb ${v} --apply`) : items;
   const needs = [...new Set(body.map((c) => String(c).trim().split(/\s+/)[0]).filter(Boolean))];
+  const py = lang === "py";
+  if (py && !needs.includes("bash")) needs.push("bash");
   const header = [
-    "#!/usr/bin/env bash",
+    py ? "#!/usr/bin/env python3" : "#!/usr/bin/env bash",
     "# @tag lathe",
     `# @title ${items.join(" → ")}`,
     `# @needs ${needs.join(",")}`,
@@ -61,9 +70,16 @@ export function scriptFor(pattern, { kind = "shell" } = {}) {
     "# Not run by anything until a person moves it into scripts/ and sets @safe.",
     "# The model knows what ran and in what order. Whether running it unattended",
     "# is safe is not in the data.",
-    "set -euo pipefail",
-    "",
   ];
+  if (py) {
+    const steps = [PY_BODY, "", "STEPS = ["];
+    for (const c of body) steps.push(`    ${JSON.stringify(String(c))},`);
+    steps.push("]", "", "for step in STEPS:", "    print(f\"$ {step}\", flush=True)",
+      "    rc = subprocess.run([\"bash\", \"-o\", \"pipefail\", \"-c\", step]).returncode",
+      "    if rc:", "        sys.exit(rc)");
+    return { name: `${name}.py`, text: header.concat(steps).join("\n") + "\n", needs, turns: items.length };
+  }
+  header.push("set -euo pipefail", "");
   return { name: `${name}.sh`, text: header.concat(body).join("\n") + "\n", needs, turns: items.length };
 }
 

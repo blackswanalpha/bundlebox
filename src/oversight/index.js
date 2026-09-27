@@ -10,7 +10,7 @@ import * as rules from "./rules.js";
 import * as guidelines from "./guidelines.js";
 
 export { metrics, rules, guidelines };
-export const { scan, latest, decide, thresholds, DEFAULT_THRESHOLDS, RULES, DETECTORS } = rules;
+export const { scan, latest, decide, thresholds, DEFAULT_THRESHOLDS, RULES, DETECTORS, BOARD_OWNED } = rules;
 export const { brief, agentLines } = guidelines;
 export const buildGuidelines = guidelines.build;
 

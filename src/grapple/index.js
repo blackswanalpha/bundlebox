@@ -36,7 +36,7 @@ export const settings = (cfg = load()) => gs.settings(cfg);
  *  window and would count every repeat across the workspace as one loop. */
 export function drift({ session = "", rec = null, events = gs.events(), cfg = load() } = {}) {
   const sid = session || [...events].reverse().find((e) => e.kind === "tool" && e.session_id)?.session_id || "";
-  const w = detect.windowOf(events, { scope: rec?.scope || [], session: sid });
+  const w = detect.windowOf(events, { scope: rec?.scope || [], session: sid, since: rec?.at || "" });
   const c = detect.counters(w.turns, w.scope);
   const r = expert.call("grapple", { op: "drift", window: w });
   const d = r && typeof r.score === "number" ? { score: r.score, signature: String(r.signature || "none"), counters: c, via: "expert" } : detect.fallbackDrift(c);

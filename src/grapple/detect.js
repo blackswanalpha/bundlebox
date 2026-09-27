@@ -132,10 +132,25 @@ export function fallbackDrift(c) {
 
 export const noProgress = (d, at = 0.67) => Boolean(d && d.score >= at);
 
-/** The window `drift()` scores: the session's turns since the brief. */
-export function windowOf(events, { scope = [], session = "" } = {}) {
-  const turns = events.filter((e) => e.kind === "tool" && (!session || String(e.session_id || "") === session))
-    .map((e) => ({ tool: e.tool, file: e.file || "", edit: !!e.edit, read: !!e.read, hash: e.hash }));
-  return { turns, scope: (scope || []).map((s) => rel(String(s))) };
+/** How many of the most recent turns drift is scored over. The bars are
+ *  counts (4 turns out of scope, 3 repeats), so a window that grows for the
+ *  whole session crosses them on the first prompt and never comes back. */
+export const WINDOW_TURNS = 40;
+
+/** The window `drift()` scores: the session's turns since the brief.
+ *
+ *  `since` is the brief's timestamp, which is the prompt it was written for:
+ *  turns from an earlier prompt were judged against that prompt's scope and
+ *  are not evidence about this one. Files are compared relative, as the scope
+ *  is — the events carry absolute paths, and comparing the two shapes put every
+ *  file turn out of scope. A file this window edited is in scope: the brief
+ *  locates where the task starts, not every file the work is allowed to touch. */
+export function windowOf(events, { scope = [], session = "", since = "", max = WINDOW_TURNS } = {}) {
+  const turns = events.filter((e) => e.kind === "tool" && (!session || String(e.session_id || "") === session)
+      && (!since || String(e.at || "") >= since))
+    .slice(-Math.max(1, max))
+    .map((e) => ({ tool: e.tool, file: e.file ? rel(String(e.file)) : "", edit: !!e.edit, read: !!e.read, hash: e.hash }));
+  const own = turns.filter((t) => t.edit && t.file).map((t) => t.file);
+  return { turns, scope: [...new Set([...(scope || []).map((s) => rel(String(s))), ...(scope?.length ? own : [])])] };
 }
 export const workspace = () => ROOT;

@@ -22,8 +22,10 @@ import { now, pad } from "../core/util.js";
 import { fingerprint } from "../kit/cache.js";
 import * as episodes from "../buckmaster/episodes.js";
 
-export const TAGS = new Set(["tag", "title", "needs", "produces", "on", "cost", "turns", "safe", "gear"]);
-const LIST_TAGS = new Set(["needs", "produces", "on"]);
+// `@fixes <detector,...>`: the findings a script closes. Sentinel runs a
+// `@safe true` script with a matching `@fixes` before it pays a lane for one.
+export const TAGS = new Set(["tag", "title", "needs", "produces", "on", "cost", "turns", "safe", "gear", "fixes"]);
+const LIST_TAGS = new Set(["needs", "produces", "on", "fixes"]);
 export const HEADER_LINES = 80;
 const TAG_LINE = /^\s*(?:#|\/\/|--|\*)+\s*@(\w+)\s*:?\s*(.*?)\s*$/;
 const SHEBANG_SUFFIX = [".js", ".mjs", ".cjs", ".py", ".ts", ".rb", ".pl", ".bash", ".zsh", ".fish", ""];
@@ -66,7 +68,7 @@ export function parse(p) {
   if (unknown.length) warnings.push(`unknown tags ignored: ${unknown.join(", ")}`);
   return {
     tag: String(got.tag).trim(), path: rel(p), title: got.title || "", needs: got.needs || [], produces: got.produces || [], on: got.on || [],
-    gear: got.gear || "", cost: got.cost || "", turns, turns_kind: "ESTIMATE",
+    gear: got.gear || "", fixes: got.fixes || [], cost: got.cost || "", turns, turns_kind: "ESTIMATE",
     safe: ["yes", "true", "1"].includes(String(got.safe || "").trim().toLowerCase()),
     fingerprint: fingerprint([p]), warnings,
   };

@@ -133,10 +133,15 @@ export function observe({ session = "", job = "", active = false, since = "", cf
   const events = gs.events();
   const sid = session || [...events].reverse().find((e) => e.kind === "tool" && e.session_id)?.session_id || "";
   const rec = brief.current({ maxAgeMin: Number(cfg.wire?.brief_max_age_min) || 45, sessionId: sid });
-  const w = detect.windowOf(events, { scope: rec?.scope || [], session: sid });
+  // One prompt is one job: the brief was written for the current prompt, so its
+  // timestamp bounds the window, the steer count and the job. Without it a
+  // session's first steer made every later warning a stop, on every prompt.
+  const promptAt = rec?.at || "";
+  const w = detect.windowOf(events, { scope: rec?.scope || [], session: sid, since: promptAt });
   const run = sid || "cli";
-  const rows = timeline({ run });
-  const base = baseOf({ since, rows, session: sid });
+  const all = timeline({ run });
+  const rows = promptAt ? all.filter((r) => String(r.at || "") >= promptAt) : all;
+  const base = baseOf({ since, rows: all, session: sid });
   if (since && !base) return { error: `--since ${since} is not a commit` };
   const t = tree(base);
   const lastJob = [...rows].reverse().find((r) => r.job)?.job || "";
@@ -145,13 +150,14 @@ export function observe({ session = "", job = "", active = false, since = "", cf
     base: t.base,
     fingerprint: t.fingerprint,
     observation: {
-      job: job || lastJob || rec?.problem || "",
+      job: job || rec?.problem || lastJob || "",
       active: Boolean(active),
       turns: w.turns,
       scope: w.scope,
       git: { base: t.base, commits: t.commits, status: t.status, diff: t.diff, files: t.files },
       instructions: instructions(),
-      verification: verification(rows, t.fingerprint),
+      // A pass from an earlier prompt still counts if the tree is the one it ran on.
+      verification: verification(all, t.fingerprint),
       ...history(rows, w.turns.length),
     },
   };

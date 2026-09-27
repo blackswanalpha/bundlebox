@@ -4,7 +4,10 @@
 // hashed in 8-line windows; a PAIR of files is reported when the lines those
 // shared windows cover add up to 24 or more across both sides. Files with few
 // distinct lines are tables, not code, and are skipped: a lookup table copied
-// between two locales is not a refactor target.
+// between two locales is not a refactor target. A window whose rows are mostly
+// a bare string literal is skipped for the same reason: blanking string contents
+// turns every verb's `help`/`usage`/`long` table into the same 8 rows, which on
+// this tree was 360 of 378 reported pairs.
 import { langOf } from "../core/fs.js";
 import { sha1 } from "../core/util.js";
 import { codeRels, corpus, finding, snippet } from "./_shared.js";
@@ -14,6 +17,11 @@ import { abs, rel } from "../core/paths.js";
 export const THRESHOLDS = { window: 8, min_shared_lines: 24, min_distinct_ratio: 0.25, max_locations_per_hash: 50 };
 const HASH_COMMENT = new Set(["py", "ruby", "sh", "yaml", "toml", "r", "pl"]);
 const TRIVIAL = /^[{}()[\];,]*$/;
+const LITERAL = /^(?:[\w$]+:)?(?:""|''|``)[,;+)\]]*$/;
+
+/** True when half or more of a window's normalised rows are a string literal,
+ *  optionally keyed (`help:"",`). The kernel's `dupes` applies the same test. */
+export const literalWindow = (texts) => texts.filter((t) => LITERAL.test(t)).length * 2 >= texts.length;
 
 export function normalise(r, src) {
   const lang = langOf(r);
@@ -66,7 +74,9 @@ export default {
       const distinct = new Set(rows.map((x) => x.text)).size / rows.length;
       if (distinct < THRESHOLDS.min_distinct_ratio) continue;
       for (let i = 0; i + W <= rows.length; i++) {
-        const h = sha1(rows.slice(i, i + W).map((x) => x.text).join("\n")).slice(0, 16);
+        const w = rows.slice(i, i + W).map((x) => x.text);
+        if (literalWindow(w)) continue;
+        const h = sha1(w.join("\n")).slice(0, 16);
         if (!locs.has(h)) locs.set(h, []);
         locs.get(h).push({ r, start: rows[i].line, end: rows[i + W - 1].line });
       }

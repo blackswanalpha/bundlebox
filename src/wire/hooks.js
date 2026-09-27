@@ -598,10 +598,19 @@ async function postTool(payload) {
  *  `bb foreman replay` is read against before `steer` is switched on. Jev
  *  stays out of this path unless `foreman.hook_jev` is set: a remote call here
  *  is paid inside the session, on a tool call. */
+/** Is this tool call a subagent's? A subagent shares its parent's session id,
+ *  so without this every read it made was scored against the PARENT's job and
+ *  brief, and a read-only research agent was steered and then stopped for being
+ *  out of scope. Claude Code marks a subagent's hook payload with `agent_id` /
+ *  `agent_type`; its transcript lives under `subagents/`. */
+export const fromSubagent = (payload) => Boolean(payload?.agent_id || payload?.agent_type
+  || /[\\/]subagents[\\/]/.test(String(payload?.transcript_path || "")));
+
 export async function foremanWatch(payload, cfg = load()) {
   const f = cfg.foreman || {};
   const session = String(payload?.session_id || "");
   if (!session) return null;
+  if (fromSubagent(payload)) return null;
   const every = Math.max(1, Number(f.hook_every) || 10);
   let due = false, fresh = false;
   store.update("foreman-hook", (d) => {
