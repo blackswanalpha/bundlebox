@@ -202,3 +202,79 @@ test("built-in gears load, user gears.json replaces by name, skip_if_fresh stage
   fs.unlinkSync(path.join(root, ".bundlebox", "gears.json"));
   assert.ok(SKIP_BELOW < 0.5);
 });
+
+// ── needs: a gear as a graph ────────────────────────────────────────────────
+
+/** A table of verbs that record when they start and end, each after `ms`. */
+function timedTable(names, { ms = 30, rc = {} } = {}) {
+  const log = [];
+  let live = 0, peak = 0;
+  const table = {};
+  for (const n of names) table[n] = { run: async () => {
+    live += 1; peak = Math.max(peak, live); log.push(`+${n}`);
+    await new Promise((r) => setTimeout(r, ms));
+    live -= 1; log.push(`-${n}`);
+    return rc[n] ?? 0;
+  } };
+  return { table, log, peak: () => peak };
+}
+
+test("needs: independent stages run together, a dependent waits for its needs", async () => {
+  const { table, log, peak } = timedTable(["va", "vb", "vc"]);
+  const gears = { t: gear({ name: "t", stages: [{ name: "a", verb: "va" }, { name: "b", verb: "vb" }, { name: "c", verb: "vc", needs: ["a", "b"] }] }) };
+  const r = await runGear("t", { apply: true, table, gears });
+  assert.equal(peak(), 2, "a and b overlapped");
+  assert.ok(log.indexOf("+vc") > log.indexOf("-va") && log.indexOf("+vc") > log.indexOf("-vb"), log.join(" "));
+  assert.deepEqual(r.stages.map((s) => s.stage), ["a", "b", "c"], "rows keep declared order");
+  assert.equal(r.ran, 3);
+});
+
+test("needs: the concurrency limit holds", async () => {
+  const names = ["v1", "v2", "v3", "v4", "v5"];
+  const { table, peak } = timedTable(names);
+  const gears = { t: gear({ name: "t", stages: [...names.map((v) => ({ name: v, verb: v })), { name: "end", verb: "v1", needs: names }] }) };
+  await runGear("t", { apply: true, table, gears, parallel: 2 });
+  assert.equal(peak(), 2);
+});
+
+test("needs: a failure blocks its descendants only, and they report blocked-by", async () => {
+  const { table } = timedTable(["va", "vb", "vc", "vd"], { rc: { va: 2 } });
+  const gears = { t: gear({ name: "t", stages: [
+    { name: "d", verb: "vd", needs: ["c"] },           // declared before its need: blocking must still reach it
+    { name: "a", verb: "va" }, { name: "b", verb: "vb" }, { name: "c", verb: "vc", needs: ["a"] }] }) };
+  const r = await runGear("t", { apply: true, table, gears });
+  const by = Object.fromEntries(r.stages.map((s) => [s.stage, s]));
+  assert.equal(by.a.rc, 2);
+  assert.equal(by.b.state, "ran", "independent of the failure");
+  assert.equal(by.c.state, "blocked"); assert.equal(by.c.why, "blocked-by-a");
+  assert.equal(by.d.state, "blocked"); assert.equal(by.d.why, "blocked-by-c");
+  assert.equal(r.failed, 1, "blocked is not failed");
+  assert.equal(r.blocked, 2);
+  assert.equal(r.verdict, "partial");
+});
+
+test("needs: stages that write the same artefact never overlap", async () => {
+  const { table, peak } = timedTable(["same"]);
+  const gears = { t: gear({ name: "t", stages: [{ name: "x", verb: "same" }, { name: "y", verb: "same", needs: [] }] }) };
+  await runGear("t", { apply: true, table, gears });
+  assert.equal(peak(), 1);
+});
+
+test("needs: a gear without needs runs one stage at a time, in order", async () => {
+  const { table, log, peak } = timedTable(["va", "vb", "vc"]);
+  const g = gear({ name: "t", stages: [{ verb: "va" }, { verb: "vb" }, { verb: "vc" }] });
+  assert.equal(g.graph, false);
+  await runGear("t", { apply: true, table, gears: { t: g } });
+  assert.equal(peak(), 1);
+  assert.deepEqual(log, ["+va", "-va", "+vb", "-vb", "+vc", "-vc"]);
+});
+
+test("needs: a bad graph is refused with the field and the fix", () => {
+  const g = (stages) => () => gear({ name: "t", stages });
+  assert.throws(g([{ name: "a", verb: "v", needs: ["nope"] }]), /stages\[0\]\.needs\[0\]: no stage named "nope" in gear "t"\. Stage names: a/);
+  assert.throws(g([{ name: "a", verb: "v", needs: ["a"] }]), /stages\[0\]\.needs\[0\]: "a" is the stage itself\. Remove it/);
+  assert.throws(g([{ name: "a", verb: "v", needs: ["b"] }, { name: "b", verb: "v", needs: ["a"] }]), /cycle a -> b -> a in gear "t"\. Remove one of those needs/);
+  assert.throws(g([{ name: "a", verb: "v", needs: [3] }]), /stages\[0\]\.needs: must be a list of stage names/);
+  assert.throws(g([{ name: "a", verb: "v" }, { name: "a", verb: "w", needs: [] }]), /stages\[1\]\.name: "a" is also stages\[0\]\.name/);
+  assert.deepEqual(gear({ name: "t", stages: [{ name: "a", verb: "v", needs: "b" }, { name: "b", verb: "v" }] }).stages[0].needs, ["b"]);
+});

@@ -17,6 +17,12 @@
 //   stage.optional       the model may skip it when p_useful is low. A stage
 //                        that is not optional runs whatever the model thinks,
 //                        which keeps a bad fit from disabling the pipeline.
+//   stage.needs          names of stages this one depends on. Once ANY stage of
+//                        a gear declares `needs`, the gear is a graph: a stage
+//                        with no `needs` is a root, stages whose needs are met
+//                        run concurrently, and a failed stage blocks only what
+//                        depends on it. A gear with no `needs` anywhere runs
+//                        in declared order, exactly as before.
 //   gear.chain           gears to run after this one, in the same process.
 //   gear.on              triggers (data only: cron, post-scan, hand).
 //
@@ -154,7 +160,16 @@ export const holds = (expr, ctx) => evaluate(expr, ctx).value;
 
 export const verbKey = (s) => [s.verb, ...(s.args || [])].join(" ");
 
-export function stage(d) {
+/** `needs` as written: absent is null (not a graph stage), a single name is a
+ *  list of one, anything else is refused with the field it came from. */
+function needsOf(d, at) {
+  if (d.needs == null) return null;
+  if (typeof d.needs === "string") return [d.needs];
+  if (Array.isArray(d.needs) && d.needs.every((n) => typeof n === "string")) return [...d.needs];
+  throw new Error(`${at}.needs: must be a list of stage names, e.g. "needs": ["scan"]`);
+}
+
+export function stage(d, at = "stage") {
   if (!d || !d.verb) throw new Error("stage needs a verb");
   const args = Array.isArray(d.args) ? d.args.map(String) : [];
   return {
@@ -165,8 +180,40 @@ export function stage(d) {
     inputs: typeof d.inputs === "function" ? d.inputs : Array.isArray(d.inputs) ? pathsFn(d.inputs) : null,
     optional: !!d.optional,
     spends: !!d.spends,
+    needs: needsOf(d, at),
     description: d.description || "",
   };
+}
+
+/** Refuse a graph that cannot run: a duplicate name (a need would be
+ *  ambiguous), a need naming no stage, a stage needing itself, a cycle. Each
+ *  message names the field and the fix. Returns the stages unchanged. */
+export function checkNeeds(stages, gearName = "") {
+  if (!stages.some((s) => s.needs)) return stages;
+  const where = gearName ? ` in gear "${gearName}"` : "";
+  const index = new Map();
+  stages.forEach((s, i) => {
+    if (index.has(s.name)) throw new Error(`stages[${i}].name: "${s.name}" is also stages[${index.get(s.name)}].name${where}; a gear with needs must name every stage uniquely. Set a distinct "name"`);
+    index.set(s.name, i);
+  });
+  stages.forEach((s, i) => (s.needs || []).forEach((n, j) => {
+    if (n === s.name) throw new Error(`stages[${i}].needs[${j}]: "${n}" is the stage itself. Remove it`);
+    if (!index.has(n)) throw new Error(`stages[${i}].needs[${j}]: no stage named "${n}"${where}. Stage names: ${[...index.keys()].join(", ")}`);
+  }));
+  // Depth-first over the needs edges; a grey node reached again is a cycle.
+  const colour = new Map();
+  const visit = (name, trail) => {
+    if (colour.get(name) === 2) return;
+    if (colour.get(name) === 1) {
+      const loop = [...trail.slice(trail.indexOf(name)), name];
+      throw new Error(`stages[${index.get(trail[trail.length - 1])}].needs: cycle ${loop.join(" -> ")}${where}. Remove one of those needs`);
+    }
+    colour.set(name, 1);
+    for (const n of stages[index.get(name)].needs || []) visit(n, [...trail, name]);
+    colour.set(name, 2);
+  };
+  for (const s of stages) visit(s.name, []);
+  return stages;
 }
 
 /** The three keys that ARE the permission for a stage declared `spends: true`.
@@ -204,7 +251,7 @@ function pathsFn(paths) {
 
 export function gear(d) {
   if (!d || !d.name) throw new Error("gear needs a name");
-  const stages = (d.stages || []).map(stage);
+  const stages = checkNeeds((d.stages || []).map((x, i) => stage(x, `stages[${i}]`)), String(d.name));
   return {
     name: String(d.name), description: d.description || "",
     stages,
@@ -212,6 +259,7 @@ export function gear(d) {
     // `bb pipeline list` has to show is whether running this gear can cost
     // money, and a gear whose fourth stage spends is a gear that spends.
     spends: !!d.spends || stages.some((s) => s.spends),
+    graph: stages.some((s) => s.needs),
     on: Array.isArray(d.on) ? d.on.map(String) : [],
     chain: (d.chain || []).map((c) => (typeof c === "string" ? { gear: c, when: "" } : { gear: String(c.gear), when: c.when || "" })),
   };

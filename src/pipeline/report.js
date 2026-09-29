@@ -9,7 +9,7 @@ import { human, pad } from "../core/util.js";
 import * as episodes from "../buckmaster/episodes.js";
 import { verbKey } from "./spec.js";
 
-const MARK = { ran: " ", gated: "-", fresh: "=", "predicted-idle": "~", "would-run": "?", error: "!" };
+const MARK = { ran: " ", gated: "-", fresh: "=", "predicted-idle": "~", "would-run": "?", error: "!", blocked: "x" };
 
 export function report(r, { verbose = false, top = true } = {}) {
   if (r.error) return `  ${r.error}`;
@@ -20,7 +20,8 @@ export function report(r, { verbose = false, top = true } = {}) {
     if (s.state === "ran") {
       const produced = s.produced == null ? "" : `${s.produced} produced  `;
       lines.push(`   ${mark} ${pad(s.stage, 22)} ${pad(s.seconds.toFixed(2) + "s", 8, true)} ${pad(s.turns ? `${s.turns}t` : "", 5, true)}  ${s.rc ? `rc ${s.rc}  ` : ""}${produced}${s.gate_note || ""}`);
-    } else lines.push(`   ${mark} ${pad(s.stage, 22)} ${pad("", 8)} ${pad("", 5)}  ${s.state}: ${s.why}${s.gate_note ? `  (${s.gate_note})` : ""}`);
+    } else if (s.state === "blocked") lines.push(`   ${mark} ${pad(s.stage, 22)} ${pad("", 8)} ${pad("", 5)}  ${s.why}`);
+    else lines.push(`   ${mark} ${pad(s.stage, 22)} ${pad("", 8)} ${pad("", 5)}  ${s.state}: ${s.why}${s.gate_note ? `  (${s.gate_note})` : ""}`);
     if (verbose && s.p_useful != null) lines.push(`       model p_useful ${s.p_useful}`);
   }
   for (const c of r.chained) { lines.push("", `   chained -> ${c.gear}`); lines.push(report(c, { verbose, top: false })); }
@@ -32,7 +33,7 @@ function bottomLine(r) {
   const tpt = episodes.tokensPerTurn();
   const secs = Math.max(0.001, r.seconds);
   const tok = r.turns_saved * tpt.value;
-  return `   ${r.verdict} · ${r.ran} ran, ${r.skipped} skipped${r.would_run ? `, ${r.would_run} would run` : ""}${r.failed ? `, ${r.failed} failed` : ""} · ${r.turns_saved} agent turns displaced in ${secs.toFixed(1)}s · ${human(tok)} tokens not spent (${tpt.kind}) · ${human(tok / secs)} tok/s · 0 spent`;
+  return `   ${r.verdict} · ${r.ran} ran, ${r.skipped} skipped${r.would_run ? `, ${r.would_run} would run` : ""}${r.failed ? `, ${r.failed} failed` : ""}${r.blocked ? `, ${r.blocked} blocked` : ""} · ${r.turns_saved} agent turns displaced in ${secs.toFixed(1)}s · ${human(tok)} tokens not spent (${tpt.kind}) · ${human(tok / secs)} tok/s · 0 spent`;
 }
 
 export function listText(gears, warnings = []) {
@@ -40,7 +41,7 @@ export function listText(gears, warnings = []) {
   for (const g of Object.values(gears)) {
     const chain = g.chain.length ? ` -> ${g.chain.map((c) => c.gear).join(", ")}` : "";
     lines.push(`    ${pad(g.name, 10)} ${g.description}${chain}`);
-    if (g.stages.length) lines.push(`    ${pad("", 10)} ${g.stages.map((s) => `${s.name}${s.when ? ` [${s.when}]` : ""}${s.optional ? "?" : ""}${s.skip_if_fresh ? "=" : ""}`).join(" → ")}`);
+    if (g.stages.length) lines.push(`    ${pad("", 10)} ${g.stages.map((s) => `${s.name}${s.needs && s.needs.length ? `(after ${s.needs.join(",")})` : ""}${s.when ? ` [${s.when}]` : ""}${s.optional ? "?" : ""}${s.skip_if_fresh ? "=" : ""}`).join(" → ")}`);
     if (g.on.length) lines.push(`    ${pad("", 10)} on: ${g.on.join(", ")}`);
     lines.push("");
   }
