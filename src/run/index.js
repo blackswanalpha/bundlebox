@@ -40,7 +40,7 @@ async function runCmd({ flags }) {
   out(`  run ${r.run_id}   agent ${r.agent}   ${apply ? "APPLIED" : "DRY RUN — add --apply to spawn"}   ${r.wire}`);
   for (const l of r.results) {
     if (l.dry_run) out(`  ${l.lane}  ${l.cmd_file}   ${l.why}`);
-    else out(`  ${l.lane}  rc ${l.rc}${l.why ? ` (${l.why})` : ""}  peak ${human(l.peak)}  ${l.turns || 0} turns  ${l.seconds || 0}s${l.unproven ? `  unproven: ${l.unproven.join(",")}` : ""}${l.pr ? `  pr: ${l.pr.ok ? l.pr.url : l.pr.why}` : ""}`);
+    else out(`  ${l.lane}  rc ${l.rc}${l.why ? ` (${l.why})` : ""}  peak ${human(l.peak)}  ${l.turns || 0} turns  ${l.seconds || 0}s${l.edits ? `  edits ${l.edits.files.length} file(s) +${l.edits.lines_added} -${l.edits.lines_deleted}${l.edits.committed ? " (committed)" : ""}` : ""}${l.unproven ? `  unproven: ${l.unproven.join(",")}` : ""}${l.pr ? `  pr: ${l.pr.ok ? l.pr.url : l.pr.why}` : ""}`);
   }
   if (!apply) out("  prompts and commands are under .bundlebox/var/runs/" + r.run_id);
   else if (r.unproven.length) out(`  ${r.unproven.length} unit(s) have no acceptance and are UNPROVEN, not passed`);
