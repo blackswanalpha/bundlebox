@@ -21,7 +21,7 @@ import * as expert from "../core/expert.js";
 // `pre-search` are the two that carry an ANSWER rather than a pointer, so they
 // are the two allowed to be expensive: what they replace is the whole file or
 // the whole search.
-export const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-write": 900, "pre-search": 500, "post-tool": 300, "restate-rules": 700, narrative: 1200 };
+export const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-write": 900, "pre-search": 500, "post-tool": 300, "post-tool-failure": 120, "restate-rules": 700, narrative: 1200 };
 
 // ── the janitor's three touch points ────────────────────────────────────────
 //
@@ -590,6 +590,17 @@ async function postTool(payload) {
   if (cfg.foreman?.enabled !== false && (cfg.foreman?.hook || "observe") !== "off") await foremanWatch(payload, cfg);
 }
 
+/** A failed tool call that already failed the same way this session. Claude
+ *  Code fires PostToolUseFailure, not PostToolUse, for a failed call, so the
+ *  post-tool handlers above never see one. Silent on a first failure. */
+async function postToolFailure(payload) {
+  const repeats = await import("./repeats.js");
+  const text = repeats.notice(repeats.record(payload));
+  if (!text) return null;
+  emit({ hookSpecificOutput: { hookEventName: "PostToolUseFailure", additionalContext: capTokens(text, CAPS["post-tool-failure"]) } });
+  return text;
+}
+
 /** The foreman's live steer: the one channel that reaches an agent while it
  *  is still working. Every `foreman.hook_every` tool calls of a session this
  *  runs one assessment with the agent marked active, so only the warnings can
@@ -867,6 +878,7 @@ export async function handleEvent(event, payload = {}) {
     else if (event === "pre-write") await preWrite(payload);
     else if (event === "pre-search") await preSearch(payload);
     else if (event === "post-tool") await postTool(payload);
+    else if (event === "post-tool-failure") await postToolFailure(payload);
     else if (event === "pre-compact") await preCompact(payload);
     else if (event === "stop") await stop(payload);
     else if (event === "session-end") await sessionEnd(payload);
@@ -877,4 +889,4 @@ export async function handleEvent(event, payload = {}) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "pre-write", "pre-search", "post-tool", "pre-compact", "stop", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "pre-write", "pre-search", "post-tool", "post-tool-failure", "pre-compact", "stop", "session-end"];

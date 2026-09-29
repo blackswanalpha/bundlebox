@@ -112,6 +112,9 @@ export const CLAUDE_HOOKS = [
   // a tool added to Claude Code cannot quietly become eligible by matching a
   // pattern here. Off unless `sieve.enabled`, and the handler returns instantly.
   { event: "PostToolUse", cmd: "post-tool", timeout: 15 },
+  // A failed call never reaches PostToolUse. This one speaks only when the same
+  // call has already failed the same way in this session.
+  { event: "PostToolUseFailure", cmd: "post-tool-failure", timeout: 10 },
   { event: "PreCompact", cmd: "pre-compact", timeout: 30 },
   // The fourth verification layer, and the only one independent of the work:
   // does the ledger this session declared still have unmet gates? Executes no
