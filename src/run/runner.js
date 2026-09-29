@@ -33,6 +33,7 @@ import * as ledger from "../tokens/ledger.js";
 import * as prices from "../tokens/prices.js";
 import * as headroom from "../tokens/headroom.js";
 import { runGate } from "../compile/compiler.js";
+import { snapshot, editsSince } from "../git/repo.js";
 
 // Matched case-INSENSITIVELY, and Windows' own names are in the list.
 // `Object.entries(process.env)` hands back the spellings the OS uses: Windows
@@ -249,11 +250,14 @@ export async function executeLane(lane, { apply = false, adapter, wire = {}, pr 
 
   const t0 = Date.now();
   const meter = new LaneMeter(lane.id, num(cfg.budget?.max_tokens));
-  let rc = 0, why = "", stderr = "", spawned = false;
+  let rc = 0, why = "", stderr = "", spawned = false, before = null;
   if (spec.argv) {
     if (!which(spec.argv[0])) { rc = 127; why = `binary not found: ${spec.argv[0]}`; }
     else {
       spawned = true;
+      // Before the spawn and in the directory the agent works in: the shared
+      // checkout may already be dirty, and those edits are not this lane's.
+      before = snapshot(cwd);
       setLane(lane.id, lane.run_id, { status: "running", started: now(), session_id: sessionId, agent: adp.name });
       const sink = fs.openSync(path.join(rd, `${lane.id}.jsonl`), "w");
       const res = await spawnLane(spec.argv, { cwd, env: laneEnv(envExtra), input: spec.stdin === "prompt" ? prompt : null, timeoutMs: num(cfg.lanes.timeout_s || 3600) * 1000,
@@ -265,10 +269,11 @@ export async function executeLane(lane, { apply = false, adapter, wire = {}, pr 
     }
   }
   const seconds = Math.round((Date.now() - t0) / 1000);
+  const edits = spawned ? editsSince(before) : null;
   const sid = meter.sessionId || sessionId;
   for (const r of meter.usageRows()) store.append("usage", { session_id: sid, agent: adp.name, run_id: lane.run_id, lane_id: lane.id, ...r });
 
-  const result = { ...base, session_id: sid, rc, why, peak: meter.peak, turns: meter.turns, output_tokens: meter.outTokens, breached: meter.breached, seconds, spawned, stderr: stderr.trim().slice(0, 500) };
+  const result = { ...base, session_id: sid, rc, why, peak: meter.peak, turns: meter.turns, output_tokens: meter.outTokens, breached: meter.breached, seconds, spawned, stderr: stderr.trim().slice(0, 500), edits };
   const units = lane.units || [];
   const acc = [...new Set(units.map((u) => u.acceptance).filter(Boolean))];
   const unproven = units.filter((u) => !u.acceptance).map((u) => u.id);
@@ -284,7 +289,7 @@ export async function executeLane(lane, { apply = false, adapter, wire = {}, pr 
   result.pr_eligible = result.rc === 0 && acc.length > 0 && unproven.length === 0;
   if (pr) result.pr = result.pr_eligible ? pushAndPr(lane, cfg) : { ok: false, why: unproven.length ? "unproven units" : result.rc ? "lane failed" : "no acceptance ran" };
 
-  setLane(lane.id, lane.run_id, { status: result.rc === 0 ? "done" : "failed", rc: result.rc, why: result.why, peak: meter.peak, session_id: sid, ended: now(), agent: adp.name });
+  setLane(lane.id, lane.run_id, { status: result.rc === 0 ? "done" : "failed", rc: result.rc, why: result.why, peak: meter.peak, session_id: sid, ended: now(), agent: adp.name, edits });
   store.append("episodes", { kind: "lane", verb: "run", prev: "route", features: { agent: adp.name, model: lane.model || cfg.lanes.model || "", units: units.length, est_tokens: num(lane.est_tokens) },
     rc: result.rc, seconds, produced: meter.peak, reads: 0, turns_saved: 0, run_id: lane.run_id, lane_id: lane.id, useful: -1 });
   return result;
