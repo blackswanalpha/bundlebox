@@ -139,4 +139,36 @@ export const TOOLS = [
       return r ? m.report(r) : "unknown: no transcript resolvable for this workspace";
     },
   },
+  {
+    // Listing is free and changes nothing; running is dry unless `apply`, and
+    // an agent can apply only what a person cleared (`@safe true`, or `bb
+    // automations trust`). The split follows the spec's annotations: a client
+    // that asks before a destructive tool asks here and not for the list.
+    name: "bb_automations",
+    description: "Everything this repository can run without you: tagged scripts (lathe's learned habits among them), cookbook scenario suites, runbook services, and automations imported from pinned GitHub repos. Ranked by how their past runs went. Check this BEFORE writing a multi-step shell sequence by hand; run one with bb_automation_run.",
+    annotations: { title: "List automations", readOnlyHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["script", "scenario", "service", "imported"] }, source: { type: "string", enum: ["local", "lathe", "import"] }, q: { type: "string", description: "substring of the id or title" } } },
+    async run(a) {
+      const m = await lazy("../automations/index.js");
+      if (m.__missing) return missing(m, "bb automations");
+      const rows = await m.list({ kind: a.kind || "", source: a.source || "", q: a.q || "" });
+      if (!rows.length) return "no automations here yet";
+      return rows.map((r) => `${r.cleared ? "ready" : "gated"}  ${r.id}  [${r.kind}/${r.source}, score ${r.score} over ${r.runs} run(s)]  ${r.title}${r.gate ? `\n    ${r.gate}` : ""}`).join("\n");
+    },
+  },
+  {
+    name: "bb_automation_run",
+    description: "Run one automation from bb_automations by id. DRY by default: returns the exact command it would run. Pass apply=true to execute; it runs only automations marked ready. For a service pass action up|down; for a scenario, base overrides the persona's URL. Every applied run is recorded and feeds the ranking.",
+    annotations: { title: "Run an automation", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    inputSchema: { type: "object", properties: { id: { type: "string" }, apply: { type: "boolean", default: false }, action: { type: "string", enum: ["up", "down"] }, args: { type: "array", items: { type: "string" } }, base: { type: "string" } }, required: ["id"] },
+    async run(a) {
+      const m = await lazy("../automations/index.js");
+      if (m.__missing) return missing(m, "bb automations");
+      const r = await m.run(String(a.id), { apply: a.apply === true, action: a.action || "", args: strs(a.args), base: a.base || "", by: "agent" });
+      // A refusal is an execution error the model should read and act on,
+      // not a protocol fault: thrown, so the server answers isError.
+      if (!r.ran && r.rc) throw new Error(r.why);
+      return r;
+    },
+  },
 ];

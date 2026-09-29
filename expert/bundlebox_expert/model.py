@@ -34,6 +34,10 @@ def featurize(ep: dict, lift: dict | None = None) -> dict:
     f["dirty"] = 1.0 if feat.get("dirty") else 0.0
     f["optional"] = 1.0 if feat.get("optional") else 0.0
     f["since_min~log"] = math.log1p(float(feat.get("since_min") or 0)) / 10
+    # Where an automation came from (local, lathe, import): the prior an
+    # imported command is ranked on before its own runs say anything.
+    if feat.get("source"):
+        f[f"source={feat['source']}"] = 1.0
     if lift:
         f["edge_lift"] = float(lift.get(f"{prev}>{verb}", 1.0)) - 1.0
     return f
