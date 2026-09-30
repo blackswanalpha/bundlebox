@@ -213,6 +213,13 @@ export const DEFAULTS = {
     // tools are dropped from `tools/list` and still DISPATCH if something asks
     // for one by name: hiding a capability is a saving, breaking one is not.
     trim_tools: [],
+    // The tools a harness with tool search loads at session start instead of
+    // deferring. Claude Code defers every MCP tool by default and shows only its
+    // name; on Terminal-Bench 2.0 that meant 0 calls in 16 trials, because the
+    // agent never ran the search that loads one. Marked per tool through
+    // `_meta["anthropic/alwaysLoad"]`, so the rest stay deferred. These two cost
+    // about 350 tokens of schema; all ten would cost about 1,130.
+    always_load_tools: ["bb_pinpoint", "bb_context"],
   },
   janitor: {
     // What the hooks do with a compiled heap. Every one of these reads an

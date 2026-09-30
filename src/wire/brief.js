@@ -535,6 +535,20 @@ export { shellSegments as segments } from "../core/util.js";
 
 export function parseBash(command) {
   const segs = shellSegments(command);
+  // Where the shell will be when the read runs. 103 of the 155 read-or-search
+  // commands in a Terminal-Bench 2.0 run opened with `cd <dir> &&`, and a path
+  // after it resolved against the repository root named a file that is not
+  // there: `cd ocaml/runtime && sed -n 55,70p shared_heap.c` was checked as
+  // `shared_heap.c`. After a `cd` the path is joined to it and made relative to
+  // the root; a `cd` whose target a hook cannot know (`-`, `~`, a variable)
+  // ends the parse, and a path that leaves the root is not ours to guard.
+  // Without a `cd` the paths come back exactly as written.
+  let dir = null, afterCd = false;
+  const at = (p) => {
+    if (dir === null || path.isAbsolute(p)) return dir === null ? p : rel(p);
+    return rel(abs(path.join(dir, p)));
+  };
+  const outside = (p) => p === ".." || p.startsWith("../") || path.isAbsolute(p);
   // Whether a search reads the TREE or a PIPE. `grep X file` and `grep -r X dir`
   // search the tree, and asking the same question twice over an unchanged tree
   // is waste. `npm test | grep fail` filters output that did not exist a moment
@@ -550,6 +564,15 @@ export function parseBash(command) {
     const argv = parts.map((s) => s.replace(/^["']|["']$/g, ""));
     const cmd = path.basename(argv[0] || "");
     const rest = argv.slice(1);
+    if (cmd === "cd" || cmd === "pushd") {
+      const d = rest.find((a) => !a.startsWith("-") || a === "-");
+      if (!d || d === "-" || /[$~`]/.test(d)) return null;
+      dir = path.isAbsolute(d) ? d : path.join(dir === null ? "." : dir, d);
+      afterCd = true;
+      continue;
+    }
+    const wasCd = afterCd;
+    afterCd = false;
     if (SEARCHERS.test(cmd)) {
       // The first non-flag argument is the pattern; -e/-P/--include take a value.
       let pattern = "", i = 0;
@@ -565,9 +588,13 @@ export function parseBash(command) {
       const paths = rest.slice(i + 1).filter((a) => !a.startsWith("-"));
       // A search with no path, arriving after something else in the pipeline, is
       // reading stdin.
-      const stdin = !paths.length && seg !== segs[0];
-      if (pattern) return { kind: "search", pattern, pathArg: paths[0] || "", stdin };
-      continue;
+      // `cd x && grep -r y` searches x; it is not reading a pipe.
+      const stdin = !paths.length && seg !== segs[0] && !wasCd;
+      if (!pattern) continue;
+      if (dir === null) return { kind: "search", pattern, pathArg: paths[0] || "", stdin };
+      const where = at(paths[0] || ".");
+      if (outside(where)) return null;
+      return { kind: "search", pattern, pathArg: where === "." || where === "" ? "" : where, stdin };
     }
     if (cmd === "sed") {
       // `sed -n 10,40p file` — a ranged read, and the range is the point.
@@ -575,14 +602,18 @@ export function parseBash(command) {
       const file = rest.filter((a) => !a.startsWith("-") && !/^\d/.test(a) && !/^-?[0-9,]+p?$/.test(a)).pop();
       if (!file) continue;
       const m = n ? /^(\d+),(\d+)/.exec(n) : null;
-      return m ? { kind: "read", file, offset: Number(m[1]), limit: Number(m[2]) - Number(m[1]) + 1 } : { kind: "read", file, offset: 0, limit: 0 };
+      const f = at(file);
+      if (outside(f)) return null;
+      return m ? { kind: "read", file: f, offset: Number(m[1]), limit: Number(m[2]) - Number(m[1]) + 1 } : { kind: "read", file: f, offset: 0, limit: 0 };
     }
     if (READERS.test(cmd)) {
       const flagged = rest.some((a) => /^-n?\d+$/.test(a) || a === "-n");
       const files = rest.filter((a) => !a.startsWith("-") && !/^\d+$/.test(a));
       if (files.length !== 1) continue;                      // `cat a b > c` is not a read to serve
       if (flagged) continue;                                 // `head -40 x` is already a ranged read
-      return { kind: "read", file: files[0], offset: 0, limit: 0 };
+      const f = at(files[0]);
+      if (outside(f)) return null;
+      return { kind: "read", file: f, offset: 0, limit: 0 };
     }
   }
   return null;
