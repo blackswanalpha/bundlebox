@@ -169,16 +169,32 @@ async function sessionStart(payload = {}) {
   // memory it was just handed no longer resolves cannot be recovered later.
   const rot = memoryRotNotice(cfg);
   if (rot) parts.push(rot);
+  // The pointer, not the index. SessionStart context is written into the cache
+  // once and re-read on every call of the session, and the INDEX table cost
+  // 400-550 tokens of that on each Terminal-Bench task while no session opened
+  // a table it listed. The names are enough to know what exists; the file says
+  // the rest when a session asks for it.
   const index = path.join(OUT, "snapgen", "INDEX.md");
-  if (fs.existsSync(index)) parts.push("bundlebox reference tables (read instead of searching):\n" + fs.readFileSync(index, "utf8").trim());
-  else parts.push("bundlebox: no snapgen tables yet — `bb snapgen build` writes layout, symbols, routes, docs, commands, hot.");
+  if (fs.existsSync(index)) {
+    let names = [];
+    try { names = fs.readdirSync(path.dirname(index)).filter((n) => n.endsWith(".md") && n !== "INDEX.md").map((n) => n.slice(0, -3)).sort(); } catch { /* the pointer still stands */ }
+    const shown = names.length > 12 ? [...names.slice(0, 12), `+${names.length - 12} more`] : names;
+    parts.push(`bundlebox reference tables (read instead of searching): ${path.relative(ROOT, index)}${shown.length ? ` — ${shown.join(", ")}` : ""}`);
+  } else parts.push("bundlebox: no snapgen tables yet — `bb snapgen build` writes layout, symbols, routes, docs, commands, hot.");
   const open = store.openFindings();
   if (open.length) {
     const by = {};
     for (const f of open) by[f.detector] = (by[f.detector] || 0) + 1;
-    parts.push(`open findings: ${open.length} (${Object.entries(by).map(([k, v]) => `${k} ${v}`).join(", ")}) — \`bb findings\`, \`bb explain <id>\``);
+    // The four largest detectors. On this workspace the full breakdown was 24
+    // detectors, a line longer than the pointer it sits under, and `bb findings`
+    // prints it for free when a session wants it.
+    const top = Object.entries(by).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const rest = top.length > 4 ? `, +${top.length - 4} more detectors` : "";
+    parts.push(`open findings: ${open.length} (${top.slice(0, 4).map(([k, v]) => `${k} ${v}`).join(", ")}${rest}) — \`bb findings\`, \`bb explain <id>\``);
   }
-  parts.push("For a task: `bb pinpoint \"<task>\"` writes a located, budgeted brief; `bb context <files>` says whether a scope fits.");
+  // With auto_pinpoint on, the prompt hook runs the locate itself; telling the
+  // session to run it is a line it re-reads on every call for nothing.
+  if (!cfg.wire.auto_pinpoint) parts.push("For a task: `bb pinpoint \"<task>\"` writes a located, budgeted brief; `bb context <files>` says whether a scope fits.");
   emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: capTokens(parts.join("\n\n"), CAPS["session-start"]) } });
 }
 
@@ -325,8 +341,15 @@ export function taskScore(prompt, head = taskHead()) {
   const x = promptFeatures(prompt), w = (head && head.weights) || {};
   return sigmoid(Object.entries(x).reduce((a, [k, v]) => a + (Number(w[k]) || 0) * v, 0));
 }
+/** Text the harness wrote, not the person: a background task finishing, a
+ *  command echo, a reminder. It reaches UserPromptSubmit like a prompt, and it
+ *  carries paths, verbs and backticks like one, so both the regex and the head
+ *  score it as work. 31 of the last 100 briefs on this workspace located a
+ *  `<task-notification>`, each one a scope handed to a turn that had no task. */
+const HARNESS = /^\s*<(task-notification|system-reminder|local-command-stdout|local-command-stderr|command-name|command-message)>/;
 export const isTask = (p) => {
   const s = String(p);
+  if (HARNESS.test(s)) return false;
   const h = taskHead();
   if (h && h.useful && !h.drift) return taskScore(s, h) >= Number(h.threshold ?? 0.2);
   return s.length >= 40 && TASK_SHAPED.test(s);
@@ -468,6 +491,16 @@ async function autoPinpoint(payload, p) {
   // and returns `fix` unchanged when no table has been fitted yet.
   const it = intent.classify(p);
   const b = await pp.build(p, { kind: it.kind });
+  // A locate that matched nothing and scoped nothing is not a brief. The band
+  // would still open with "the task is located below — do not search for it"
+  // over an empty list, which tells the session to skip the one step it needs.
+  // Measured on Terminal-Bench 2.0: 4 of 8 task prompts got exactly that band.
+  // Nothing is emitted and nothing activated, so the guards have no scope to
+  // enforce either; the brief file stays on disk for `bb explain`.
+  if (!b.scope.length && !b.symbols.length && !b.grep.length) {
+    log("prompt", `pinpoint located nothing, kind ${it.kind} (${it.via}) in ${Date.now() - t0}ms; no band`);
+    return true;
+  }
   const rec = brief.record(b, { sessionId, briefPath: b.path });
   brief.activate(rec);
   brief.prune();
