@@ -51,7 +51,11 @@ export function serve({ input = process.stdin, output = process.stdout, name = "
       // Listed, never CALLED-away: a trimmed tool is still dispatched if
       // something asks for it by name. Hiding a capability is a saving;
       // breaking one is not.
-      if (method === "tools/list") return reply(id, { tools: listed().map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
+      if (method === "tools/list") {
+        const always = new Set((load({ fresh: true }).wire?.always_load_tools || []).map(String));
+        return reply(id, { tools: listed().map(({ name, description, inputSchema }) =>
+          ({ name, description, inputSchema, ...(always.has(name) ? { _meta: { "anthropic/alwaysLoad": true } } : {}) })) });
+      }
       if (method === "tools/call") {
         const tool = TOOLS.find((t) => t.name === params.name);
         if (!tool) return fail(id, -32602, `unknown tool ${params.name}`);

@@ -20,7 +20,7 @@ import * as anchorsMod from "../compile/anchors.js";
 import * as context from "../compile/context.js";
 import { detectGates } from "../compile/compiler.js";
 import * as snapgen from "../snapgen/index.js";
-import { kcall, codeFiles } from "../snapgen/tables.js";
+import { kcall, codeFiles, sourceFiles, SYMBOL_SUFFIX } from "../snapgen/tables.js";
 import { latest as oversightLatest } from "../oversight/rules.js";
 import { clean } from "../slop/index.js";
 import { PREAMBLE } from "../wire/brief.js";
@@ -337,9 +337,51 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
   // things the brief does not settle.
   b.ambiguity = ambiguity(b);
   b.proposals = proposals(b);
-  b.prompt = prompt(b);
+  // The locate can only name files in the languages it indexes. On a tree that
+  // is mostly something else, what it names is the indexed minority, and a
+  // brief that calls that minority "the only files to edit" is confidently
+  // wrong: fix-ocaml-gc on Terminal-Bench 2.0 (a C runtime change) was handed
+  // gdb.py, lldb.py and the manual's JavaScript. A prompt that names a file
+  // still gets its brief; otherwise the scope is dropped, the prompt says why,
+  // and the prompt hook's empty-locate rule keeps the band out of the window.
+  b.coverage = coverage();
+  b.abstain = b.coverage.partial && !explicit.length;
+  if (b.abstain) {
+    b.scope = []; b.cut = []; b.candidates = []; b.anchors = []; b.symbols = []; b.grep = []; b.proposals = [];
+  }
+  b.prompt = b.abstain ? abstainPrompt(b) : prompt(b);
   b.path = write(b);
   return b;
+}
+
+/** Code files the locate cannot see. Not a complete list of languages, a list
+ *  of the ones whose trees would otherwise be scoped by their few indexed
+ *  files: C and C++, Objective-C, OCaml, Lisps, Haskell, Lua, Scala, Elixir,
+ *  Erlang, COBOL, Fortran, Julia, R, Zig, Nim, Solidity, Perl, assembly. */
+const UNINDEXED = [".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".m", ".mm", ".ml", ".mli", ".scm", ".ss", ".rkt",
+  ".lisp", ".el", ".clj", ".cljs", ".hs", ".lua", ".scala", ".ex", ".exs", ".erl", ".cbl", ".cob", ".cpy", ".f", ".f90", ".jl",
+  ".r", ".zig", ".nim", ".sol", ".pl", ".pm", ".groovy", ".fs", ".vb", ".pas", ".adb", ".ads", ".elm", ".s", ".asm"];
+const SEEN = new Set(SYMBOL_SUFFIX);
+/** How much of the tree's code the locate can name. `partial` when the files in
+ *  unindexed languages outnumber the indexed ones and there are at least ten
+ *  of them, so a stray script does not switch a repository off. */
+export function coverage(files = sourceFiles()) {
+  let indexed = 0;
+  const other = {};
+  for (const f of files) {
+    const e = path.extname(f).toLowerCase();
+    if (SEEN.has(e)) indexed++;
+    else if (UNINDEXED.includes(e)) other[e] = (other[e] || 0) + 1;
+  }
+  const unindexed = Object.values(other).reduce((a, n) => a + n, 0);
+  const top = Object.entries(other).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 4);
+  return { indexed, unindexed, partial: unindexed >= 10 && unindexed > indexed, top: top.map(([e, n]) => `${e} ${n}`) };
+}
+
+function abstainPrompt(b) {
+  const c = b.coverage;
+  return clean([`# ${b.problem}`, "",
+    `bundlebox pinpoint located nothing for this task: ${c.unindexed} of this tree's ${c.unindexed + c.indexed} code files are in languages it does not index (${c.top.join(", ")}), so any scope it drew would come from the ${c.indexed} it does. Search the tree directly. \`bb context <files>\` still prices a scope you choose, and naming a file in the task gets a brief scoped to it.`].join("\n"));
 }
 /** The tables the prompt points at, built when absent: a prompt that names a
  *  table the session cannot open sends it back to searching. */
