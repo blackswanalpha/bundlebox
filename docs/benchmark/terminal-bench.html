@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bundlebox — Terminal-Bench</title>
+<meta name="description" content="Claude Code on a Terminal-Bench 2.0 subset: bare, with the bundlebox MCP server, and with the full bundlebox install.">
+<style>
+:root{
+  --ink:#141414; --muted:#63615b; --faint:#908d86; --rule:#e4e1da; --bg:#faf9f6; --panel:#fff;
+  --accent:#1f7a5c; --accent-soft:#e9f2ee; --code-bg:#f4f2ec;
+  --s-bare:#B04A28; --s-mcp:#2a78d6; --s-bb:#1baf7a;
+  --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,"Liberation Mono",Menlo,monospace;
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
+  --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
+  --s-bare:#C05428; --s-mcp:#3987e5; --s-bb:#199e70;
+}}
+:root[data-theme="dark"]{
+  --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
+  --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
+  --s-bare:#C05428; --s-mcp:#3987e5; --s-bb:#199e70;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 var(--sans);letter-spacing:-.006em;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto;padding:0 16px}
+@media(min-width:640px){.wrap{padding:0 28px}}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+b{font-weight:600}
+code{font-family:var(--mono);font-size:.875em;background:var(--code-bg);padding:2px 5px;border-radius:4px}
+header.hero{padding:64px 0 34px}
+h1{font-size:clamp(30px,5.4vw,46px);line-height:1.05;letter-spacing:-.035em;margin:0 0 18px;font-weight:700}
+.tagline{font-size:18px;line-height:1.5;color:var(--muted);margin:0 0 22px;max-width:34em}
+.kicker{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:0 0 8px}
+.stamp{font:11.5px/1.5 var(--mono);color:var(--faint);margin:0}
+h2{font-size:24px;letter-spacing:-.025em;margin:0 0 6px;font-weight:700;line-height:1.2}
+p{margin:0 0 16px}
+p.lead{color:var(--muted);font-size:15.5px;margin:0 0 18px}
+ul.plain{margin:0 0 16px;padding-left:20px}
+ul.plain li{margin:0 0 8px}
+.tiles{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin:0 0 8px}
+@media(min-width:560px){.tiles{grid-template-columns:1fr 1fr}}
+@media(min-width:900px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tile{background:var(--panel);padding:18px 16px}
+.tile .k{font:10.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:0 0 9px}
+.tile .v{font-size:30px;line-height:1;letter-spacing:-.03em;font-weight:700;color:var(--ink);margin:0 0 7px}
+.tile .v.multi{font-size:19px;line-height:1.35;letter-spacing:-.02em;display:flex;flex-direction:column}
+.tile .v.multi span{display:inline-flex;align-items:center;gap:8px}
+.tile .s{font-size:12.5px;line-height:1.4;color:var(--muted);margin:0}
+section{padding:40px 0;border-top:1px solid var(--rule)}
+.plot{position:relative;background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:16px 14px;overflow-x:auto;overflow-y:hidden}
+svg.chart{display:block;width:100%;height:auto;overflow:visible}
+@media(max-width:620px){.plot > svg.chart{min-width:540px}}
+.multiples{display:grid;grid-template-columns:1fr;gap:18px}
+@media(min-width:640px){.multiples{grid-template-columns:1fr 1fr}}
+.panel h4{font:11px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 4px;font-weight:500}
+.chart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .ln.bare{stroke:var(--s-bare)} .chart .ln.mcp{stroke:var(--s-mcp)} .chart .ln.bb{stroke:var(--s-bb)}
+.chart .dot{stroke:var(--panel);stroke-width:2}
+.chart .dot.bare{fill:var(--s-bare)} .chart .dot.mcp{fill:var(--s-mcp)} .chart .dot.bb{fill:var(--s-bb)}
+.chart .grid{stroke:var(--rule);stroke-width:1}
+.chart .axis{stroke:var(--faint);stroke-width:1;opacity:.5}
+.chart .tick{font:10.5px var(--mono);fill:var(--faint)}
+.chart .lab{font:11.5px var(--sans);fill:var(--muted)}
+.chart .xh{stroke:var(--faint);stroke-width:1;opacity:0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--muted);margin:0 0 12px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.key{width:16px;height:2px;border-radius:1px;display:inline-block}
+.key.bare{background:var(--s-bare)} .key.mcp{background:var(--s-mcp)} .key.bb{background:var(--s-bb)}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;font:12px/1.45 var(--sans);color:var(--ink);box-shadow:0 4px 14px rgba(0,0,0,.08);opacity:0;transition:opacity .08s;white-space:nowrap;z-index:2}
+.tip .t{font:10.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}
+.tip .r{display:flex;align-items:center;gap:7px}
+.tip .r b{margin-left:auto;padding-left:12px;font-variant-numeric:tabular-nums}
+.note{font-size:13.5px;line-height:1.55;color:var(--muted);margin:12px 0 0}
+.tv{margin:10px 0 0;font-size:13.5px}
+.tv summary{cursor:pointer;color:var(--faint);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase;list-style:none}
+.tv summary::-webkit-details-marker{display:none}
+.tv summary::before{content:"▸ ";font-size:10px}
+.tv[open] summary::before{content:"▾ "}
+.tv .scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 0}
+th{text-align:left;font:10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--rule)}
+td{padding:6px 8px;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.pass{color:var(--accent)}
+footer{padding:32px 0 64px;border-top:1px solid var(--rule);color:var(--faint);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+  <p class="kicker">Terminal-Bench 2.0 · 8-task subset · Claude Sonnet 5.5</p>
+  <h1>Bare Claude Code vs bundlebox</h1>
+  <p class="tagline" id="tagline"></p>
+  <p class="stamp" id="stamp"></p>
+</header>
+
+<section id="summary">
+  <h2>Summary</h2>
+    <p><b>bundlebox made no measurable difference on these tasks, because the agent never used it.</b> Every trial that could be graded passed, in all three setups. In the two bundlebox setups the agent made zero bundlebox tool calls across 16 trials. Each task was solved with shell commands alone.</p>
+  <ul class="plain">
+    <li><b>Same pass rate.</b> On the 7 tasks graded in all three setups, bare Claude Code, bundlebox MCP only and the full bundlebox install each passed 7 of 7. Both bundlebox setups also passed the 8th task, <code>fix-ocaml-gc</code>. Bare Claude Code's attempt at it was never graded, because the grader timed out downloading the OCaml source twice, so that task doesn't count as a bundlebox win.</li>
+    <li><b>The full install costs context.</b> It loads its instructions, reference tables and skill list before the agent starts, which adds about 2,000 input tokens to every model call. The MCP-only setup adds about 270.</li>
+    <li><b>Cost and time differences are noise.</b> On the 7 shared tasks, bare Claude Code spent $1.07 and 57 agent-minutes against $0.98 / 17 min (MCP) and $0.97 / 20 min (full). One bare run of <code>schemelike-metacircular-eval</code> hit its 40-minute limit, and that run accounts for most of the gap. Without it the three setups sit at $0.53 to $0.59 and 10 to 17 minutes. Each task ran once per setup, and the bundlebox tools were never called, so these gaps come from run-to-run variation, not from bundlebox.</li>
+    <li><b>This benchmark mostly doesn't test what bundlebox is for.</b> Most Terminal-Bench tasks are small environments where a few shell commands find everything. bundlebox locates code in large repositories. Even on <code>fix-ocaml-gc</code>, the one large codebase here, both bundlebox setups solved it with Bash alone, in 13 and 14 steps.</li>
+  </ul>
+
+  <div class="tiles" id="tiles"></div>
+</section>
+
+<section>
+  <h2>Context size at each model call</h2>
+  <p class="lead">Input tokens the model received on every call, one panel per task. A higher start means more text was loaded before the agent did anything.</p>
+  <div class="legend" id="legend-ctx"></div>
+  <div class="multiples" id="ctx"></div>
+  <details class="tv"><summary>Table view</summary><div class="scroll" id="ctx-table"></div></details>
+</section>
+
+<section>
+  <h2>Running cost across tasks</h2>
+  <p class="lead">Cumulative estimated spend, adding one task at a time. Only tasks all three arms finished and were scored on are counted, in the same order.</p>
+  <div class="legend" id="legend-cost"></div>
+  <div class="plot" id="cost"></div>
+  <details class="tv"><summary>Table view</summary><div class="scroll" id="cost-table"></div></details>
+</section>
+
+<section>
+  <h2>Running agent time across tasks</h2>
+  <p class="lead">Cumulative minutes the agent spent working, same tasks and order as above. Setup and grading time are excluded.</p>
+  <div class="legend" id="legend-time"></div>
+  <div class="plot" id="time"></div>
+  <details class="tv"><summary>Table view</summary><div class="scroll" id="time-table"></div></details>
+</section>
+
+<section>
+  <h2>Every trial</h2>
+  <div class="scroll" id="all"></div>
+    <h2 style="margin-top:40px">How it was run</h2>
+  <ul class="plain">
+    <li><b>Harness.</b> Harbor 0.23.0 running the Terminal-Bench 2.0 tasks in local Docker, with its <code>claude-code</code> agent (Claude Code 2.1.285) on Claude Sonnet 5.5. One attempt per task per setup, two trials at a time per setup, all three setups running at once.</li>
+    <li><b>Bare Claude Code.</b> Claude Code with no bundlebox configuration. bundlebox 0.8.0 was copied to <code>/opt/bb</code>, off the PATH, so all three setups had an identical install step.</li>
+    <li><b>bundlebox MCP only.</b> The same, plus <code>bb mcp</code> registered as a user-scoped MCP server. The server connected and listed its 10 tools in every trial.</li>
+    <li><b>bundlebox full install.</b> <code>bb</code> on the PATH, then <code>bb init --apply</code>, <code>bb wire --apply</code> and <code>bb env up --apply</code> in the task directory before the agent started. That writes the CLAUDE.md instructions block, the hooks in <code>.claude/settings.json</code> and 7 of 9 artefacts. The Rust index and memory were not built, which matches a normal install without cargo. The session-start hook fired and injected the reference tables. <code>bb init</code> also edits <code>.gitignore</code> and adds files to the task directory. No task failed because of that.</li>
+    <li><b>Tasks.</b> Eight tasks that start from existing code: fix-git, cobol-modernization, fix-code-vulnerability, build-cython-ext, custom-memory-heap-crash, git-leak-recovery, schemelike-metacircular-eval and fix-ocaml-gc.</li>
+    <li><b>Infrastructure failures.</b> The network link ran at about 0.9 MB/s. Bare Claude Code's first custom-memory-heap-crash trial timed out downloading its Docker image, and it was re-run once the image was cached. It passed. fix-ocaml-gc's grader clones the 560 MB OCaml repository and then builds it. On the first attempt all three setups hit the one-hour grading limit. Harbor then re-ran each trial from the start. On that retry both bundlebox setups were graded and passed, and bare Claude Code timed out again during the build, so its attempt has no score. fix-ocaml-gc is left out of the shared-task totals and running charts, and it's still counted in the context chart.</li>
+    <li><b>Cost.</b> Harbor's estimate at API list prices. The run used a Claude subscription token, so this is not what was billed.</li>
+  </ul>
+
+</section>
+
+<footer>Data: Harbor's per-trial <code>result.json</code> and <code>trajectory.json</code> for the three arms, embedded in this page. Cost is Harbor's estimate at API list prices; the run itself used a subscription token.</footer>
+</div>
+
+<script id="data" type="application/json">{"generated":"2026-09-30T18:05+03:00","trials":[{"arm":"control","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":869,"steps":20,"cost":0.245805,"prompt":481633,"completion":6410,"ctx":[15551,17623,18120,18798,19594,19800,20490,21547,22795,25161,27916,29163,30036,30992,31624,32229,32727,33336,34131],"tool_calls":19,"bb_calls":0,"rerun":false},{"arm":"control","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":34,"steps":6,"cost":0.100344,"prompt":98605,"completion":3225,"ctx":[15446,19469,19930,20833,22927],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"control","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":18,"steps":4,"cost":0.0380448,"prompt":51529,"completion":554,"ctx":[16700,17309,17520],"tool_calls":2,"bb_calls":0,"rerun":false},{"arm":"control","task":"fix-git","reward":1.0,"exception":null,"agent_sec":20,"steps":8,"cost":0.0651992,"prompt":116221,"completion":1088,"ctx":[15277,15578,15914,16205,16960,17914,18373],"tool_calls":6,"bb_calls":0,"rerun":false},{"arm":"control","task":"fix-ocaml-gc","reward":null,"exception":"VerifierTimeoutError","agent_sec":1296,"steps":15,"cost":0.1928838,"prompt":374581,"completion":2997,"ctx":[15127,15288,17020,19764,21002,27378,28313,29256,32394,32988,33481,33720,34025,34825],"tool_calls":14,"bb_calls":0,"rerun":false},{"arm":"control","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":20,"steps":5,"cost":0.0383082,"prompt":63401,"completion":748,"ctx":[15140,15603,16205,16453],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"control","task":"schemelike-metacircular-eval","reward":1.0,"exception":"AgentTimeoutError","agent_sec":2400,"steps":18,"cost":0.4845107,"prompt":663620,"completion":25516,"ctx":[15387,23200,26457,38953,39155,40274,40603,41285,41432,41600,41909,42282,42508,43514,44562,46833,53666],"tool_calls":17,"bb_calls":0,"rerun":false},{"arm":"control","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":66,"steps":10,"cost":0.1008386,"prompt":171406,"completion":2653,"ctx":[15410,16453,17874,18118,19235,19785,20740,21585,22206],"tool_calls":8,"bb_calls":0,"rerun":true,"infra_failures":1},{"arm":"bundlebox","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":506,"steps":16,"cost":0.189939,"prompt":357532,"completion":4581,"ctx":[15821,16328,18728,19248,19522,21814,22287,23616,25572,26908,28259,28912,29671,30068,30778],"tool_calls":14,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":46,"steps":7,"cost":0.10465379999999999,"prompt":121863,"completion":3640,"ctx":[15716,19739,20190,20617,22378,23223],"tool_calls":6,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":49,"steps":9,"cost":0.10114959999999999,"prompt":157205,"completion":2210,"ctx":[15680,16723,18144,18492,19491,20919,23554,24202],"tool_calls":7,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":19,"steps":4,"cost":0.0383168,"prompt":52330,"completion":466,"ctx":[16970,17579,17781],"tool_calls":2,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"fix-git","reward":1.0,"exception":null,"agent_sec":32,"steps":7,"cost":0.0547368,"prompt":99172,"completion":1145,"ctx":[15547,15841,16213,16482,17237,17852],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1125,"steps":13,"cost":0.169046,"prompt":310380,"completion":2604,"ctx":[15397,15562,17224,20031,21453,28765,31314,31467,31693,32102,32405,32967],"tool_calls":11,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":17,"steps":5,"cost":0.038231,"prompt":64021,"completion":699,"ctx":[15410,15866,16216,16529],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":342,"steps":6,"cost":0.45615039999999996,"prompt":170733,"completion":26318,"ctx":[15657,21992,27248,52364,53472],"tool_calls":4,"bb_calls":0,"rerun":false},{"arm":"full","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":404,"steps":17,"cost":0.217739,"prompt":419258,"completion":5528,"ctx":[17334,18725,20434,22323,23115,23789,26355,27246,27708,28221,28956,29992,30258,30993,31457,32352],"tool_calls":16,"bb_calls":0,"rerun":false},{"arm":"full","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":50,"steps":6,"cost":0.1002434,"prompt":108154,"completion":2989,"ctx":[17230,21508,22190,22728,24498],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"full","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":53,"steps":7,"cost":0.0848948,"prompt":120321,"completion":2051,"ctx":[17208,19423,19775,20302,21327,22286],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"full","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":28,"steps":4,"cost":0.0503486,"prompt":59908,"completion":549,"ctx":[19466,20112,20330],"tool_calls":2,"bb_calls":0,"rerun":false},{"arm":"full","task":"fix-git","reward":1.0,"exception":null,"agent_sec":44,"steps":8,"cost":0.0694964,"prompt":129639,"completion":1127,"ctx":[17224,17543,17882,18194,18956,19661,20179],"tool_calls":6,"bb_calls":0,"rerun":false},{"arm":"full","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1204,"steps":14,"cost":0.19772640000000002,"prompt":372231,"completion":2940,"ctx":[17710,19716,20047,23579,25271,29060,29573,32624,33792,34184,34513,35788,36374],"tool_calls":12,"bb_calls":0,"rerun":false},{"arm":"full","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":21,"steps":5,"cost":0.044696200000000005,"prompt":69567,"completion":733,"ctx":[16924,17281,17513,17849],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"full","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":573,"steps":11,"cost":0.4001506000000001,"prompt":387290,"completion":18279,"ctx":[17382,25595,29142,30111,46222,46784,47579,47812,48175,48488],"tool_calls":10,"bb_calls":0,"rerun":false}]}</script>
+<script>
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const ARMS = [
+  {id:'control',   cls:'bare', label:'Bare Claude Code'},
+  {id:'bundlebox', cls:'mcp',  label:'bundlebox MCP only'},
+  {id:'full',      cls:'bb',   label:'bundlebox full install'},
+];
+const ORDER = ['fix-git','cobol-modernization','fix-code-vulnerability','build-cython-ext',
+  'custom-memory-heap-crash','git-leak-recovery','schemelike-metacircular-eval','fix-ocaml-gc'];
+const SHORT = {'fix-git':'fix-git','cobol-modernization':'cobol','fix-code-vulnerability':'vuln','build-cython-ext':'cython',
+  'custom-memory-heap-crash':'heap-crash','git-leak-recovery':'git-leak','schemelike-metacircular-eval':'scheme','fix-ocaml-gc':'ocaml-gc'};
+const T = DATA.trials;
+const get = (arm, task) => T.find(t => t.arm === arm && t.task === task);
+const scored = t => t && t.reward !== null && t.reward !== undefined;
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const fmtK = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'K' : String(n);
+const fmt$ = n => '$' + n.toFixed(2);
+const fmtMin = n => n === 0 ? '0' : n < 10 ? n.toFixed(1) : Math.round(n).toString();
+
+function legend(id) {
+  document.getElementById(id).innerHTML = ARMS.map(a => `<span><i class="key ${a.cls}"></i>${a.label}</span>`).join('');
+}
+
+function niceStep(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v || 1))), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+}
+
+// series: [{cls,label,pts:[[xIndex,y]]}]; xs: labels for each x index.
+function lineChart(host, series, xs, o) {
+  const W = o.w || 760, H = o.h || 300, m = {t: 14, r: o.endLabels ? 150 : 16, b: 36, l: 52};
+  const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': o.aria}, host);
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const ymax = 4 * niceStep(Math.max(...series.flatMap(s => s.pts.map(p => p[1]))) * 1.05 / 4);
+  const n = xs.length, x = i => m.l + (n > 1 ? i * iw / (n - 1) : iw / 2), y = v => m.t + ih - v / ymax * ih;
+  for (let k = 0; k <= 4; k++) {
+    const v = ymax * k / 4, yy = y(v);
+    el('line', {class: k ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: yy, y2: yy}, svg);
+    el('text', {class: 'tick', x: m.l - 8, y: yy + 3.5, 'text-anchor': 'end'}, svg).textContent = o.yFmt(v);
+  }
+  const every = Math.ceil(n / (o.maxXTicks || 10));
+  xs.forEach((lab, i) => { if ((i % every === 0 && (n - 1 - i >= every / 2 || i === n - 1)) || i === n - 1) el('text', {class: 'tick', x: x(i), y: m.t + ih + 16, 'text-anchor': 'middle'}, svg).textContent = lab; });
+  if (o.xTitle) el('text', {class: 'tick', x: m.l + iw / 2, y: H - 4, 'text-anchor': 'middle'}, svg).textContent = o.xTitle;
+  const xh = el('line', {class: 'xh', y1: m.t, y2: m.t + ih}, svg);
+  for (const s of series) {
+    if (!s.pts.length) continue;
+    el('path', {class: `ln ${s.cls}`, d: s.pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1)).join('')}, svg);
+    const last = s.pts[s.pts.length - 1];
+    el('circle', {class: `dot ${s.cls}`, cx: x(last[0]), cy: y(last[1]), r: 4}, svg);
+    s.end = [x(last[0]), y(last[1])];
+  }
+  if (o.endLabels) {
+    // Direct labels at the right edge, spread only as far as needed to avoid overlap, with leader lines.
+    const ls = series.filter(s => s.end).map(s => ({s, y: s.end[1]})).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ls.length; i++) if (ls[i].y - ls[i - 1].y < 15) ls[i].y = ls[i - 1].y + 15;
+    for (const l of ls) {
+      const lx = m.l + iw + 14;
+      el('line', {class: 'grid', x1: l.s.end[0] + 6, y1: l.s.end[1], x2: lx - 3, y2: l.y}, svg);
+      el('text', {class: 'lab', x: lx, y: l.y + 4}, svg).textContent = `${l.s.label} · ${o.yFmt(l.s.pts[l.s.pts.length - 1][1])}`;
+    }
+  }
+  // Hover: nearest x index, crosshair, one tooltip listing every series.
+  const plot = host.closest('.plot') || host;
+  let tip = plot.querySelector(':scope > .tip');
+  if (!tip) { tip = document.createElement('div'); tip.className = 'tip'; plot.appendChild(tip); }
+  const hit = el('rect', {x: m.l - 10, y: m.t, width: iw + 20, height: ih, fill: 'transparent'}, svg);
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) * W / r.width;
+    const i = Math.max(0, Math.min(n - 1, Math.round((sx - m.l) / (n > 1 ? iw / (n - 1) : 1))));
+    xh.setAttribute('x1', x(i)); xh.setAttribute('x2', x(i)); xh.style.opacity = .6;
+    const rows = series.map(s => { const p = s.pts.find(p => p[0] === i); return p ? `<div class="r"><i class="key ${s.cls}"></i>${s.label}<b>${o.yFmt(p[1])}</b></div>` : ''; }).join('');
+    tip.innerHTML = `<div class="t">${o.tipTitle ? o.tipTitle(i) : xs[i]}</div>${rows || '<div class="r">no data</div>'}`;
+    const pr = plot.getBoundingClientRect(), px = x(i) * r.width / W + r.left - pr.left + plot.scrollLeft;
+    tip.style.opacity = 1; tip.style.top = (r.top - pr.top + 8) + 'px';
+    tip.style.left = Math.min(px + 12, plot.scrollWidth - tip.offsetWidth - 8) + 'px';
+  };
+  hit.addEventListener('pointermove', move);
+  hit.addEventListener('pointerleave', () => { tip.style.opacity = 0; xh.style.opacity = 0; });
+}
+
+function table(id, head, rows) {
+  document.getElementById(id).innerHTML = `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => typeof c === 'object' ? `<td class="${c.cls}">${c.v}</td>` : `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+// ── header, tiles ──
+const tasks = ORDER.filter(t => T.some(r => r.task === t));
+const common = tasks.filter(t => ARMS.every(a => scored(get(a.id, t))));
+const pass = a => T.filter(t => t.arm === a && t.reward === 1).length;
+const nScored = a => T.filter(t => t.arm === a && scored(t)).length;
+const bbCalls = T.filter(t => t.arm !== 'control').reduce((s, t) => s + (t.bb_calls || 0), 0);
+const firstCtx = a => { const v = T.filter(t => t.arm === a && t.ctx && t.ctx.length).map(t => t.ctx[0]); return v.reduce((s, x) => s + x, 0) / v.length; };
+const sum = (a, k, set) => set.reduce((s, task) => s + (get(a, task)[k] || 0), 0);
+document.getElementById('stamp').textContent = `Run 2026-09-30 · page built ${DATA.generated} · ${T.length} finished trials across 3 arms`;
+document.getElementById('tagline').textContent = `The same agent and model on ${tasks.length} Terminal-Bench tasks, three ways: bare, with the bundlebox MCP server registered, and with the full bundlebox install (instructions, hooks, prebuilt tables).`;
+const perArm = f => ARMS.map(a => `<span><i class="key ${a.cls}"></i>${f(a.id)}</span>`).join('');
+document.getElementById('tiles').innerHTML = [
+  ['Tasks passed', perArm(a => `${pass(a)} of ${nScored(a)}`), 'bare, MCP only, full install · out of graded trials. Bare\'s 8th was never graded'],
+  ['bundlebox tool calls', String(bbCalls), `across all ${T.filter(t => t.arm !== 'control').length} trials in both bundlebox arms`],
+  ['Extra context at start', '+' + fmtK(Math.round(firstCtx('full') - firstCtx('control'))), 'full install vs bare, first model call, mean'],
+  ['Spend on shared tasks', perArm(a => fmt$(sum(a, 'cost', common))), `bare, MCP only, full install · ${common.length} tasks all three scored`],
+].map(([k, v, s]) => `<div class="tile"><p class="k">${k}</p><p class="v${v.startsWith('<span') ? ' multi' : ''}">${v}</p><p class="s">${s}</p></div>`).join('');
+
+// ── context per call, small multiples ──
+legend('legend-ctx');
+const ctxHost = document.getElementById('ctx');
+for (const task of tasks) {
+  const series = ARMS.map(a => { const t = get(a.id, task); return {cls: a.cls, label: a.label, pts: (t && t.ctx || []).map((v, i) => [i, v])}; });
+  const n = Math.max(0, ...series.map(s => s.pts.length));
+  if (!n) continue;
+  const panel = document.createElement('div'); panel.className = 'panel plot';
+  panel.innerHTML = `<h4>${task}</h4>`; ctxHost.appendChild(panel);
+  lineChart(panel, series, Array.from({length: n}, (_, i) => String(i + 1)), {w: 380, h: 210, yFmt: v => fmtK(Math.round(v)), maxXTicks: 6, xTitle: 'model call', tipTitle: i => `${task} · call ${i + 1}`, aria: `Input tokens per model call for ${task}`});
+}
+table('ctx-table', ['task', 'arm', 'calls', 'first call', 'last call', 'total input'], tasks.flatMap(task => ARMS.map(a => { const t = get(a.id, task); return t && t.ctx ? [task, a.label, t.ctx.length, fmtK(t.ctx[0]), fmtK(t.ctx[t.ctx.length - 1]), fmtK(t.prompt)] : null; }).filter(Boolean)));
+
+// ── cumulative cost and time ──
+function cumulative(id, key, scale, yFmt, legendId, tableId, unit) {
+  legend(legendId);
+  const series = ARMS.map(a => { let acc = 0; return {cls: a.cls, label: a.label, pts: common.map((task, i) => [i, acc += (get(a.id, task)[key] || 0) * scale])}; });
+  lineChart(document.getElementById(id), series, common.map(t => SHORT[t] || t), {yFmt, endLabels: true, xTitle: 'running total after each task', tipTitle: i => `after ${common[i]}`, aria: `Cumulative ${unit} across tasks`});
+  table(tableId, ['#', 'task', ...ARMS.map(a => a.label + ' ' + unit)], common.map((task, i) => [i + 1, task, ...ARMS.map(a => yFmt((get(a.id, task)[key] || 0) * scale))]));
+}
+cumulative('cost', 'cost', 1, fmt$, 'legend-cost', 'cost-table', '$');
+cumulative('time', 'agent_sec', 1 / 60, v => fmtMin(v) + ' min', 'legend-time', 'time-table', 'min');
+
+// ── every trial ──
+table('all', ['task', 'arm', 'result', 'agent min', 'steps', 'cost', 'bb calls'], tasks.flatMap(task => ARMS.map(a => {
+  const t = get(a.id, task); if (!t) return [task, a.label, 'not run', '', '', '', ''];
+  const res = scored(t) ? {cls: t.reward === 1 ? 'pass' : '', v: t.reward === 1 ? 'pass' + (t.exception ? ' (hit time limit)' : '') : 'fail'} : 'not scored: ' + (t.exception || 'unknown');
+  return [task, a.label, res, t.agent_sec != null ? fmtMin(t.agent_sec / 60) : '', t.steps ?? '', t.cost != null ? fmt$(t.cost) : '', t.bb_calls ?? ''];
+})));
+</script>
+</body>
+</html>
