@@ -69,6 +69,60 @@ export function terms(problem) {
   }
   return out;
 }
+/** What a statement says about which files may change. Drawn from the phrasings
+ *  Terminal-Bench 2.0 and 4.0 task statements actually use: "fix in user.cpp
+ *  only", "the only edits you may make are to … input.tex", "Do not modify
+ *  `build.sh`", "You must not modify the weights.pt file", "The following files
+ *  are read-only and must NOT be modified: `a`, `b`". A sentence counts only
+ *  when "only", a negation or "read-only" sits with an editing verb, so "the
+ *  only source of rules" and "should only encode proteins" draw nothing. A
+ *  negated clause holds the paths after its verb up to "but", "instead" or a
+ *  comma that does not start another path, so "don't modify the tests, fix
+ *  src/foo.py" does not hold src/foo.py. */
+const PATHISH = /`?((?:\.{1,2}\/|\/)?[\w@-][\w.@-]*(?:\/[\w.@-]+)*\.[A-Za-z][A-Za-z0-9]{0,7})`?/g;
+const EDIT_VERB = /\b(edit|edits|edited|editing|modify|modifies|modified|modifying|change|changes|changed|changing|touch|touching|fix|write|writes|written|overwrite|alter|altered|replace)\b/i;
+const NEGATED = /\b(do not|don't|dont|must not|mustn't|should not|shouldn't|shall not|never|may not|cannot|can't|not allowed to)\b/i;
+const FIRST_PATH = /`?(?:\.{1,2}\/|\/)?[\w@-][\w.@-]*(?:\/[\w.@-]+)*\.[A-Za-z][A-Za-z0-9]{0,7}`?/;
+const pathsIn = (s) => [...String(s).matchAll(PATHISH)].map((m) => m[1]).filter((p) => /[A-Za-z]/.test(path.basename(p).split(".")[0]) && !/^\d/.test(path.basename(p)));
+const upToBreak = (s) => s.split(/\bbut\b|\binstead\b|,(?!\s*(?:(?:or|and)\s+)?`?(?:\.{1,2}\/|\/)?[\w@-][\w.@/-]*\.[A-Za-z])|\band then\b/i)[0];
+export function bounds(problem) {
+  const only = [], keepOut = [];
+  // A wrapped line is one sentence; a list item is its own.
+  const text = String(problem || "").replace(/\r/g, "").replace(/\n(?=[ \t]*(?:[-*+]|\d+\.)\s)/g, "\n\n");
+  const clauses = text.split(/\n\s*\n/).flatMap((block) => block.replace(/\s*\n\s*/g, " ").split(/;\s+|(?<=[.!?])\s+(?=[A-Z`*(-])/));
+  for (const clause of clauses) {
+    if (!pathsIn(clause).length || !EDIT_VERB.test(clause)) continue;
+    if (/\bread-only\b|\bmust not be (modified|edited|changed)\b/i.test(clause)) { keepOut.push(...pathsIn(clause)); continue; }
+    const neg = NEGATED.exec(clause);
+    if (neg) {
+      const after = clause.slice(neg.index);
+      // "shall not modify any other file except for user.cpp" names what MAY change.
+      const ex = /\bexcept(?:\s+for)?\b/i.exec(after);
+      if (ex) { only.push(...pathsIn(upToBreak(after.slice(ex.index + ex[0].length)))); continue; }
+      const verb = EDIT_VERB.exec(after);
+      if (!verb) continue;
+      // The path has to be what the verb acts on: "do not replace the shim in
+      // megatron_parallel.py" protects the shim, not the file.
+      const tail = upToBreak(after.slice(verb.index + verb[0].length));
+      const at = tail.search(FIRST_PATH);
+      if (at >= 0 && !/\b(in|inside|within|of|from)\b/i.test(tail.slice(0, at))) keepOut.push(...pathsIn(tail));
+      continue;
+    }
+    const lead = /\bonly\s+(?:edits?|modify|modifications?|change|changes|touch|write)\b/i.exec(clause);
+    if (lead) { only.push(...pathsIn(upToBreak(clause.slice(lead.index + lead[0].length)))); continue; }
+    for (const m of clause.matchAll(/`?((?:\.{1,2}\/|\/)?[\w@-][\w.@-]*(?:\/[\w.@-]+)*\.[A-Za-z][A-Za-z0-9]{0,7})`?\s+only\b/g)) only.push(m[1]);
+  }
+  return { only: [...new Set(only)], keepOut: [...new Set(keepOut)] };
+}
+/** The tree file a statement's path names: the path itself when it resolves
+ *  under the root (so `/app/user.cpp` is `user.cpp` in a tree rooted at /app),
+ *  else the one file in `pool` with that basename. Ambiguous is nothing. */
+function named(token, pool) {
+  let r = ""; try { r = rel(abs(token)); } catch { /* not a path this tree can hold */ }
+  if (r && !r.startsWith("..") && fs.existsSync(abs(r))) return r;
+  const hits = pool.filter((f) => path.basename(f) === path.basename(token));
+  return hits.length === 1 ? hits[0] : null;
+}
 const pathHits = (ts) => ts.filter((t) => t.includes("/") || /\.[a-z]{1,4}$/.test(t)).map((t) => abs(t)).filter((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } }).map(rel);  // a token that names no file is not a path hit
 
 /** How many files the content search names. */
@@ -173,22 +227,48 @@ function processRules() {
   if (!out.length) out.push(...readText(p).split("\n").filter((l) => /^- /.test(l)));
   return out.slice(0, 5);
 }
+/** Detectors that report the shape of a file rather than a fault in it. A brief
+ *  that carries one beside "do this task only, no cleanup" hands the session a
+ *  cleanup job and a rule against doing it: the Terminal-Bench re-run's one
+ *  brief told a crash fix to delete comments and name magic numbers in
+ *  main.cpp. They still ride along when the task's own words are in the title.
+ *  A TODO is not on the list: it is the author's note about the file. */
+export const HYGIENE = /^(oversight:|anti-slop$|duplicate-blocks$|god-file$|dead-exports$|orphan-files$|debug-leftovers$|ui-generic$|doc-links$|worktree-hygiene$|missing-tests$|dead-config$)/;
+const mentions = (title, tl) => tl.some((t) => String(title || "").toLowerCase().includes(t));
+// Whether a hygiene finding is about THIS task. Plain words are no evidence: a
+// long statement shares "code" and "lines" with every style score, which let
+// bloat and vibe-coded ride along on a Terminal-Bench security fix. Two things
+// are: an identifier the task names appearing in the title (refreshToken,
+// parse_config, v2Handler), or the task using the detector's own words ("remove
+// the duplicate blocks", "clean up the debug leftovers").
+const IDENT = /[a-z][A-Z]|_|[A-Za-z]\d|\d[A-Za-z]/;
+function aboutTask(f, ts) {
+  const words = String(f.title || "").replace(/`[^`]*`/g, " ").replace(/\S*\/\S*|\S+\.[A-Za-z]{1,5}\b/g, " ").toLowerCase();
+  const ids = ts.filter((t) => t.length >= 4 && IDENT.test(t) && !/[/.]/.test(t)).map((t) => t.toLowerCase());
+  if (ids.some((t) => words.includes(t))) return true;
+  const said = new Set(ts.map((t) => t.toLowerCase()));
+  return String(f.detector || "").replace(/^oversight:/, "").split(/[-:_]/).some((w) => w.length >= 4 && (said.has(w) || said.has(w.replace(/s$/, ""))));
+}
 function evidence(scope, ts) {
   const set = new Set(scope);
   const tl = ts.map((t) => t.toLowerCase()).filter((t) => t.length >= 4);
   const rank = { critical: 0, high: 1, medium: 2, low: 3 };
   return store.openFindings()
-    .filter((f) => (f.files || []).some((x) => set.has(x)) || set.has(f.path) || tl.some((t) => String(f.title || "").toLowerCase().includes(t)))
+    .filter((f) => HYGIENE.test(String(f.detector || "")) ? aboutTask(f, ts)
+      : mentions(f.title, tl) || (f.files || []).some((x) => set.has(x)) || set.has(f.path))
     .sort((p, q) => (rank[p.severity] ?? 4) - (rank[q.severity] ?? 4))
     .slice(0, 8)
     .map((f) => ({ id: f.id, detector: f.detector, severity: f.severity, title: String(f.title).slice(0, 160), fix_hint: String(f.fix_hint || "").slice(0, 160) }));
 }
 /** What the STORED oversight scan says about the scope. Never recomputed. */
-function oversight(scope) {
+function oversight(scope, ts = []) {
   const doc = oversightLatest();
   if (!doc) return null;
   const set = new Set(scope);
-  const guidelines = (doc.findings || []).filter((f) => (f.files || []).some((x) => set.has(x))).slice(0, 5)
+  // Every oversight rule is a hygiene rule (see HYGIENE): one reaches the
+  // brief when the task is about what it measured, not because it sits on a
+  // file in scope. The notes below stay: they are about reading the scope.
+  const guidelines = (doc.findings || []).filter((f) => (f.files || []).some((x) => set.has(x)) && aboutTask(f, ts)).slice(0, 5)
     .map((f) => ({ rule: f.detector.replace(/^oversight:/, ""), title: f.title, hint: f.fix_hint }));
   const notes = [];
   for (const m of doc.files || []) if (set.has(m.path) && doc.capacity && m.tokens / doc.capacity >= 0.35) notes.push(`\`${m.path}\` is ${human(m.tokens)} tokens whole (${Math.round((100 * m.tokens) / doc.capacity)}% of one payload): read the region, not the file`);
@@ -299,6 +379,28 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
     grown.push(f);
     ev = next;
   }
+  // ── what the task itself allows ───────────────────────────────────────────
+  //
+  // A statement that says "fix in user.cpp only" or "do not modify build.sh"
+  // has already drawn part of the scope, and a brief that widens it hands the
+  // guards a licence the task withheld. Measured on Terminal-Bench 2.0: asked
+  // with both files named, the brief called `main.cpp` "the only files you may
+  // edit" beside a task that said user.cpp only. Held files stay readable and
+  // are named as held; they are not candidates, which the brief offers as
+  // somewhere to go when the scope does not hold the cause.
+  const bound = bounds(problem);
+  const held = [];
+  const pool = [...new Set([...scope, ...explicit, ...ranked])];
+  for (const t of bound.keepOut) {
+    const f = named(t, pool);
+    if (f && scope.includes(f)) { scope.splice(scope.indexOf(f), 1); held.push(f); }
+  }
+  const allowed = bound.only.map((t) => named(t, pool)).filter((f) => f && !held.includes(f));
+  if (allowed.length) {
+    for (const f of [...scope]) if (!allowed.includes(f)) { scope.splice(scope.indexOf(f), 1); held.push(f); }
+    for (const f of allowed) if (!scope.includes(f)) scope.push(f);
+  }
+  if (held.length || allowed.length) ev = evalOf();
   // ── the candidates the budget could not afford ────────────────────────────
   //
   // Everything below the scope used to be thrown away. That is wrong by an
@@ -311,7 +413,7 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
   // So the brief names them, with the line that ranked them and an explicit
   // instruction that they are not in scope. A session that finds the scope does
   // not hold the answer now has somewhere to go that is not a search.
-  const inScope = new Set(scope);
+  const inScope = new Set([...scope, ...held]);
   const bestHit = new Map();
   for (const h of sym) if (!bestHit.has(h.file)) bestHit.set(h.file, h);
   const candidates = ranked.filter((f) => !inScope.has(f)).slice(0, CANDIDATE_CAP)
@@ -320,9 +422,9 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
 
   const gates = detectGates(ROOT);
   const b = {
-    problem: String(problem).trim(), kind, terms: ts, scope, cut, grown, candidates, ranked: ranked.length, anchors,
+    problem: String(problem).trim(), kind, terms: ts, scope, cut, grown, candidates, held, ranked: ranked.length, anchors,
     symbols: sym.filter((h) => scope.includes(h.file)).slice(0, 12), grep: grep.slice(0, 6),
-    evidence: evidence(scope, ts), gates, traps: traps(scope, ts), oversight: oversight(scope), process: processRules(),
+    evidence: evidence(scope, ts), gates, traps: traps(scope, ts), oversight: oversight(scope, ts), process: processRules(),
     projected: ev.projected, ceiling: ev.ceiling, verdict: ev.verdict, headroom: ev.headroom, payload_saved: ev.payload_saved,
     tables: await tablesFor(),
     via: { symbols: snapgen.symbolIndex().via, anchors: anchors.length ? (anchors.every((a) => a.via === "kernel") ? "kernel" : anchors.some((a) => a.via === "kernel") ? "mixed" : "js") : null },
@@ -349,7 +451,15 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
   if (b.abstain) {
     b.scope = []; b.cut = []; b.candidates = []; b.anchors = []; b.symbols = []; b.grep = []; b.proposals = [];
   }
-  b.prompt = b.abstain ? abstainPrompt(b) : prompt(b);
+  // Whether the brief says anything the caller did not already know. With no
+  // symbol hit, no content hit, no region and no file beyond the ones named,
+  // the full brief is 600 tokens of rules and empty sections around the
+  // caller's own file list (or the file the task itself says is the only one to change): the one bb_pinpoint call on the Terminal-Bench
+  // re-run got exactly that, for two C++ files the index cannot read. Such a
+  // brief is two lines, and the prompt hook emits nothing for it.
+  const told = new Set([...explicit, ...allowed]);
+  b.adds = !b.abstain && (b.symbols.length > 0 || b.grep.length > 0 || b.anchors.length > 0 || b.scope.some((f) => !told.has(f)));
+  b.prompt = b.abstain ? abstainPrompt(b) : b.adds ? prompt(b) : nothingPrompt(b);
   b.path = write(b);
   return b;
 }
@@ -376,6 +486,14 @@ export function coverage(files = sourceFiles()) {
   const unindexed = Object.values(other).reduce((a, n) => a + n, 0);
   const top = Object.entries(other).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 4);
   return { indexed, unindexed, partial: unindexed >= 10 && unindexed > indexed, top: top.map(([e, n]) => `${e} ${n}`) };
+}
+
+function nothingPrompt(b) {
+  const L = [`# ${b.problem}`, "",
+    `bundlebox pinpoint found nothing beyond the files named: no symbol or content match for this task's words and no region to quote. Scope stays as named: ${b.scope.length ? b.scope.map((f) => `\`${f}\``).join(", ") : "(none)"}.`];
+  if (b.held.length) L.push(`Read, do not edit (the task holds these): ${b.held.map((f) => `\`${f}\``).join(", ")}.`);
+  if (b.coverage.partial) L.push(`Most of this tree is in languages the index does not read (${b.coverage.top.join(", ")}); search it directly.`);
+  return clean(L.join("\n"));
 }
 
 function abstainPrompt(b) {
@@ -473,6 +591,7 @@ export function prompt(b) {
   L.push("", "## Scope — the only files you may edit");
   for (const f of b.scope) L.push(`- \`${f}\` (~${human(estimate.file(abs(f)))} tokens)`);
   if (b.cut.length) L.push(`- ask before opening these: ${b.cut.map((c) => `\`${c}\``).join(", ")} (cut for budget)`);
+  if (b.held && b.held.length) L.push(`- read, do not edit — the task holds these: ${b.held.map((c) => `\`${c}\``).join(", ")}`);
   if (b.candidates && b.candidates.length) {
     L.push("", "## If the scope does not hold it — ranked, not budgeted", "Not in scope. Open one only if Scope does not hold the cause, and say which.");
     for (const c of b.candidates) L.push(`- \`${c.file}${c.line ? `:${c.line}` : ""}\`${c.symbol ? ` — \`${c.symbol}\`` : ""} (~${human(c.tokens)} tokens whole)`);

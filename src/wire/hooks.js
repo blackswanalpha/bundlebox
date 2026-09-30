@@ -491,13 +491,15 @@ async function autoPinpoint(payload, p) {
   // and returns `fix` unchanged when no table has been fitted yet.
   const it = intent.classify(p);
   const b = await pp.build(p, { kind: it.kind });
-  // A locate that matched nothing and scoped nothing is not a brief. The band
-  // would still open with "the task is located below — do not search for it"
-  // over an empty list, which tells the session to skip the one step it needs.
+  // A locate that adds nothing to what the prompt already said is not a brief:
+  // no symbol hit, no content hit, no region, no file beyond the ones named
+  // (`b.adds`, which also covers an abstention). The band would still open
+  // with "the task is located below — do not search for it" over an empty or
+  // echoed list, which tells the session to skip the one step it needs.
   // Measured on Terminal-Bench 2.0: 4 of 8 task prompts got exactly that band.
   // Nothing is emitted and nothing activated, so the guards have no scope to
   // enforce either; the brief file stays on disk for `bb explain`.
-  if (!b.scope.length && !b.symbols.length && !b.grep.length) {
+  if (!b.adds) {
     log("prompt", `pinpoint located nothing, kind ${it.kind} (${it.via}) in ${Date.now() - t0}ms; no band`);
     return true;
   }
