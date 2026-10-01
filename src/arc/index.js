@@ -26,7 +26,7 @@ export const BIN = () => {
 export const TABLES = () => {
   const dir = path.join(OUT, "snapgen");
   try { return fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)).map((n) => path.join(dir, n)).sort(); }
-  catch { return []; }
+  catch { return []; } // no tables compiled yet
 };
 
 /** Compile the index. Returns null when the binary is not built, so a caller
@@ -48,7 +48,7 @@ export function build() {
 export function lookupVia(bin, terms, opts = {}) {
   const r = run([bin, "lookup"], { input: JSON.stringify({ index: read.FILE(), terms, ...opts }), timeout: 30000 });
   if (r.rc !== 0) return null;
-  try { return JSON.parse(r.out).hits; } catch { return null; }
+  try { return JSON.parse(r.out).hits; } catch { return null; } // null sends the caller to the table scan
 }
 
 export const commands = {

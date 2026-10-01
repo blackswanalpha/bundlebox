@@ -138,7 +138,7 @@ export async function collect(dir, { apply = false, allow = [], query = "", time
       if (!res.ok) { rows.push({ id, state: "error", url, why: `HTTP ${res.status}` }); continue; }
       const out = path.join(dir, "corpus", `${id}.json`);
       fs.mkdirSync(path.dirname(out), { recursive: true });
-      const parsed = (() => { try { return JSON.parse(body); } catch { return null; } })();
+      const parsed = (() => { try { return JSON.parse(body); } catch { return null; } })(); // not JSON: stored raw
       fs.writeFileSync(out, JSON.stringify({
         id, source: id, url, captured: now(), kind: p.kind,
         observed: parsed ? [`${Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length} records`] : [`${body.length} bytes of html`],

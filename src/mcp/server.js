@@ -5,9 +5,27 @@
 // tools exposed are the zero-token verbs: an agent that can ask `bb_pinpoint`
 // for a packed brief or `bb_snapgen` for the symbol table does not spend turns
 // searching for what the factory already knows.
+import fs from "node:fs";
+import path from "node:path";
 import { createInterface } from "node:readline";
 import { TOOLS } from "./tools.js";
 import { load } from "../core/config.js";
+import { ROOT } from "../core/paths.js";
+
+/** Whether Claude Code in this workspace already runs pinpoint on every task
+ *  prompt through `bb hook prompt`. Then the always-loaded `bb_pinpoint` schema
+ *  is the same locate wired twice: about 200 tokens on every call, for a tool
+ *  the agent called twice in eight Terminal-Bench trials with the brief already
+ *  in its window, neither call changing what it did. Deferred, it stays one
+ *  name and one search away. */
+export function promptHookWired(root = ROOT) {
+  for (const f of ["settings.json", "settings.local.json"]) {
+    let s; try { s = JSON.parse(fs.readFileSync(path.join(root, ".claude", f), "utf8")); } catch { continue; }  // not written, or not ours to parse
+    const groups = s?.hooks?.UserPromptSubmit;
+    if (Array.isArray(groups) && groups.some((g) => (g?.hooks || []).some((h) => /(^|[\s/])bb(\.js)? hook prompt\b/.test(String(h?.command || ""))))) return true;
+  }
+  return false;
+}
 
 /** The tools this workspace advertises. Read per call rather than once: the
  *  server holds one process for the life of a session, and a trim applied
@@ -51,7 +69,12 @@ export function serve({ input = process.stdin, output = process.stdout, name = "
       // Listed, never CALLED-away: a trimmed tool is still dispatched if
       // something asks for it by name. Hiding a capability is a saving;
       // breaking one is not.
-      if (method === "tools/list") return reply(id, { tools: listed().map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, ...(annotations ? { annotations } : {}) })) });
+      if (method === "tools/list") {
+        const always = new Set((load({ fresh: true }).wire?.always_load_tools || []).map(String));
+        if (promptHookWired()) always.delete("bb_pinpoint");
+        return reply(id, { tools: listed().map(({ name, description, inputSchema, annotations }) =>
+          ({ name, description, inputSchema, ...(annotations ? { annotations } : {}), ...(always.has(name) ? { _meta: { "anthropic/alwaysLoad": true } } : {}) })) });
+      }
       if (method === "tools/call") {
         const tool = TOOLS.find((t) => t.name === params.name);
         if (!tool) return fail(id, -32602, `unknown tool ${params.name}`);

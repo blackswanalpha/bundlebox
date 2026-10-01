@@ -64,7 +64,7 @@ export function ids() {
   const out = [];
   const rec = (d, prefix) => {
     let names;
-    try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }  // unreadable dir: skip it
     for (const e of names.sort((a, b) => a.name.localeCompare(b.name))) {
       if (e.isDirectory()) rec(path.join(d, e.name), `${prefix}${e.name}/`);
       else if (e.name.endsWith(".json")) out.push(prefix + e.name.slice(0, -5));

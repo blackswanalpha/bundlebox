@@ -36,7 +36,7 @@ import { out, warn, emit } from "../core/log.js";
 import { state, benchState } from "./state.js";
 import { html } from "./page.js";
 
-const VERSION = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0";
+const VERSION = () => readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0"; // a package.json with no version is a dev checkout
 
 export const FILE = () => path.join(OUT, "console", "index.html");
 

@@ -47,7 +47,6 @@ export const DEFAULTS = {
     agent: "auto",            // claude | codex | gemini | aider | opencode | cursor | copilot | custom | auto
     max_parallel: 4,
     model: "",                // empty = the agent's default
-    fallback_model: "",
     lean_session: true,
     permission_mode: "acceptEdits",
     max_turns: 120,
@@ -88,11 +87,9 @@ export const DEFAULTS = {
     allow_push: true,
     allow_merge: false,
     draft_pr: true,
-    branch_prefix: "bb/",
-    conventional_commits: true,
     protected: ["main", "master", "develop", "release"],
   },
-  remote: { enabled: false, ttl_min: 30, fetch_timeout: 120, pr_limit: 30, stale_pr_days: 14 },
+  remote: { enabled: false },
   kernel: {
     // What PROVES a change. Auto-detected from package.json/Makefile/pyproject when empty.
     gates: {},
@@ -216,6 +213,13 @@ export const DEFAULTS = {
     // tools are dropped from `tools/list` and still DISPATCH if something asks
     // for one by name: hiding a capability is a saving, breaking one is not.
     trim_tools: [],
+    // The tools a harness with tool search loads at session start instead of
+    // deferring. Claude Code defers every MCP tool by default and shows only its
+    // name; on Terminal-Bench 2.0 that meant 0 calls in 16 trials, because the
+    // agent never ran the search that loads one. Marked per tool through
+    // `_meta["anthropic/alwaysLoad"]`, so the rest stay deferred. These two cost
+    // about 350 tokens of schema; all ten would cost about 1,130.
+    always_load_tools: ["bb_pinpoint", "bb_context"],
   },
   janitor: {
     // What the hooks do with a compiled heap. Every one of these reads an
@@ -383,7 +387,6 @@ export const DEFAULTS = {
     // record made from a failed run would gate on a fact about nothing.
     record_on_success: true,
   },
-  cron: { sweep_every_min: 30, autonomous_fix: false },
 };
 
 let _cache = null;

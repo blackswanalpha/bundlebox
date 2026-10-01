@@ -21,7 +21,7 @@ import * as expert from "../core/expert.js";
 // `pre-search` are the two that carry an ANSWER rather than a pointer, so they
 // are the two allowed to be expensive: what they replace is the whole file or
 // the whole search.
-export const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-write": 900, "pre-search": 500, "post-tool": 300, "restate-rules": 700, narrative: 1200 };
+export const CAPS = { "session-start": 600, prompt: 1000, "pre-read": 900, "pre-write": 900, "pre-search": 500, "post-tool": 300, "post-tool-failure": 120, "restate-rules": 700, narrative: 1200 };
 
 // ── the janitor's three touch points ────────────────────────────────────────
 //
@@ -42,12 +42,12 @@ function janitorArtefact(name, maxAgeHours) {
     const st = fs.statSync(f);
     if ((Date.now() - st.mtimeMs) / 3600000 > maxAgeHours) return null;
     return fs.readFileSync(f, "utf8");
-  } catch { return null; }
+  } catch { return null; }  // hook: missing or unreadable artefact is no notice
 }
 const COMPACTED = () => path.join(VAR, "janitor-compacted.json");
 
 function readStdin() {
-  try { const s = fs.readFileSync(0, "utf8"); return s.trim() ? JSON.parse(s) : {}; } catch { return {}; }
+  try { const s = fs.readFileSync(0, "utf8"); return s.trim() ? JSON.parse(s) : {}; } catch { return {}; }  // hook: bad stdin must not crash the session
 }
 function log(event, msg) {
   try { ensureDirs(); fs.appendFileSync(path.join(VAR, "hooks.log"), `${now()} ${event} ${msg}\n`); } catch { /* the log is a courtesy */ }
@@ -85,7 +85,7 @@ function looksLikeProject(root) {
   for (const m of MANIFESTS) if (fs.existsSync(path.join(resolved, m))) return m;
   let kids = [];
   try { kids = fs.readdirSync(resolved, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).slice(0, 40); }
-  catch { return ""; }
+  catch { return ""; }  // hook: unreadable root, no manifest hint
   for (const k of kids) for (const m of MANIFESTS) if (fs.existsSync(path.join(resolved, k.name, m))) return `${k.name}/${m}`;
   return "";
 }
@@ -169,16 +169,32 @@ async function sessionStart(payload = {}) {
   // memory it was just handed no longer resolves cannot be recovered later.
   const rot = memoryRotNotice(cfg);
   if (rot) parts.push(rot);
+  // The pointer, not the index. SessionStart context is written into the cache
+  // once and re-read on every call of the session, and the INDEX table cost
+  // 400-550 tokens of that on each Terminal-Bench task while no session opened
+  // a table it listed. The names are enough to know what exists; the file says
+  // the rest when a session asks for it.
   const index = path.join(OUT, "snapgen", "INDEX.md");
-  if (fs.existsSync(index)) parts.push("bundlebox reference tables (read instead of searching):\n" + fs.readFileSync(index, "utf8").trim());
-  else parts.push("bundlebox: no snapgen tables yet — `bb snapgen build` writes layout, symbols, routes, docs, commands, hot.");
+  if (fs.existsSync(index)) {
+    let names = [];
+    try { names = fs.readdirSync(path.dirname(index)).filter((n) => n.endsWith(".md") && n !== "INDEX.md").map((n) => n.slice(0, -3)).sort(); } catch { /* the pointer still stands */ }
+    const shown = names.length > 12 ? [...names.slice(0, 12), `+${names.length - 12} more`] : names;
+    parts.push(`bundlebox reference tables (read instead of searching): ${path.relative(ROOT, index)}${shown.length ? ` — ${shown.join(", ")}` : ""}`);
+  } else parts.push("bundlebox: no snapgen tables yet — `bb snapgen build` writes layout, symbols, routes, docs, commands, hot.");
   const open = store.openFindings();
   if (open.length) {
     const by = {};
     for (const f of open) by[f.detector] = (by[f.detector] || 0) + 1;
-    parts.push(`open findings: ${open.length} (${Object.entries(by).map(([k, v]) => `${k} ${v}`).join(", ")}) — \`bb findings\`, \`bb explain <id>\``);
+    // The four largest detectors. On this workspace the full breakdown was 24
+    // detectors, a line longer than the pointer it sits under, and `bb findings`
+    // prints it for free when a session wants it.
+    const top = Object.entries(by).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const rest = top.length > 4 ? `, +${top.length - 4} more detectors` : "";
+    parts.push(`open findings: ${open.length} (${top.slice(0, 4).map(([k, v]) => `${k} ${v}`).join(", ")}${rest}) — \`bb findings\`, \`bb explain <id>\``);
   }
-  parts.push("For a task: `bb pinpoint \"<task>\"` writes a located, budgeted brief; `bb context <files>` says whether a scope fits.");
+  // With auto_pinpoint on, the prompt hook runs the locate itself; telling the
+  // session to run it is a line it re-reads on every call for nothing.
+  if (!cfg.wire.auto_pinpoint) parts.push("For a task: `bb pinpoint \"<task>\"` writes a located, budgeted brief; `bb context <files>` says whether a scope fits.");
   emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: capTokens(parts.join("\n\n"), CAPS["session-start"]) } });
 }
 
@@ -206,7 +222,7 @@ function memoryRotNotice(cfg) {
   if (!cfg.janitor?.notify) return "";
   const raw = janitorArtefact("diagnostics.json", Number(cfg.janitor.max_age_hours) || 168);
   if (!raw) return "";
-  let d; try { d = JSON.parse(raw); } catch { return ""; }
+  let d; try { d = JSON.parse(raw); } catch { return ""; }  // hook: a torn artefact is no notice
   return rotNotice(d.diagnostics || []);
 }
 
@@ -256,7 +272,7 @@ export function compactionBands(cfg, { sessionId = "" } = {}) {
  *  to do, and a harness with no SessionStart(compact) gets it at the prompt. */
 function restateAfterCompaction(payload, cfg, hookEventName) {
   if (!cfg.janitor?.restate_rules && cfg.janitor?.narrative === false) return false;
-  let mark; try { mark = JSON.parse(fs.readFileSync(COMPACTED(), "utf8")); } catch { return false; }
+  let mark; try { mark = JSON.parse(fs.readFileSync(COMPACTED(), "utf8")); } catch { return false; }  // hook: no compaction mark
   if (!mark || !mark.at) return false;
   const session = String(payload.session_id || "");
   if (session && mark.session_id && mark.session_id !== session) return false;
@@ -325,8 +341,18 @@ export function taskScore(prompt, head = taskHead()) {
   const x = promptFeatures(prompt), w = (head && head.weights) || {};
   return sigmoid(Object.entries(x).reduce((a, [k, v]) => a + (Number(w[k]) || 0) * v, 0));
 }
+/** Text the harness wrote, not the person: a background task finishing, a
+ *  command echo, a reminder. It reaches UserPromptSubmit like a prompt, and it
+ *  carries paths, verbs and backticks like one, so both the regex and the head
+ *  score it as work. 31 of the last 100 briefs on this workspace located a
+ *  `<task-notification>`, each one a scope handed to a turn that had no task.
+ *  A subagent's hand-back arrives as `<agent-message from="…">`: located, it
+ *  cost this workspace a 1,000-token band and handed foreman the report as the
+ *  job it then steered against. */
+const HARNESS = /^\s*<(task-notification|system-reminder|local-command-stdout|local-command-stderr|command-name|command-message|agent-message|teammate-message)[\s>]/;
 export const isTask = (p) => {
   const s = String(p);
+  if (HARNESS.test(s)) return false;
   const h = taskHead();
   if (h && h.useful && !h.drift) return taskScore(s, h) >= Number(h.threshold ?? 0.2);
   return s.length >= 40 && TASK_SHAPED.test(s);
@@ -380,7 +406,7 @@ export async function buildSpace({ force = false } = {}) {
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)); } catch { return { built: false, why: "no symbol tables" }; }
   if (!names.length) return { built: false, why: "no symbol tables" };
-  const newest = Math.max(...names.map((n) => { try { return fs.statSync(path.join(dir, n)).mtimeMs; } catch { return 0; } }));
+  const newest = Math.max(...names.map((n) => { try { return fs.statSync(path.join(dir, n)).mtimeMs; } catch { return 0; } }));  // hook: removed since readdir
   let have = 0; try { have = fs.statSync(rank.SPACE()).mtimeMs; } catch { /* none yet */ }
   if (!force && have >= newest) return { built: false, why: "current", tables: names.length };
   const tables = {}; for (const n of names) { try { tables[n] = fs.readFileSync(path.join(dir, n), "utf8"); } catch { /* one table */ } }
@@ -468,6 +494,18 @@ async function autoPinpoint(payload, p) {
   // and returns `fix` unchanged when no table has been fitted yet.
   const it = intent.classify(p);
   const b = await pp.build(p, { kind: it.kind });
+  // A locate that adds nothing to what the prompt already said is not a brief:
+  // no symbol hit, no content hit, no region, no file beyond the ones named
+  // (`b.adds`, which also covers an abstention). The band would still open
+  // with "the task is located below — do not search for it" over an empty or
+  // echoed list, which tells the session to skip the one step it needs.
+  // Measured on Terminal-Bench 2.0: 4 of 8 task prompts got exactly that band.
+  // Nothing is emitted and nothing activated, so the guards have no scope to
+  // enforce either; the brief file stays on disk for `bb explain`.
+  if (!b.adds) {
+    log("prompt", `pinpoint located nothing, kind ${it.kind} (${it.via}) in ${Date.now() - t0}ms; no band`);
+    return true;
+  }
   const rec = brief.record(b, { sessionId, briefPath: b.path });
   brief.activate(rec);
   brief.prune();
@@ -588,6 +626,17 @@ async function postTool(payload) {
   if (cfg.lathe?.record_shapes) await recordShape(payload, cfg);
   if (cfg.grapple?.enabled !== false) await grappleObserve(payload);
   if (cfg.foreman?.enabled !== false && (cfg.foreman?.hook || "observe") !== "off") await foremanWatch(payload, cfg);
+}
+
+/** A failed tool call that already failed the same way this session. Claude
+ *  Code fires PostToolUseFailure, not PostToolUse, for a failed call, so the
+ *  post-tool handlers above never see one. Silent on a first failure. */
+async function postToolFailure(payload) {
+  const repeats = await import("./repeats.js");
+  const text = repeats.notice(repeats.record(payload));
+  if (!text) return null;
+  emit({ hookSpecificOutput: { hookEventName: "PostToolUseFailure", additionalContext: capTokens(text, CAPS["post-tool-failure"]) } });
+  return text;
 }
 
 /** The foreman's live steer: the one channel that reaches an agent while it
@@ -867,6 +916,7 @@ export async function handleEvent(event, payload = {}) {
     else if (event === "pre-write") await preWrite(payload);
     else if (event === "pre-search") await preSearch(payload);
     else if (event === "post-tool") await postTool(payload);
+    else if (event === "post-tool-failure") await postToolFailure(payload);
     else if (event === "pre-compact") await preCompact(payload);
     else if (event === "stop") await stop(payload);
     else if (event === "session-end") await sessionEnd(payload);
@@ -877,4 +927,4 @@ export async function handleEvent(event, payload = {}) {
   }
   return 0;   // always
 }
-export const EVENTS = ["session-start", "prompt", "pre-read", "pre-write", "pre-search", "post-tool", "pre-compact", "stop", "session-end"];
+export const EVENTS = ["session-start", "prompt", "pre-read", "pre-write", "pre-search", "post-tool", "post-tool-failure", "pre-compact", "stop", "session-end"];

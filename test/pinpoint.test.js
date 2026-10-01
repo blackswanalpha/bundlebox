@@ -373,3 +373,25 @@ test("far-scope: a brief with unknown terms is not far, and the signal is a row 
   assert.equal(ambiguity(b).reasons.filter((r) => r.id === "far-scope").length, 0);
   assert.equal(scopeDistance({ ...b, terms: ["one"] }), null, "a thin statement is not measured");
 });
+
+test("rank: a byte-identical copy collapses to the higher-scoring file, and a small one does not", async () => {
+  const rankmod = await import("../src/pinpoint/rank.js");
+  const body = `export function zuluMerge(x) {\n${filler(12, "q")}\n  return x;\n}\n`;
+  w("src/zulu.js", body);
+  w("vendor/zulu.js", body);
+  w("src/tiny-a.js", "export const zuluTiny = 1;\n");
+  w("src/tiny-b.js", "export const zuluTiny = 1;\n");
+  const { ranked, duplicates } = rankmod.rankDetailed("zuluMerge and zuluTiny are wrong", {
+    sym: [
+      { file: "src/zulu.js", symbol: "zuluMerge", term: "zulumerge" },
+      { file: "src/zulu.js", symbol: "zuluMerge", term: "zulu" },
+      { file: "vendor/zulu.js", symbol: "zuluMerge", term: "zulumerge" },
+      { file: "src/tiny-a.js", symbol: "zuluTiny", term: "zulutiny" },
+      { file: "src/tiny-b.js", symbol: "zuluTiny", term: "zulutiny" },
+    ], terms: ["zulumerge", "zulutiny"] });
+  assert.equal(duplicates.get("vendor/zulu.js"), "src/zulu.js", "the copy points at the file it duplicates");
+  assert.ok(ranked.includes("src/zulu.js") && !ranked.includes("vendor/zulu.js"), "one slot, not two");
+  assert.ok(ranked.includes("src/tiny-a.js") && ranked.includes("src/tiny-b.js"), "below COPY_MIN_BYTES identity is coincidence");
+  const pinned = rankmod.rankDetailed("zuluMerge", { explicit: ["vendor/zulu.js"], sym: [{ file: "src/zulu.js", symbol: "zuluMerge", term: "zulumerge" }], terms: ["zulumerge"] });
+  assert.equal(pinned.duplicates.get("src/zulu.js"), "vendor/zulu.js", "the file the caller named is the one kept");
+});

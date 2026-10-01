@@ -48,7 +48,7 @@ const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  *  is stable. Explicit files the task names always come first — a session told
  *  which file to open still opens that file. `matches` is the search output
  *  itself, in path order, capped at what a session reads of it. */
-export function searchHits(problem, { files = [], cap = BARE_READ_CAP, grepLines = BARE_GREP_LINES } = {}) {
+function searchHits(problem, { files = [], cap = BARE_READ_CAP, grepLines = BARE_GREP_LINES } = {}) {
   const ts = termsOf(problem).filter((t) => t.length >= 4 && !t.includes("/")).slice(0, 6);
   const explicit = files.map((f) => rel(f));
   const ranked = [];
@@ -76,7 +76,7 @@ export function searchHits(problem, { files = [], cap = BARE_READ_CAP, grepLines
 /** The range a session opens for one hit: the hit sits a quarter of the way
  *  down, clamped to the file. A file the task named with no hit is read from
  *  the top. */
-export function rangeAround(first, lineCount, range = BARE_RANGE) {
+function rangeAround(first, lineCount, range = BARE_RANGE) {
   const from = Math.max(1, (first || 1) - Math.floor(range / 4));
   const to = Math.min(lineCount, from + range - 1);
   return { from, to };

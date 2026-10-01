@@ -7,7 +7,7 @@ import { HOME, PKG_ROOT } from "../core/paths.js";
 import { run } from "../core/exec.js";
 import { readJson, writeJson } from "../core/config.js";
 
-export function currentVersion() { return readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0"; }
+export function currentVersion() { return readJson(path.join(PKG_ROOT, "package.json"), {}).version || "0.0.0"; }  // own package.json always ships; 0.0.0 sorts as oldest
 export function cmp(a, b) {
   const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
   for (let i = 0; i < 3; i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
@@ -20,7 +20,7 @@ export async function latestVersion({ timeout = 8000 } = {}) {
     const r = await fetch("https://registry.npmjs.org/bundlebox/latest", { signal: ctl.signal, headers: { accept: "application/json" } });
     if (!r.ok) return null;
     return (await r.json()).version || null;
-  } catch { return null; } finally { clearTimeout(t); }
+  } catch { return null; } finally { clearTimeout(t); }  // offline or registry down: no update check
 }
 /** Once a day, remember whether a newer version exists. Returns null when unknown. */
 export async function checkCached() {

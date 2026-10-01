@@ -1,0 +1,28 @@
+Ask an AI coding assistant to fix a one-line bug and watch what it does first.
+
+Before it touches that line, it opens file after file and reads them top to bottom. A few turns later it reads some of them again.
+
+That reading is what you pay for. AI assistants charge by the word they read, and most of the bill comes from looking around, not from writing the fix.
+
+So I built bundlebox.
+
+It does the looking on your own computer, for free. Then it hands the assistant one short note: which files matter, which lines to look at, and how to check the fix worked.
+
+I tested it on 12 real tasks from my own project.
+
+Without bundlebox, the assistant read 866,600 tokens. That cost $4.33.
+With bundlebox, it read 32,700. That cost $0.16.
+
+Same tasks. About 26 times less reading.
+
+The note also says what it doesn't know. If it can't find a test to check the fix, it says so instead of guessing. I would rather my assistant ask one question than act on one wrong assumption.
+
+One caveat. Those 12 tasks came from the project bundlebox was built on, so it had home advantage. On an outside benchmark it found the right files far more often, but it read more to get there. I publish both sets of numbers.
+
+bundlebox works with Claude Code, Codex, Gemini CLI, Cursor, Copilot and others. It is free and open source.
+
+  npm i -g bundlebox
+
+github.com/blackswanalpha/bundlebox
+
+#AI #DeveloperTools #ClaudeCode #OpenSource

@@ -197,7 +197,7 @@ function sectionRegion(p, lines, from, to, symbol) {
 export function locate(p, symbol) {
   if (!symbol || !p) return null;
   const a = abs(p);
-  try { if (!fs.statSync(a).isFile()) return null; } catch { return null; }
+  try { if (!fs.statSync(a).isFile()) return null; } catch { return null; } // not on disk: no anchor
   const src = readText(a);
   if (!src) return null;
   const lang = langOf(a);
@@ -205,7 +205,7 @@ export function locate(p, symbol) {
 
   for (const pat of patterns(lang, symbol)) {
     let m;
-    try { m = new RegExp(pat, "m").exec(src); } catch { continue; }
+    try { m = new RegExp(pat, "m").exec(src); } catch { continue; } // a pattern the symbol broke matches nothing
     if (!m) continue;
     const c0 = lineStartOf(src, m.index);
     let c1 = scanEnd(src, m.index, lang);
@@ -221,7 +221,7 @@ export function lineAnchor(p, line, radius = 3) {
   const lines = (Array.isArray(line) ? line : [line]).map(Number).filter(Number.isInteger);
   if (!lines.length || !p) return null;
   const a = abs(p);
-  try { if (!fs.statSync(a).isFile()) return null; } catch { return null; }
+  try { if (!fs.statSync(a).isFile()) return null; } catch { return null; } // not on disk: no anchor
   const src = readText(a).split("\n");
   const want = new Set();
   for (const n of lines) for (let k = Math.max(1, n - radius); k <= Math.min(src.length, n + radius); k++) want.add(k);
@@ -238,7 +238,7 @@ export function lineAnchor(p, line, radius = 3) {
 export function rangeAnchor(p, start, end, symbol = "") {
   if (!p) return null;
   const a = abs(p);
-  try { if (!fs.statSync(a).isFile()) return null; } catch { return null; }
+  try { if (!fs.statSync(a).isFile()) return null; } catch { return null; } // not on disk: no anchor
   // A range the filer did not state as two integers is not a range. Coercing
   // "abc" to line 1 would anchor the top of the file and under-budget the lane.
   if (!Number.isInteger(Number(start)) || !Number.isInteger(Number(end))) return null;

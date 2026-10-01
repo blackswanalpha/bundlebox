@@ -44,7 +44,7 @@ def _age_days(iso: str, now: float) -> float | None:
     try:
         t = time.mktime(time.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S"))
         return max(0.0, (now - t) / 86400)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError):  # unparseable stamp: age unknown
         return None
 
 

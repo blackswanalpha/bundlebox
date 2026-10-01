@@ -32,7 +32,7 @@ export function gh(args, { cwd = ROOT, timeout = 180000 } = {}) {
 export function ghJson(args, opts) {
   const r = gh(args, opts);
   if (!r || r.rc !== 0) return null;
-  try { return JSON.parse(r.out); } catch { return null; }
+  try { return JSON.parse(r.out); } catch { return null; }  // null is the caller's "gh gave nothing usable"
 }
 
 // ── pull requests ────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ export function review(n, { cwd = ROOT, write = false } = {}) {
   if (raw && raw.rc === 0) { try { threads = JSON.parse("[" + raw.out.trim().replace(/\]\s*\[/g, ",") + "]").flat(); } catch { threads = null; } }
   const checks = ghJson(["pr", "checks", String(pr), "--json", "name,state,bucket,link"], { cwd: d });
   const findings = [];
-  const sev = load().git?.review_severity || "medium";
+  const sev = load().git?.review_severity || "medium";  // config default
   for (const c of threads || []) {
     if (c.in_reply_to_id) continue;
     const body = String(c.body || "").trim();

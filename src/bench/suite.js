@@ -15,7 +15,7 @@ export const file = (id) => path.join(DIR(), `${id}.json`);
 
 export function ids() {
   try { return fs.readdirSync(DIR()).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort(); }
-  catch { return []; }
+  catch { return []; } // no suites directory yet
 }
 
 export function load(id) {

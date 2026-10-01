@@ -82,7 +82,7 @@ export function charterFor(id, { force = [], drop = [], write = true } = {}) {
 
 // ── the gate ────────────────────────────────────────────────────────────────
 
-const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
+const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }; // a missing file has no evidence time
 
 /** Does this area currently have evidence for each standard in force?
  *

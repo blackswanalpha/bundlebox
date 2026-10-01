@@ -49,9 +49,9 @@ const MEMORY_NAMES = /^(CLAUDE|AGENTS|MEMORY|GEMINI|AGENT)\.md$/;
 // than one duplicated line.
 const projectSlug = (p) => String(p).replace(/[/\\:._]/g, "-");
 
-const readText = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
-const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
-const mtime = (f) => { try { return new Date(fs.statSync(f).mtimeMs).toISOString(); } catch { return null; } };
+const readText = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };  // absence is the answer
+const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };  // absence is the answer
+const mtime = (f) => { try { return new Date(fs.statSync(f).mtimeMs).toISOString(); } catch { return null; } };  // absence is the answer
 
 /** Walk, bounded. A memory sweep that descends into node_modules is a memory
  *  sweep nobody runs twice. */
@@ -62,7 +62,7 @@ function walk(dir, { depth = 6, match = () => true, limit = 4000 } = {}) {
     const [d, lvl] = stack.pop();
     if (lvl > depth) continue;
     let entries;
-    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }  // unreadable dir: skip it, keep walking
     for (const e of entries) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name) && !e.name.startsWith(".bundlebox")) stack.push([p, lvl + 1]); continue; }
@@ -280,7 +280,7 @@ export function collectWiring({ home = AGENT_HOME, root = ROOT } = {}) {
       const f = path.join(base, s);
       const text = readText(f);
       if (text == null) continue;
-      let cfg; try { cfg = JSON.parse(text); } catch { continue; }
+      let cfg; try { cfg = JSON.parse(text); } catch { continue; }  // a hand-broken settings file declares no hooks
       for (const [evt, arr] of Object.entries(cfg.hooks || {})) {
         for (const entry of [].concat(arr || [])) {
           for (const h of [].concat(entry.hooks || [])) {
@@ -314,7 +314,7 @@ export function collectTranscripts({ days = 120, maxFiles = 400 } = {}) {
   for (const t of entries.slice(0, maxFiles)) {
     const file = t && t.file;
     if (!file) continue;
-    let st; try { st = fs.statSync(file); } catch { continue; }
+    let st; try { st = fs.statSync(file); } catch { continue; }  // transcript rotated away since listing
     if (st.mtimeMs < cutoff) continue;
     const when = new Date(st.mtimeMs).toISOString();
     const text = readText(file);
@@ -364,7 +364,7 @@ export function collectVar({ dir = VAR, maxRows = 2000 } = {}) {
   try { names = fs.readdirSync(dir); } catch { return objs; }
   for (const n of names) {
     const f = path.join(dir, n);
-    let st; try { st = fs.statSync(f); } catch { continue; }
+    let st; try { st = fs.statSync(f); } catch { continue; }  // file removed since readdir
     if (!st.isFile()) continue;
     if (n.endsWith(".jsonl")) {
       const text = readText(f);
@@ -378,7 +378,7 @@ export function collectVar({ dir = VAR, maxRows = 2000 } = {}) {
         meta: { store: "var", rows: lines.length, bytes: st.size, jsonl: true },
       }));
       for (const line of lines.slice(-Math.min(maxRows / Math.max(1, names.length), 200))) {
-        let r; try { r = JSON.parse(line); } catch { continue; }
+        let r; try { r = JSON.parse(line); } catch { continue; }  // a torn line is one row, not the file
         const when = r.ts || r.at || r.time || new Date(st.mtimeMs).toISOString();
         objs.push(make({
           kind: "episode", text: `${n.replace(/\.jsonl$/, "")} ${JSON.stringify(r).slice(0, 220)}`,

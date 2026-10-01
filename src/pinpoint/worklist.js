@@ -69,7 +69,7 @@ export function fromFindings(limit = 0) {
  *  pay for them. */
 export async function fromAuditor({ areas = [] } = {}) {
   let auditor;
-  try { auditor = await import("../auditor/index.js"); } catch { return []; }
+  try { auditor = await import("../auditor/index.js"); } catch (e) { if (e.code !== "ERR_MODULE_NOT_FOUND") throw e; return []; }
   const ids = areas.length ? areas : auditor.charter.ids();
   const all = auditor.areas();
   const open = store.openFindings();
@@ -152,7 +152,7 @@ export async function compile({ findings = true, auditor = true, max = 12, maxFi
 }
 
 export function latest() {
-  try { return JSON.parse(fs.readFileSync(STATE(), "utf8")); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(STATE(), "utf8")); } catch { return null; }  // no run yet
 }
 
 export function render(doc) {

@@ -13,7 +13,7 @@ const MANIFESTS = { "package.json": "node", "pyproject.toml": "python", "require
 const manifestsIn = (dir) => Object.keys(MANIFESTS).filter((m) => fs.existsSync(path.join(dir, m)));
 const dirsOf = (root) => {
   try { return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".") && !isIgnored(e.name)).map((e) => e.name).sort(); }
-  catch { return []; }
+  catch { return []; }  // unreadable root: no subdirs to offer
 };
 
 export function detectRepo(root = ROOT) {

@@ -49,6 +49,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { rel, abs, VAR } from "../core/paths.js";
 import { isTest } from "../detectors/_shared.js";
+import { createHash } from "node:crypto";
 import * as graph from "../snapgen/graph.js";
 // A cycle, and a deliberate one, for the same reason `bench/gate.js` has one:
 // `index.js` owns the tokenizer the problem statement was cut with, and a
@@ -132,7 +133,7 @@ export function quality(h) {
  *  index should rank worse, not rank nothing. */
 export function centrality(file) {
   try { return Math.min((graph.graph().inn.get(abs(file)) || new Set()).size, 8) * 0.4; }
-  catch { return 0; }
+  catch { return 0; }  // no index: rank worse, not nothing
 }
 
 export const DECAY = 0.55;
@@ -270,11 +271,57 @@ export function neighbours(scored) {
   for (const [f, sc] of seeds) {
     if (sc <= 0) continue;
     let edges;
-    try { edges = g.out.get(abs(f)) || []; } catch { continue; }
+    try { edges = g.out.get(abs(f)) || []; } catch { continue; }  // no index: no edges from this seed
     for (const e of edges) {
       const n = rel(e);
       if (!n || scored.has(n) || n === f) continue;               // direct evidence outranks being adjacent to it
       out.set(n, (out.get(n) || 0) + NEIGHBOUR_SHARE * sc);
+    }
+  }
+  return out;
+}
+
+// ── identical files (interference-search's merge step) ─────────────────────
+//
+// A vendored copy, a checked-in build output or a template duplicated per
+// package matches the statement exactly as often as its original, so each copy
+// took its own slot and its own share of the budget while adding nothing the
+// first one did not. Files with byte-identical content collapse to the
+// highest-scoring one, which keeps its score (the max, not the sum: summing
+// would let a file win on how many times it was copied).
+//
+// Below COPY_MIN_BYTES two files are too small for identity to mean they are
+// the same file: empty `__init__.py`s and one-line re-exports are identical by
+// coincidence and each still names a distinct package.
+export const COPY_MIN_BYTES = 256;
+
+/** `dropped -> kept` for every scored file whose bytes equal a higher-scoring
+ *  one. Sizes are compared first, so only files sharing a size are hashed.
+ *  Never throws: an unreadable file is simply not a copy of anything. */
+export function copies(score, keep = new Set()) {
+  const bySize = new Map();
+  for (const f of score.keys()) {
+    let size;
+    try { size = fs.statSync(abs(f)).size; } catch { continue; }
+    if (size < COPY_MIN_BYTES) continue;
+    if (!bySize.has(size)) bySize.set(size, []);
+    bySize.get(size).push(f);
+  }
+  const out = new Map();
+  for (const group of bySize.values()) {
+    if (group.length < 2) continue;
+    const byHash = new Map();
+    for (const f of group) {
+      let h;
+      try { h = createHash("sha1").update(fs.readFileSync(abs(f))).digest("hex"); } catch { continue; }
+      if (!byHash.has(h)) byHash.set(h, []);
+      byHash.get(h).push(f);
+    }
+    for (const same of byHash.values()) {
+      if (same.length < 2) continue;
+      // A pinned file is the one the caller named, so it is the one kept.
+      same.sort((p, q) => (keep.has(q) - keep.has(p)) || score.get(q) - score.get(p) || (p < q ? -1 : 1));
+      for (const f of same.slice(1)) if (!keep.has(f)) out.set(f, same[0]);
     }
   }
   return out;
@@ -289,11 +336,12 @@ export function informative(sym) {
   return sym.filter((h) => (w.get(String(h.term || "").toLowerCase()) || 0) >= INFORMATIVE).length;
 }
 
-/** `{ ranked, adjacent }`. `ranked` is [file] most likely first; `adjacent` is
- *  the subset admitted by `neighbours` alone, with no lexical evidence of their
- *  own. The caller NAMES those and does not budget them: an import edge is a
- *  good enough reason to spend fifteen tokens saying where to look next, and
- *  not a good enough one to read a file whole. */
+/** `{ ranked, adjacent, duplicates }`. `ranked` is [file] most likely first;
+ *  `adjacent` is the subset admitted by `neighbours` alone, with no lexical
+ *  evidence of their own. The caller NAMES those and does not budget them: an
+ *  import edge is a good enough reason to spend fifteen tokens saying where to
+ *  look next, and not a good enough one to read a file whole. `duplicates` is
+ *  `dropped -> kept` for the byte-identical copies left out of `ranked`. */
 export function rankDetailed(problem, { explicit = [], sym = [], grep = [], terms = [], universe = [] } = {}) {
   const wantsTests = /\btest(s|ing|ed)?\b|\bfixture|\bpytest|\bassert/i.test(String(problem));
   const weight = (f) => (!wantsTests && isTest(rel(f)) ? TEST_WEIGHT : 1);
@@ -335,8 +383,10 @@ export function rankDetailed(problem, { explicit = [], sym = [], grep = [], term
   for (const [f, n] of neighbours(score)) { adjacent.add(f); bump(f, n); }
   const pinned = [...new Set(explicit)];
   const pin = new Set(pinned);
+  const duplicates = copies(score, pin);
+  for (const f of duplicates.keys()) { score.delete(f); adjacent.delete(f); }
   const ranked = [...pinned, ...[...score].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1)).map(([f]) => f).filter((f) => !pin.has(f))];
-  return { ranked, adjacent };
+  return { ranked, adjacent, duplicates };
 }
 
 /** The order alone, for callers that do not budget anything. */

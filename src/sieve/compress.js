@@ -61,6 +61,17 @@ export const SAFE_TOOLS = ["Bash", "BashOutput", "Task", "TaskOutput", "Agent", 
 const SALVAGE_RE =
   /\b(error|err!|fail(ed|ure|ing|s)?|exception|traceback|panic|fatal|denied|refused|timed?[ _-]?out|assert(ion)?|segfault|undefined reference|cannot find|no such file|not found|warning)\b/i;
 
+/** A command whose output is what the agent asked to read: a file printed
+ *  (`cat`, `sed -n`, `nl`, `bat`, an `awk 'NR…'` range) or a stream it already
+ *  capped (`| head -150`, `tail -40`). Over this workspace's sessions and the
+ *  Terminal-Bench runs, 170 of the 177 Bash results the elide tier cut were one
+ *  of these. On TB 2.1 the one full-install failure came after a cut of 232 lines
+ *  from five test programs the agent had printed to learn the language, and the
+ *  agent never grepped the spill. The middle such a cut drops is the part the
+ *  agent asked for, so these keep their text. Scrub and dedup still apply. */
+const READ_CMD = /(?:^|[;&|(]|\bthen|\bdo)\s*(?:(?:cat|nl|bat|less|more|head|tail|sed\s+-n)\b(?!\s*>)|awk\s+'NR)/;
+export const asked = (command) => READ_CMD.test(String(command || ""));
+
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 /** The token cap one tool result is allowed to occupy, and the line budget
@@ -107,7 +118,7 @@ export function extractText(response) {
       else if (v && typeof v === "object") { const t = extractText(v); if (t) parts.push(t); }
     }
     if (parts.length) return parts.join("\n");
-    try { return JSON.stringify(response); } catch { return null; }
+    try { return JSON.stringify(response); } catch { return null; }  // circular or BigInt: nothing to measure
   }
   return String(response);
 }
@@ -192,11 +203,11 @@ export function elide(input, limits, spillPath = "") {
  *  `elide` are not the same claim: one lost nothing, the other lost the middle.
  *  A ledger that adds them without saying which is a ledger that cannot be
  *  audited later. */
-export function transform(input, limits, { spill = null, tool = "" } = {}) {
+export function transform(input, limits, { spill = null, tool = "", keep = false } = {}) {
   if (!input || input.length <= SCRUB_MIN) return null;
   let text = scrub(input);
   let tier = text.length < input.length ? "scrub" : "";
-  if (estimateText(text, "code") > limits.maxTokens) {
+  if (!keep && estimateText(text, "code") > limits.maxTokens) {
     const cut = elide(text, limits, spill ? (spill(text, tool) || "") : "");
     if (cut != null) { text = cut; tier = "elide"; }
   }

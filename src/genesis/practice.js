@@ -173,7 +173,7 @@ const cell = (s) => String(s).replace(/\|/g, "/").replace(/\s+/g, " ").trim();
 /** Read the rows this verb owns: everything under SECTION. Rows above it are
  *  a person's and are never touched. */
 export function lessons(file = LESSONS()) {
-  let md = ""; try { md = fs.readFileSync(file, "utf8"); } catch { return { head: "", rows: [], file }; }
+  let md = ""; try { md = fs.readFileSync(file, "utf8"); } catch { return { head: "", rows: [], file }; }  // no lessons file yet: nothing learned
   const i = md.indexOf(SECTION);
   if (i < 0) return { head: md, rows: [], file };
   const rows = [];

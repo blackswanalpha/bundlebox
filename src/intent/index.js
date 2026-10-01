@@ -287,7 +287,7 @@ export async function fit({ write = true, useJev = true } = {}) {
 export function record({ session_id = "", kind = "", p = null, via = "" } = {}) {
   if (!session_id || !kind) return null;
   const row = { at: new Date().toISOString(), session_id: String(session_id), kind: String(kind), p, via: String(via) };
-  try { store.append("intent", row); } catch { return null; }
+  try { store.append("intent", row); } catch { return null; }  // best-effort log: a hook must not fail on it
   return row;
 }
 

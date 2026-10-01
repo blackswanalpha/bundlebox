@@ -80,32 +80,33 @@ export function num(x) { const n = Number(x); return Number.isFinite(n) ? n : 0;
 export function parseJson(line) {
   const s = String(line || "").trim();
   if (!s.startsWith("{")) return null;
-  try { return JSON.parse(s); } catch { return null; }
+  try { return JSON.parse(s); } catch { return null; } // not JSON: the caller skips the line
 }
 
 /** Parsed objects of a JSONL file, or null when the file could not be read. A
  *  torn line is skipped, never a crash. */
 export function jsonLines(file) {
   let text;
-  try { text = fs.readFileSync(file, "utf8"); } catch { return null; }
+  try { text = fs.readFileSync(file, "utf8"); } catch { return null; } // null is the documented "could not read"
   const out = [];
   for (const line of text.split("\n")) { const o = parseJson(line); if (o) out.push(o); }
   return out;
 }
 
 export function readJsonFile(file) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } // missing or torn: null, and callers test for it
 }
 
 /** The prompt text an argv-style agent needs inline. */
 export function promptText(o) {
   if (o.prompt != null) return String(o.prompt);
-  try { return fs.readFileSync(o.promptFile, "utf8"); } catch { return ""; }
+  if (!o.promptFile) return "";
+  return fs.readFileSync(o.promptFile, "utf8");
 }
 
-export function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
+export function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } } // absent is not a directory
 export function listFiles(dir, suffix) {
-  try { return fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).sort().map((f) => path.join(dir, f)); } catch { return []; }
+  try { return fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).sort().map((f) => path.join(dir, f)); } catch { return []; } // no directory, no files
 }
 
 /** Text of a tool result block, whatever container the agent used. */

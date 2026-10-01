@@ -2,6 +2,7 @@
 
 One file per release under `changelogs/`. This file is the index.
 
+- [v0.9.0](changelogs/v0.9.0.md) — 2026-09-27 — scan at half the time, and sentinel spends only after the free path
 - [v0.8.0](changelogs/v0.8.0.md) — 2026-09-22 — a probability model watches the agent, and Jev prices the lane
 - [v0.7.1](changelogs/v0.7.1.md) — 2026-09-22 — the runs on a page, and the server on the registries
 - [v0.7.0](changelogs/v0.7.0.md) — 2026-09-22 — the locate aimed, the work labelled, and the factory under its own microscope

@@ -40,7 +40,7 @@ export const ROWS = [
   // recommending a gear run that could not produce it.
   { id: "index", what: "the tables compiled to one binary index the guards read per tool call", path: () => path.join(OUT, "arc", "index.arc"), verb: "bb arc build", gear: "orient",
     needs: async () => {
-      try { const arc = await import("./arc/index.js"); return Boolean(arc.BIN()); } catch { return false; }
+      try { const arc = await import("./arc/index.js"); return Boolean(arc.BIN()); } catch { return false; } // no arc module or binary: the need is unmet
     },
     without: "the arc binary is not built here — `cargo build --release --manifest-path arc/Cargo.toml` (needs rustc and cargo; the guards fall back to scanning the tables until then)" },
   { id: "findings", what: "what the local detectors found, with no model involved", path: () => path.join(VAR, "findings.json"), verb: "bb scan", gear: "intake" },
@@ -57,7 +57,7 @@ export const ROWS = [
   { id: "console", what: "one page for this workspace: the pipeline, the window, every session and what it saved", path: () => path.join(OUT, "console", "index.html"), verb: "bb console build", gear: "watch" },
 ];
 
-const stat = (p) => { try { return fs.statSync(p); } catch { return null; } };
+const stat = (p) => { try { return fs.statSync(p); } catch { return null; } }; // absent: null
 
 /** The report, with each row's `needs` resolved. Async because a need is a fact
  *  about the box — a binary on disk, a runtime on PATH — and not a constant. */

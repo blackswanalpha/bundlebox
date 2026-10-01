@@ -4,7 +4,7 @@
 // where a missing test is still cheap to write.
 import { CONFIG_RE, codeRels, corpus, finding, gitAvailable, isTest } from "./_shared.js";
 
-export const COMMITS = 30;
+const COMMITS = 30;
 const stem = (r) => r.split("/").pop().replace(/\.[^.]+$/, "");
 /** `foo.test.js`, `test_foo.py`, `foo_test.go`, `foo.spec.ts`, `FooTest.java` -> `foo`. */
 const testStem = (r) => stem(r).replace(/^test_/, "").replace(/(_test|\.test|\.spec|_spec|Tests?)$/, "").toLowerCase();

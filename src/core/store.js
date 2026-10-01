@@ -73,7 +73,7 @@ export function append(name, row) {
 }
 export function rows(name, { limit = 0 } = {}) {
   let text;
-  try { text = fs.readFileSync(log(name), "utf8"); } catch { return []; }
+  try { text = fs.readFileSync(log(name), "utf8"); } catch (e) { if (e.code === "ENOENT") return []; throw e; }
   const out = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
@@ -181,7 +181,7 @@ export function provenClosure(f, { log = gitLog, exists = (p) => fs.existsSync(p
   const p = f.path || (Array.isArray(f.files) ? f.files[0] : "");
   const since = f.last_seen, until = f.resolved_at;
   if (!p || !since || !until) return null;
-  if (!exists(p)) return "vanished";
+  if (!exists(p)) return "vanished"; // gone from disk is the answer, not a failure
   if (!log(since, until, "")) return null;          // git saw nothing happen at all
   return log(since, until, p) ? "acted_on" : "unchanged";
 };

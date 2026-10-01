@@ -98,6 +98,7 @@ export function record(b, { sessionId = "", briefPath = "" } = {}) {
     verdict: b.verdict || "",
     projected: b.projected || 0,
     scope: (b.scope || []).map(String),
+    creates: (b.creates || []).map(String),
     cut: (b.cut || []).map(String),
     candidates: (b.candidates || []).map((c) => String(c.file || c)),
     symbols: (b.symbols || []).slice(0, 24).map((h) => ({ file: String(h.file), symbol: String(h.symbol), line: Number(h.line) || 0 })),
@@ -135,7 +136,7 @@ const MAX_LOG = 4000;
 /** The logged briefs, oldest first. A torn line is one brief, not the file. */
 export function logged({ limit = MAX_LOG } = {}) {
   let text;
-  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return []; }
+  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return []; }  // no log yet
   const out = [];
   for (const l of text.split("\n").filter(Boolean).slice(-limit)) {
     try { const r = JSON.parse(l); if (r && Array.isArray(r.scope)) out.push(r); } catch { /* one brief */ }
@@ -146,11 +147,11 @@ export function logged({ limit = MAX_LOG } = {}) {
 /** Drop the oldest half past the cap, from the same call that appends. */
 export function rotateLog({ max = MAX_LOG } = {}) {
   let text;
-  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return 0; }
+  try { text = fs.readFileSync(LOG(), "utf8"); } catch { return 0; }  // no log yet
   const lines = text.split("\n").filter(Boolean);
   if (lines.length <= max) return 0;
   const keep = lines.slice(Math.floor(lines.length / 2));
-  try { fs.writeFileSync(LOG(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }
+  try { fs.writeFileSync(LOG(), keep.join("\n") + "\n"); return lines.length - keep.length; } catch { return 0; }  // best-effort rotate: next append retries
 }
 
 /** Never throws and never blocks activation: a brief that failed to log is a
@@ -171,7 +172,7 @@ export function log(rec) {
     }) + "\n");
     rotateLog({});
     return true;
-  } catch { return false; }
+  } catch { return false; }  // hook path: false tells the caller it was not logged
 }
 
 export function activate(rec) {
@@ -183,10 +184,10 @@ export function activate(rec) {
     fs.renameSync(p + ".tmp" + process.pid, p);
     log(rec);
     return true;
-  } catch { return false; }
+  } catch { return false; }  // hook path: false tells the caller it was not saved
 }
 
-const readRec = (p) => { try { const r = JSON.parse(fs.readFileSync(p, "utf8")); return r && r.v === 1 ? r : null; } catch { return null; } };
+const readRec = (p) => { try { const r = JSON.parse(fs.readFileSync(p, "utf8")); return r && r.v === 1 ? r : null; } catch { return null; } };  // missing or torn record: no brief
 const fresh = (rec, maxAgeMin) => {
   const age = (Date.now() - Date.parse(rec.at || 0)) / 60000;
   return Number.isFinite(age) && age <= maxAgeMin;
@@ -253,7 +254,7 @@ export function band(rec) {
     for (const a of rec.anchors.slice(0, 8)) L.push(`  ${a.path}:${a.line_start}-${a.line_end}${a.symbol ? ` (${a.symbol})` : ""}`);
   }
   L.push("", "scope — the only files to edit:");
-  for (const f of rec.scope) L.push(`  ${f}`);
+  for (const f of rec.scope) L.push(`  ${f}${(rec.creates || []).includes(f) ? " (new)" : ""}`);
   if (rec.cut.length) L.push(`opening these needs a reason first: ${rec.cut.join(", ")}`);
   if (rec.candidates.length) L.push(`not in scope, use only if the scope does not hold it: ${rec.candidates.slice(0, 6).join(", ")}`);
   for (const p of rec.proposals || []) L.push("", `proposed change, as a diff in the brief: ${p.file}:${p.line} — \`${p.from}\` → \`${p.to}\`. Apply it, then run the gate.`);
@@ -414,7 +415,7 @@ function innerFilter(pathArg, glob) {
 
 const SYMBOL_TABLES = () => {
   const dir = path.join(OUT, "snapgen");
-  try { return fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)).map((n) => path.join(dir, n)); } catch { return []; }
+  try { return fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)).map((n) => path.join(dir, n)); } catch { return []; }  // snapgen not run yet
 };
 
 /** `name  file:line` rows from the built symbol tables that match any term.
@@ -535,6 +536,20 @@ export { shellSegments as segments } from "../core/util.js";
 
 export function parseBash(command) {
   const segs = shellSegments(command);
+  // Where the shell will be when the read runs. 103 of the 155 read-or-search
+  // commands in a Terminal-Bench 2.0 run opened with `cd <dir> &&`, and a path
+  // after it resolved against the repository root named a file that is not
+  // there: `cd ocaml/runtime && sed -n 55,70p shared_heap.c` was checked as
+  // `shared_heap.c`. After a `cd` the path is joined to it and made relative to
+  // the root; a `cd` whose target a hook cannot know (`-`, `~`, a variable)
+  // ends the parse, and a path that leaves the root is not ours to guard.
+  // Without a `cd` the paths come back exactly as written.
+  let dir = null, afterCd = false;
+  const at = (p) => {
+    if (dir === null || path.isAbsolute(p)) return dir === null ? p : rel(p);
+    return rel(abs(path.join(dir, p)));
+  };
+  const outside = (p) => p === ".." || p.startsWith("../") || path.isAbsolute(p);
   // Whether a search reads the TREE or a PIPE. `grep X file` and `grep -r X dir`
   // search the tree, and asking the same question twice over an unchanged tree
   // is waste. `npm test | grep fail` filters output that did not exist a moment
@@ -550,6 +565,15 @@ export function parseBash(command) {
     const argv = parts.map((s) => s.replace(/^["']|["']$/g, ""));
     const cmd = path.basename(argv[0] || "");
     const rest = argv.slice(1);
+    if (cmd === "cd" || cmd === "pushd") {
+      const d = rest.find((a) => !a.startsWith("-") || a === "-");
+      if (!d || d === "-" || /[$~`]/.test(d)) return null;
+      dir = path.isAbsolute(d) ? d : path.join(dir === null ? "." : dir, d);
+      afterCd = true;
+      continue;
+    }
+    const wasCd = afterCd;
+    afterCd = false;
     if (SEARCHERS.test(cmd)) {
       // The first non-flag argument is the pattern; -e/-P/--include take a value.
       let pattern = "", i = 0;
@@ -565,9 +589,13 @@ export function parseBash(command) {
       const paths = rest.slice(i + 1).filter((a) => !a.startsWith("-"));
       // A search with no path, arriving after something else in the pipeline, is
       // reading stdin.
-      const stdin = !paths.length && seg !== segs[0];
-      if (pattern) return { kind: "search", pattern, pathArg: paths[0] || "", stdin };
-      continue;
+      // `cd x && grep -r y` searches x; it is not reading a pipe.
+      const stdin = !paths.length && seg !== segs[0] && !wasCd;
+      if (!pattern) continue;
+      if (dir === null) return { kind: "search", pattern, pathArg: paths[0] || "", stdin };
+      const where = at(paths[0] || ".");
+      if (outside(where)) return null;
+      return { kind: "search", pattern, pathArg: where === "." || where === "" ? "" : where, stdin };
     }
     if (cmd === "sed") {
       // `sed -n 10,40p file` — a ranged read, and the range is the point.
@@ -575,14 +603,18 @@ export function parseBash(command) {
       const file = rest.filter((a) => !a.startsWith("-") && !/^\d/.test(a) && !/^-?[0-9,]+p?$/.test(a)).pop();
       if (!file) continue;
       const m = n ? /^(\d+),(\d+)/.exec(n) : null;
-      return m ? { kind: "read", file, offset: Number(m[1]), limit: Number(m[2]) - Number(m[1]) + 1 } : { kind: "read", file, offset: 0, limit: 0 };
+      const f = at(file);
+      if (outside(f)) return null;
+      return m ? { kind: "read", file: f, offset: Number(m[1]), limit: Number(m[2]) - Number(m[1]) + 1 } : { kind: "read", file: f, offset: 0, limit: 0 };
     }
     if (READERS.test(cmd)) {
       const flagged = rest.some((a) => /^-n?\d+$/.test(a) || a === "-n");
       const files = rest.filter((a) => !a.startsWith("-") && !/^\d+$/.test(a));
       if (files.length !== 1) continue;                      // `cat a b > c` is not a read to serve
       if (flagged) continue;                                 // `head -40 x` is already a ranged read
-      return { kind: "read", file: files[0], offset: 0, limit: 0 };
+      const f = at(files[0]);
+      if (outside(f)) return null;
+      return { kind: "read", file: f, offset: 0, limit: 0 };
     }
   }
   return null;
@@ -604,7 +636,7 @@ const deny = (reason) => ({ permissionDecision: "deny", permissionDecisionReason
 export function prune({ keep = 40 } = {}) {
   const dir = path.join(OUT, "pinpoint");
   let names;
-  try { names = fs.readdirSync(dir).filter((n) => n.endsWith(".md")).sort(); } catch { return 0; }
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith(".md")).sort(); } catch { return 0; }  // nothing to prune
   let gone = 0;
   for (const n of names.slice(0, Math.max(0, names.length - keep))) { try { fs.unlinkSync(path.join(dir, n)); gone++; } catch { /* next time */ } }
   return gone;

@@ -21,7 +21,7 @@ import { load, readJson, writeJson } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { human, now, sha1, pad, table } from "../core/util.js";
 import * as store from "../core/store.js";
-import { limitsFor, allowed, transform, rebuild, extractText, duplicateMarker, DEDUP_MIN } from "./compress.js";
+import { limitsFor, allowed, asked, transform, rebuild, extractText, duplicateMarker, DEDUP_MIN } from "./compress.js";
 import { text as estimateText } from "../tokens/estimate.js";
 import { replay } from "./replay.js";
 
@@ -45,7 +45,7 @@ export function spill(text, tool = "tool") {
     if (!fs.existsSync(file)) fs.writeFileSync(file, text, { mode: 0o600 });
     prune(dir);
     return file;
-  } catch { return ""; }
+  } catch { return ""; }  // runs in a hook: no spill, keep the full output
 }
 
 /** Newest SPILL_KEEP survive. Runs at most once per elided output. */
@@ -81,7 +81,7 @@ export function seenBefore(tool, text, sessionId, toolUseId = "") {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     writeJson(p, state);
     return dup;
-  } catch { return false; }
+  } catch { return false; }  // runs in a hook: treat as not a duplicate
 }
 
 // ── the hook ────────────────────────────────────────────────────────────────
@@ -104,7 +104,8 @@ export function decide(payload, cfg = load()) {
       return { text: marker, tier: "dedup", tool, before: body.length, after: marker.length };
     }
   }
-  const got = transform(body, limits, { spill, tool });
+  const keep = tool === "Bash" && asked(payload.tool_input?.command);
+  const got = transform(body, limits, { spill, tool, keep });
   return got ? { ...got, tool } : null;
 }
 

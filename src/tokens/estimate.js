@@ -33,7 +33,7 @@ export function text(s, kind = "prose", base = false) {
 }
 export function file(p) {
   const a = abs(p);
-  try { if (!fs.statSync(a).isFile()) return 0; } catch { return 0; }
+  try { if (!fs.statSync(a).isFile()) return 0; } catch { return 0; }  // not a file: no tokens
   return text(readText(a), kindOf(a));
 }
 /** A directory argument means every source file under it. `bb tokens estimate src`

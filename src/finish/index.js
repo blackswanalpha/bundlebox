@@ -149,7 +149,7 @@ async function activeBrief() {
   try {
     const wire = await import("../wire/brief.js");
     return wire.current({ maxAgeMin: 24 * 60 });
-  } catch { return null; }
+  } catch (e) { warn(`active brief unreadable: ${e.message}`); return null; }
 }
 
 async function init({ force = false, apply = false, sessionId = "" } = {}) {

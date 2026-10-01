@@ -61,7 +61,7 @@ function symbols() {
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => /^symbols-.*\.md$/.test(n)); } catch { names = []; }
   for (const n of names) {
-    let text; try { text = fs.readFileSync(path.join(dir, n), "utf8"); } catch { continue; }
+    let text; try { text = fs.readFileSync(path.join(dir, n), "utf8"); } catch { continue; }  // table removed since readdir
     for (const m of text.matchAll(/^\s*([A-Za-z_$][\w$]*)\s+(\S+):(\d+)\s*$/gm)) {
       if (!symbolIndex.has(m[1])) symbolIndex.set(m[1], { file: m[2], line: Number(m[3]) });
     }

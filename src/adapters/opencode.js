@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { detectBin, num, parseJson, promptText, readJsonFile, isDir, listFiles, turn } from "./index.js";
 
-export const STORAGE = path.join(os.homedir(), ".local", "share", "opencode", "storage");
+const STORAGE = path.join(os.homedir(), ".local", "share", "opencode", "storage");
 
 const usageOf = (t) => (t && typeof t === "object" && ("input" in t || "output" in t)
   ? { input: num(t.input), output: num(t.output), cacheRead: num(t.cache?.read), cacheWrite: num(t.cache?.write), thinking: num(t.reasoning) }

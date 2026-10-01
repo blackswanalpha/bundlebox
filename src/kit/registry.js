@@ -3,7 +3,7 @@
 // A producer is {name, group, description, inputs(), build()}: the paths the
 // artefact is derived from, and the text to write. Naming the shape lets the
 // runner report snapgen tables and oversight guidelines the same way, and lets
-// the loader enumerate every artefact without importing the subsystem that
+// a caller enumerate every artefact without importing the subsystem that
 // wrote it. A producer without a description is a row in INDEX.md that says
 // nothing, so `add` refuses it.
 import path from "node:path";

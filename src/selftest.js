@@ -204,7 +204,7 @@ check("hooks exit 0 on empty and garbage stdin", async () => {
 
 check("git guards refuse force flags, hook bypass, secret paths and an empty scope", async () => {
   const g = await import("./git/index.js");
-  const refused = ["--force-with-lease=x", "-c core.hooksPath=/dev/null", "--no-verify"].map((f) => { try { g.guardArgs([f]); return false; } catch { return true; } });
+  const refused = ["--force-with-lease=x", "-c core.hooksPath=/dev/null", "--no-verify"].map((f) => { try { g.guardArgs([f]); return false; } catch { return true; } });  // the throw is the refusal under test
   const sweep = g.secretSweep([".env", ".env.example", "config/credentials.json"]);
   const swept = Array.isArray(sweep) ? sweep : sweep?.refused || [];
   const empty = g.commit({ cwd: PKG_ROOT, scope: [], apply: false });

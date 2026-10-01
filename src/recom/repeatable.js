@@ -98,7 +98,7 @@ export const ids = () => Object.keys(REPEATABLES);
 export function factsFor(id, opts = {}) {
   const r = REPEATABLES[id];
   if (!r) return [];
-  try { return r.depends(opts) || []; } catch { return []; }
+  return r.depends(opts) || [];
 }
 
 /** Does this surface have to run?
