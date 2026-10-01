@@ -11,6 +11,8 @@
   --accent:#1f7a5c; --accent-soft:#e9f2ee; --code-bg:#f4f2ec;
   --s-bare:#B04A28; --s-bb:#1baf7a; --s-old:#4a3aa7; --s-mcp:#2a78d6;
   --seg-base:#c9c4b8; --seg-bb:#1baf7a; --seg-tool:#2a78d6; --seg-turn:#8a8479;
+  --e-luna:#0d3b2e; --e-terra:#137a5e; --e-sol:#2a9d8f; --e-glm:#7a4fc0; --e-grok1:#9a9a9a; --e-grok2:#c2c2c2;
+  --e-opus5:#e0874a; --e-fable5:#c79f86; --e-opus48:#edbb94; --e-sonnet5:#e3b08c; --e-shade:#ededed;
   --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
   --mono:"SF Mono","JetBrains Mono",ui-monospace,"Liberation Mono",Menlo,monospace;
 }
@@ -19,12 +21,16 @@
   --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
   --s-bare:#C05428; --s-bb:#199e70; --s-old:#9085e9; --s-mcp:#3987e5;
   --seg-base:#4a4740; --seg-bb:#199e70; --seg-tool:#3987e5; --seg-turn:#77726a;
+  --e-luna:#4fbf95; --e-terra:#35a37f; --e-sol:#3fbfb0; --e-glm:#a283e0; --e-grok1:#8f8f8f; --e-grok2:#6c6c6c;
+  --e-opus5:#ee9a5c; --e-fable5:#c9a58c; --e-opus48:#b98a66; --e-sonnet5:#b08566; --e-shade:#262923;
 }}
 :root[data-theme="dark"]{
   --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
   --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
   --s-bare:#C05428; --s-bb:#199e70; --s-old:#9085e9; --s-mcp:#3987e5;
   --seg-base:#4a4740; --seg-bb:#199e70; --seg-tool:#3987e5; --seg-turn:#77726a;
+  --e-luna:#4fbf95; --e-terra:#35a37f; --e-sol:#3fbfb0; --e-glm:#a283e0; --e-grok1:#8f8f8f; --e-grok2:#6c6c6c;
+  --e-opus5:#ee9a5c; --e-fable5:#c9a58c; --e-opus48:#b98a66; --e-sonnet5:#b08566; --e-shade:#262923;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -99,6 +105,12 @@ td.n{white-space:nowrap;text-align:right} th.n{text-align:right}
 td.long{white-space:normal;min-width:12em}
 .tag{font:10.5px/1.5 var(--mono);letter-spacing:.04em;padding:2px 6px;border-radius:4px;background:var(--code-bg);color:var(--muted);display:inline-block}
 .tag.fixed{background:var(--accent-soft);color:var(--accent)}
+.chart .shade{fill:var(--e-shade)}
+.chart .elab{font:11.5px var(--mono);fill:var(--ink)} .chart .elab.dim{fill:var(--faint)} .chart .elab.est{fill:var(--s-bb)}
+.chart .ebar{stroke-width:1.2} .chart .estbar{stroke:var(--s-bb);stroke-width:1.5;stroke-dasharray:3 2} .chart .estpt{fill:var(--panel);stroke:var(--s-bb);stroke-width:1.8}
+.chart .axt{font:11.5px var(--mono);fill:var(--faint)}
+.hollow{width:10px;height:10px;display:inline-block;border:1.8px solid var(--s-bb);background:var(--panel)}
+.sq{width:10px;height:10px;display:inline-block}
 footer{padding:32px 0 64px;border-top:1px solid var(--rule);color:var(--faint);font-size:13px}
 </style>
 </head>
@@ -110,6 +122,15 @@ footer{padding:32px 0 64px;border-top:1px solid var(--rule);color:var(--faint);f
   <p class="tagline" id="tagline"><span data-fill="fixedShare"></span> of what Claude Code reads on these tasks is its own prompt, re-sent on every call. bundlebox can't shrink that. What it can do is add less to it, and stop cutting output the agent asked to read.</p>
   <p class="stamp" id="stamp"></p>
 </header>
+
+<section id="estimate">
+  <h2>Where bundlebox would sit: an estimate</h2>
+  <p class="lead">Resolution rate against total cost (USD, summed over trials) for the entries on the reference chart, with an estimate added for each Claude Code entry running with bundlebox. The reference points were read by eye from the chart, so each is accurate to about 2 points of rate and $150 of cost. The hollow markers are estimates, not runs.</p>
+  <div class="legend" id="legend-est"></div>
+  <div class="plot" id="est"></div>
+  <p class="note" id="est-note"></p>
+  <details class="tv"><summary>Table view</summary><div class="scroll" id="est-table"></div></details>
+</section>
 
 <section id="summary">
   <h2>Summary</h2>
@@ -483,6 +504,95 @@ table('all', ['task', 'run', 'result', 'calls', 'first call', 'input', 'output',
     r.calls ?? '–', r.ctx ? fmtK(r.ctx[0]) : '–', r.prompt ? fmtK(r.prompt) : '–', r.completion ? fmtK(r.completion) : '–',
     r.cost != null ? fmt$(r.cost) : '–', r.agent_sec != null ? (r.agent_sec / 60).toFixed(1) : '–', a.id === 'control' ? '–' : (r.bb_calls ?? 0)])),
   [3, 4, 5, 6, 7, 8, 9]);
+</script>
+<script>
+// ── where bundlebox would sit: the reference chart, read by eye, plus estimates ──
+(function estimate() {
+  // [label, harness, total cost USD, resolution rate %, colour token]
+  const REF = [
+    ['gpt-5.6-luna', 'codex', 350, 17.3, 'luna'], ['gpt-5.6-terra', 'codex', 1730, 21.7, 'terra'],
+    ['gpt-5.6-sol', 'codex', 2540, 37.3, 'sol'], ['glm-5.3', 'claude-code', 2730, 41.9, 'glm'],
+    ['grok-4.5', 'grok-build', 2090, 12.4, 'grok1'], ['grok-4.6', 'grok-build', 3590, 20.3, 'grok2'],
+    ['opus-5', 'claude-code', 5970, 51.8, 'opus5'], ['fable-5', 'claude-code', 7260, 44.5, 'fable5'],
+    ['opus-4.8', 'claude-code', 6480, 23.7, 'opus48'], ['sonnet-5', 'claude-code', 9600, 12.4, 'sonnet5'],
+  ].map(([m, h, cost, rate, c]) => ({name: `${m} ${h}`, h, cost, rate, c, err: 3}));
+  // The cost bundlebox adds, measured on this page. Marker: its tokens per call
+  // over bare Claude Code's first call. Bar: the cost ratio on the tasks both
+  // runs passed, in the first TB 2.1 run ($0.79 against $0.77, its trial files
+  // were lost) and in this one.
+  const mid = overhead('full', finished) / first('control', finished);
+  const lo = 0.79 / 0.77 - 1;
+  const hi = sum('full', 'cost', bothPassed) / sum('control', 'cost', bothPassed) - 1;
+  const [rLo, rHi] = [Math.min(lo, hi), Math.max(lo, hi)];
+  // the Pareto frontier over the reference entries: nothing cheaper resolves more
+  const byCost = [...REF].sort((a, b) => a.cost - b.cost);
+  const front = byCost.filter((p, i) => byCost.slice(0, i).every(q => q.rate < p.rate));
+  for (const p of REF) p.dim = !front.includes(p);
+  const est = REF.filter(p => p.h === 'claude-code').map(p => ({...p, eCost: p.cost * (1 + mid), eLo: p.cost * (1 + rLo), eHi: p.cost * (1 + rHi)}));
+
+  document.getElementById('legend-est').innerHTML =
+    '<span><i class="sq" style="background:var(--e-opus5)"></i>reference entry</span>' +
+    '<span><i class="hollow"></i>Claude Code entry with bundlebox, estimated</span>' +
+    '<span><i class="sw" style="background:var(--e-shade);border:1px solid var(--rule)"></i>beyond the Pareto frontier</span>';
+
+  const W = 760, H = 430, m = {t: 14, r: 16, b: 50, l: 64}, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Resolution rate against total cost, with bundlebox estimates'}, document.getElementById('est'));
+  const xMax = 12500, x = c => m.l + c / xMax * iw, y = v => m.t + ih - v / 100 * ih;
+  // shaded region above the frontier, and everything cheaper than its first point
+  const pts = [[x(0), y(100)], [x(0), y(0)], [x(front[0].cost), y(0)], ...front.map(p => [x(p.cost), y(p.rate)]),
+    [x(xMax), y(front[front.length - 1].rate)], [x(xMax), y(100)]];
+  el('path', {class: 'shade', d: pts.map((q, i) => `${i ? 'L' : 'M'}${q[0].toFixed(1)},${q[1].toFixed(1)}`).join('') + 'Z'}, svg);
+  for (const v of [0, 20, 40, 60, 80, 100]) {
+    el('line', {class: v ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v)}, svg);
+    el('text', {class: 'tick', x: m.l - 8, y: y(v) + 3.5, 'text-anchor': 'end'}, svg).textContent = `${v}%`;
+  }
+  for (let c = 0; c <= 12000; c += 2000) {
+    el('line', {class: c ? 'grid' : 'axis', x1: x(c), x2: x(c), y1: m.t, y2: m.t + ih}, svg);
+    el('text', {class: 'tick', x: x(c), y: m.t + ih + 16, 'text-anchor': 'middle'}, svg).textContent = c ? `$${c / 1000}k` : '$0';
+  }
+  el('text', {class: 'axt', x: m.l + iw / 2, y: H - 8, 'text-anchor': 'middle'}, svg).textContent = 'total cost (usd, sum over trials)';
+  el('text', {class: 'axt', transform: `translate(16 ${m.t + ih / 2}) rotate(-90)`, 'text-anchor': 'middle'}, svg).textContent = 'resolution rate';
+
+  // estimates first, so the reference markers sit on top
+  for (const e of est) {
+    el('line', {class: 'estbar', x1: x(e.eLo), x2: x(e.eHi), y1: y(e.rate), y2: y(e.rate)}, svg);
+    el('rect', {class: 'estpt', x: x(e.eCost) - 4.5, y: y(e.rate) - 4.5, width: 9, height: 9}, svg);
+  }
+  const boxes = [];
+  for (const p of REF) {
+    const col = `var(--e-${p.c})`;
+    el('line', {class: 'ebar', stroke: col, x1: x(p.cost), x2: x(p.cost), y1: y(p.rate - p.err), y2: y(p.rate + p.err)}, svg);
+    for (const r of [p.rate - p.err, p.rate + p.err]) el('line', {class: 'ebar', stroke: col, x1: x(p.cost) - 4, x2: x(p.cost) + 4, y1: y(r), y2: y(r)}, svg);
+    el('rect', {x: x(p.cost) - 5, y: y(p.rate) - 5, width: 10, height: 10, fill: col, opacity: p.dim ? 0.75 : 1}, svg);
+    boxes.push({x0: x(p.cost) - 6, x1: x(p.cost) + 6, y0: y(p.rate) - 6, y1: y(p.rate) + 6, own: p.name});
+    boxes.push({x0: x(p.cost) - 5, x1: x(p.cost) + 5, y0: y(p.rate + p.err) - 1, y1: y(p.rate - p.err) + 1, own: p.name});
+  }
+  for (const e of est) boxes.push({x0: x(e.eLo) - 2, x1: x(e.eHi) + 2, y0: y(e.rate) - 6, y1: y(e.rate) + 6, own: e.name});
+  // labels: right of the marker, or right of its estimate bar; left when that runs off the plot.
+  // Nudged vertically until they clear every marker and every earlier label.
+  const CH = 6.9, hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const placed = [];
+  for (const p of [...REF].sort((a, b) => a.dim - b.dim || b.rate - a.rate)) {
+    const e = est.find(q => q.name === p.name), w = p.name.length * CH;
+    let lx = (e ? x(e.eHi) : x(p.cost)) + 9, anchor = 'start';
+    if (lx + w > m.l + iw) { lx = x(p.cost) - 9; anchor = 'end'; }
+    const box = dy => ({x0: anchor === 'start' ? lx : lx - w, x1: anchor === 'start' ? lx + w : lx, y0: y(p.rate) + dy - 9, y1: y(p.rate) + dy + 3});
+    let dy = 4;
+    for (const step of [0, 9, -9, 14, -14, 18, -18]) {
+      const b = box(4 + step);
+      if (![...boxes.filter(q => q.own !== p.name), ...placed].some(q => hit(b, q))) { dy = 4 + step; break; }
+    }
+    placed.push(box(dy));
+    el('text', {class: `elab${p.dim ? ' dim' : ''}`, x: lx, y: y(p.rate) + dy, 'text-anchor': anchor}, svg).textContent = p.name;
+  }
+
+  const pc = v => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
+  document.getElementById('est-note').textContent = `How the estimates are made. Resolution rate: unchanged from the entry, with its error bar. No run on this page moved a task's outcome beyond run-to-run variation. Cost: the entry's cost plus the overhead measured here. The marker is ${pc(mid)}, which is bundlebox's ${Math.round(overhead('full', finished)).toLocaleString()} extra tokens per call over bare Claude Code's first call. The bar spans the cost ratios measured on the tasks both runs passed: ${pc(lo)} in the first TB 2.1 run and ${pc(hi)} in this one. Every estimate lands at the same height and further right than its entry, so none of them reaches the frontier. For an estimate to move up, bundlebox would have to change which tasks pass, and nothing measured here shows that.`;
+  table('est-table', ['entry', 'resolution rate', 'total cost', 'with bundlebox, estimated', 'range'],
+    REF.map(p => { const e = est.find(q => q.name === p.name);
+      return [p.name, `${p.rate.toFixed(1)}%`, `$${Math.round(p.cost).toLocaleString()}`, e ? `$${Math.round(e.eCost).toLocaleString()}` : '–', e ? `$${Math.round(e.eLo).toLocaleString()}–$${Math.round(e.eHi).toLocaleString()}` : '–']; }),
+    [1, 2, 3, 4]);
+})();
 </script>
 </body>
 </html>
