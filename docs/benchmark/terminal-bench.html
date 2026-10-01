@@ -4,136 +4,164 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>bundlebox — Terminal-Bench</title>
-<meta name="description" content="Claude Code on a Terminal-Bench 2.0 subset: bare, with the bundlebox MCP server, and with the full bundlebox install.">
+<meta name="description" content="Where Claude Code's input tokens go on a Terminal-Bench 2.1 subset, what bundlebox adds to them, and what it can and cannot cut.">
 <style>
 :root{
   --ink:#141414; --muted:#63615b; --faint:#908d86; --rule:#e4e1da; --bg:#faf9f6; --panel:#fff;
   --accent:#1f7a5c; --accent-soft:#e9f2ee; --code-bg:#f4f2ec;
-  --s-bare:#B04A28; --s-mcp:#2a78d6; --s-bb:#1baf7a; --s-bb2:#4a3aa7;
+  --s-bare:#B04A28; --s-bb:#1baf7a; --s-old:#4a3aa7; --s-mcp:#2a78d6;
+  --seg-base:#c9c4b8; --seg-bb:#1baf7a; --seg-tool:#2a78d6; --seg-turn:#8a8479;
   --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
   --mono:"SF Mono","JetBrains Mono",ui-monospace,"Liberation Mono",Menlo,monospace;
 }
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
   --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
-  --s-bare:#C05428; --s-mcp:#3987e5; --s-bb:#199e70; --s-bb2:#9085e9;
+  --s-bare:#C05428; --s-bb:#199e70; --s-old:#9085e9; --s-mcp:#3987e5;
+  --seg-base:#4a4740; --seg-bb:#199e70; --seg-tool:#3987e5; --seg-turn:#77726a;
 }}
 :root[data-theme="dark"]{
   --ink:#e9e6df; --muted:#9c988f; --faint:#6d6961; --rule:#292b28; --bg:#101110; --panel:#171816;
   --accent:#55b892; --accent-soft:#15271e; --code-bg:#181a17;
-  --s-bare:#C05428; --s-mcp:#3987e5; --s-bb:#199e70; --s-bb2:#9085e9;
+  --s-bare:#C05428; --s-bb:#199e70; --s-old:#9085e9; --s-mcp:#3987e5;
+  --seg-base:#4a4740; --seg-bb:#199e70; --seg-tool:#3987e5; --seg-turn:#77726a;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.62 var(--sans);letter-spacing:-.006em;-webkit-font-smoothing:antialiased}
-.wrap{max-width:820px;margin:0 auto;padding:0 16px}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px}
 @media(min-width:640px){.wrap{padding:0 28px}}
 a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
 b{font-weight:600}
 code{font-family:var(--mono);font-size:.875em;background:var(--code-bg);padding:2px 5px;border-radius:4px}
 header.hero{padding:64px 0 34px}
 h1{font-size:clamp(30px,5.4vw,46px);line-height:1.05;letter-spacing:-.035em;margin:0 0 18px;font-weight:700}
-.tagline{font-size:18px;line-height:1.5;color:var(--muted);margin:0 0 22px;max-width:34em}
+.tagline{font-size:18px;line-height:1.5;color:var(--muted);margin:0 0 22px;max-width:36em}
 .kicker{color:var(--faint);font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:0 0 8px}
 .stamp{font:11.5px/1.5 var(--mono);color:var(--faint);margin:0}
 h2{font-size:24px;letter-spacing:-.025em;margin:0 0 6px;font-weight:700;line-height:1.2}
+h3{font-size:16px;letter-spacing:-.01em;margin:26px 0 6px;font-weight:600}
 p{margin:0 0 16px}
 p.lead{color:var(--muted);font-size:15.5px;margin:0 0 18px}
 ul.plain{margin:0 0 16px;padding-left:20px}
 ul.plain li{margin:0 0 8px}
-.tiles{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin:0 0 8px}
+.tiles{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin:18px 0 8px}
 @media(min-width:560px){.tiles{grid-template-columns:1fr 1fr}}
 @media(min-width:900px){.tiles{grid-template-columns:repeat(4,1fr)}}
 .tile{background:var(--panel);padding:18px 16px}
 .tile .k{font:10.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:0 0 9px}
-.tile .v{font-size:30px;line-height:1;letter-spacing:-.03em;font-weight:700;color:var(--ink);margin:0 0 7px}
-.tile .v.multi{font-size:19px;line-height:1.35;letter-spacing:-.02em;display:flex;flex-direction:column}
-.tile .v.multi span{display:inline-flex;align-items:center;gap:8px}
+.tile .v{font-size:19px;line-height:1.35;letter-spacing:-.02em;font-weight:700;margin:0 0 7px;display:flex;flex-direction:column}
+.tile .v span{display:inline-flex;align-items:center;gap:8px}
 .tile .s{font-size:12.5px;line-height:1.4;color:var(--muted);margin:0}
 section{padding:40px 0;border-top:1px solid var(--rule)}
 .plot{position:relative;background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:16px 14px;overflow-x:auto;overflow-y:hidden}
 svg.chart{display:block;width:100%;height:auto;overflow:visible}
 @media(max-width:620px){.plot > svg.chart{min-width:540px}}
-.multiples{display:grid;grid-template-columns:1fr;gap:18px}
-@media(min-width:640px){.multiples{grid-template-columns:1fr 1fr}}
-.panel h4{font:11px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 4px;font-weight:500}
+.multiples{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:560px){.multiples{grid-template-columns:1fr 1fr}}
+@media(min-width:860px){.multiples{grid-template-columns:1fr 1fr 1fr}}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:10px 10px 6px}
+.panel h4{font:11px/1.3 var(--mono);letter-spacing:.04em;color:var(--muted);margin:0 0 2px;font-weight:500;display:flex;justify-content:space-between;gap:8px}
+.panel h4 i{font-style:normal;color:var(--faint)}
 .chart .ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
-.chart .ln.bare{stroke:var(--s-bare)} .chart .ln.mcp{stroke:var(--s-mcp)} .chart .ln.bb{stroke:var(--s-bb)} .chart .ln.bb2{stroke:var(--s-bb2)}
+.chart .ln.bare{stroke:var(--s-bare)} .chart .ln.bb{stroke:var(--s-bb)} .chart .ln.old{stroke:var(--s-old)}
 .chart .dot{stroke:var(--panel);stroke-width:2}
-.chart .dot.bare{fill:var(--s-bare)} .chart .dot.mcp{fill:var(--s-mcp)} .chart .dot.bb{fill:var(--s-bb)} .chart .dot.bb2{fill:var(--s-bb2)}
+.chart .dot.bare,.chart .pt.bare{fill:var(--s-bare)} .chart .dot.bb,.chart .pt.bb{fill:var(--s-bb)} .chart .dot.old,.chart .pt.old{fill:var(--s-old)}
 .chart .grid{stroke:var(--rule);stroke-width:1}
 .chart .axis{stroke:var(--faint);stroke-width:1;opacity:.5}
 .chart .tick{font:10.5px var(--mono);fill:var(--faint)}
-.chart .lab{font:11.5px var(--sans);fill:var(--muted)}
-.chart .xh{stroke:var(--faint);stroke-width:1;opacity:0}
-.chart .quad{fill:var(--accent);opacity:.08}
-.chart .quadlab{font:10.5px var(--mono);fill:var(--accent);letter-spacing:.04em}
-.chart .pareto{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-dasharray:1.5 4;stroke-linecap:round;opacity:.7}
+.chart .lab{font:12px var(--sans);fill:var(--muted)}
+.chart .val{font:11px var(--mono);fill:var(--ink)}
 .chart .err{stroke-width:1.5;opacity:.55}
-.chart .err.bare{stroke:var(--s-bare)} .chart .err.mcp{stroke:var(--s-mcp)} .chart .err.bb{stroke:var(--s-bb)} .chart .err.bb2{stroke:var(--s-bb2)}
+.chart .err.bare{stroke:var(--s-bare)} .chart .err.bb{stroke:var(--s-bb)}
 .chart .pt{stroke:var(--panel);stroke-width:2}
-.chart .pt.bare{fill:var(--s-bare)} .chart .pt.mcp{fill:var(--s-mcp)} .chart .pt.bb{fill:var(--s-bb)} .chart .pt.bb2{fill:var(--s-bb2)}
-.dotkey{width:10px;height:10px;border-radius:50%;display:inline-block}
-.dotkey.bare{background:var(--s-bare)} .dotkey.mcp{background:var(--s-mcp)} .dotkey.bb{background:var(--s-bb)} .dotkey.bb2{background:var(--s-bb2)}
-.qkey{width:14px;height:10px;border-radius:2px;display:inline-block;background:color-mix(in srgb,var(--accent) 14%,transparent)}
-.pkey{width:18px;height:0;border-top:2px dotted var(--ink);display:inline-block;opacity:.7}
-.chart .lb{fill:var(--faint);opacity:.55} .chart .lb.claude{fill:var(--s-bare);opacity:1}
-.chart .est{fill:var(--s-bb2);stroke:var(--panel);stroke-width:2} .chart .estring{fill:none;stroke:var(--s-bb2);stroke-width:1.5;stroke-dasharray:3 2}
-.chart .err.est{stroke:var(--s-bb2);opacity:.8}
-.chart .lab.small{font-size:10.5px;fill:var(--faint)}
-.dotkey.other{background:var(--faint);opacity:.6} .dotkey.claude{background:var(--s-bare)} .dotkey.est{background:var(--s-bb2)}
+.chart .seg-base{fill:var(--seg-base)} .chart .seg-bb{fill:var(--seg-bb)} .chart .seg-tool{fill:var(--seg-tool)} .chart .seg-turn{fill:var(--seg-turn)}
+.chart .bar-bare{fill:var(--s-bare)} .chart .bar-old{fill:var(--s-old)} .chart .bar-bb{fill:var(--s-bb)} .chart .bar-mcp{fill:var(--s-mcp)}
 .legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--muted);margin:0 0 12px}
 .legend span{display:inline-flex;align-items:center;gap:7px}
 .key{width:16px;height:2px;border-radius:1px;display:inline-block}
-.key.bare{background:var(--s-bare)} .key.mcp{background:var(--s-mcp)} .key.bb{background:var(--s-bb)} .key.bb2{background:var(--s-bb2)}
-.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;font:12px/1.45 var(--sans);color:var(--ink);box-shadow:0 4px 14px rgba(0,0,0,.08);opacity:0;transition:opacity .08s;white-space:nowrap;z-index:2}
-.tip .t{font:10.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}
-.tip .r{display:flex;align-items:center;gap:7px}
-.tip .r b{margin-left:auto;padding-left:12px;font-variant-numeric:tabular-nums}
+.key.bare{background:var(--s-bare)} .key.bb{background:var(--s-bb)} .key.old{background:var(--s-old)}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+.sw.seg-base{background:var(--seg-base)} .sw.seg-bb{background:var(--seg-bb)} .sw.seg-tool{background:var(--seg-tool)} .sw.seg-turn{background:var(--seg-turn)}
+.dotkey{width:10px;height:10px;border-radius:50%;display:inline-block}
+.dotkey.bare{background:var(--s-bare)} .dotkey.bb{background:var(--s-bb)}
 .note{font-size:13.5px;line-height:1.55;color:var(--muted);margin:12px 0 0}
 .tv{margin:10px 0 0;font-size:13.5px}
 .tv summary{cursor:pointer;color:var(--faint);font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase;list-style:none}
 .tv summary::-webkit-details-marker{display:none}
 .tv summary::before{content:"▸ ";font-size:10px}
 .tv[open] summary::before{content:"▾ "}
-.tv .scroll{overflow-x:auto}
+.scroll{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 0}
-th{text-align:left;font:10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--rule)}
-td{padding:6px 8px;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums;white-space:nowrap}
-td.pass{color:var(--accent)}
+th{text-align:left;font:10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:6px 8px;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums;vertical-align:top}
+td.n{white-space:nowrap;text-align:right} th.n{text-align:right}
+td.long{white-space:normal;min-width:12em}
+.tag{font:10.5px/1.5 var(--mono);letter-spacing:.04em;padding:2px 6px;border-radius:4px;background:var(--code-bg);color:var(--muted);display:inline-block}
+.tag.fixed{background:var(--accent-soft);color:var(--accent)}
 footer{padding:32px 0 64px;border-top:1px solid var(--rule);color:var(--faint);font-size:13px}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header class="hero">
-  <p class="kicker">Terminal-Bench 2.0 · 8-task subset · Claude Sonnet 5.5 · four runs</p>
-  <h1>Bare Claude Code vs bundlebox</h1>
-  <p class="tagline" id="tagline"></p>
+  <p class="kicker">Terminal-Bench 2.1 · 12-task subset · Claude Code on Sonnet 5.5 · bare vs bundlebox</p>
+  <h1>Where Claude Code's tokens go on Terminal-Bench</h1>
+  <p class="tagline" id="tagline"><span data-fill="fixedShare"></span> of what Claude Code reads on these tasks is its own prompt, re-sent on every call. bundlebox can't shrink that. What it can do is add less to it, and stop cutting output the agent asked to read.</p>
   <p class="stamp" id="stamp"></p>
 </header>
 
 <section id="summary">
   <h2>Summary</h2>
-    <p><b>bundlebox still made no measurable difference on these tasks.</b> After the fixes in #92 and #93 the agent does call it: twice in 8 trials, against 0 in 16 before. Neither call changed what the agent did, and every graded trial passed in all four runs.</p>
+  <p><b>bundlebox can't make Claude Code 10x cheaper on Terminal-Bench.</b> On the <span data-fill="nBoth"></span> tasks both runs passed, bare Claude Code read <span data-fill="inBare"></span> input tokens and bundlebox <span data-fill="inBb"></span>. They cost <span data-fill="costBare"></span> and <span data-fill="costBb"></span>. Nothing in the published work below comes close to 10x either.</p>
   <ul class="plain">
-    <li><b>Same pass rate.</b> On the 7 tasks graded in all four runs, every run passed 7 of 7. The three bundlebox runs also passed <code>fix-ocaml-gc</code>. The bare run's attempt at it was never graded, because its grader timed out downloading the OCaml source twice.</li>
-    <li><b>The tools now load, and get called.</b> In bundlebox 0.8.0, Claude Code deferred all ten bundlebox tools and the agent never loaded one. After #93, <code>bb_pinpoint</code> and <code>bb_context</code> load at session start, and the agent called <code>bb_pinpoint</code> as its first action on two tasks:
-      <ul class="plain">
-        <li><code>custom-memory-heap-crash</code>: the answer was about 600 tokens that echoed the two files the agent had passed in. #94 cuts that answer to 78 tokens.</li>
-        <li><code>fix-ocaml-gc</code>: pinpoint said it doesn't index C (389 of the tree's 399 code files) and told the agent to search directly. In 0.8.0 the same task got a brief that named <code>gdb.py</code> and manual JavaScript as "the only files to edit".</li>
-      </ul></li>
-    <li><b>The install costs context.</b> The full install adds about 2,050 input tokens to every model call in 0.8.0, and about 1,650 after #92 and #93. #92 cut about 500 tokens of session-start text, and #93 adds about 350 tokens of tool schema. The MCP-only setup adds about 270.</li>
-    <li><b>Cost and time differences are noise.</b> On the 7 shared tasks the runs spent $1.07, $0.98, $0.97 and $1.00. One bare run of <code>schemelike-metacircular-eval</code> hit its 40-minute limit, and that run accounts for most of the bare run's 57 minutes. Each task ran once per run, so gaps of this size come from run-to-run variation.</li>
-    <li><b>This benchmark mostly doesn't test what bundlebox is for.</b> Most Terminal-Bench tasks are small environments where the statement names the files and a few shell commands find the rest. bundlebox locates code in large repositories, and none of these tasks needed that.</li>
+    <li><b>The largest share of the bill is Claude Code's own prompt.</b> The first call sends about <span data-fill="baseFirst"></span> tokens of system prompt and tool definitions, and every later call sends them again. That is <span data-fill="fixedShare"></span> of all input on the tasks both runs passed. Tool output re-read on later calls is <span data-fill="toolShare"></span>, and cutting every byte of it would save at most that share. <a href="https://quesma.com/blog/does-rtk-make-ai-coding-cheaper">Quesma measured</a> terminal output at 7% of Claude Code's input on all of TB 2.1.</li>
+    <li><b>bundlebox adds less than before, and it is still a cost.</b> The full install adds <span data-fill="overNow"></span> tokens to every call, against 2,055 in 0.8.0 and 1,653 after #92/#93. That is <span data-fill="overPct"></span> of bare Claude Code's first call. <span data-fill="costLine"></span></li>
+    <li><b>Pass rate.</b> Bare passed <span data-fill="passBare"></span> and bundlebox <span data-fill="passBb"></span>. <span data-fill="passLine"></span> A first TB 2.1 run the day before, with the earlier build, went the other way: bundlebox failed <code>schemelike-metacircular-eval</code> after its sieve cut the agent's read of the test programs. With one attempt per task, a single task's difference is run-to-run variation.</li>
+    <li><b>The sieve was cutting what agents asked to read.</b> 168 of the 173 cuts in this workspace's session transcripts were deliberate reads: <code>cat</code>, <code>sed -n</code>, or output the agent had already capped with <code>head</code> or <code>tail</code>. This branch keeps those whole and still cuts uncapped logs. In this run it cut <span data-fill="sieved"></span> outputs in <span data-fill="nBb"></span> trials.</li>
+    <li><b>The brief now names the file a task is graded on.</b> It fired on 3 of 12 task statements, and each time it listed the file the task said to create (<code>report.jsonl</code>, <code>eval.scm</code>, <code>headless_terminal.py</code>) as new. Before, all three were missing from "the only files to edit". The agent called a bundlebox tool <span data-fill="bbCalls"></span> in <span data-fill="nBb"></span> trials.</li>
+    <li><b>Automations can't reach 10x on this kind of work.</b> A replayed script costs almost nothing, but only work that repeats can be replayed. In this repository's 71 sessions, 0 of 55 task statements repeat an earlier one, and the repeatable git/test ritual is about 15% of input tokens. That caps the saving near 1.2x.</li>
+    <li><b>No regression found in replays.</b> Replaying old and new code on real inputs, all 58 of this workspace's logged task prompts give the same scope, candidates and regions. Lint is clean, and the test suite passes except one kernel test that fails the same way on <code>main</code>.</li>
   </ul>
 
   <div class="tiles" id="tiles"></div>
 </section>
 
 <section>
+  <h2>Where the input tokens go</h2>
+  <p class="lead">Every input token the model read in each run, summed over the tasks both runs passed. A failed trial stops early and reads less, which would look like a saving. The first call's prompt is re-sent on every later call, so it is counted once per call. The rest is what the conversation grew by: tool output and the agent's own turns, each also re-read on every later call.</p>
+  <div class="legend" id="legend-mix"></div>
+  <div class="plot" id="mix"></div>
+  <p class="note" id="mix-note"></p>
+  <details class="tv"><summary>Table view</summary><div class="scroll" id="mix-table"></div></details>
+</section>
+
+<section>
+  <h2>What bundlebox adds to every call</h2>
+  <p class="lead">Extra input tokens on the first model call, full install against bare Claude Code on the same task, averaged over tasks. The same amount is added to every later call too.</p>
+  <div class="plot" id="over"></div>
+  <p class="note" id="over-note"></p>
+  <h3>What the install puts in every call</h3>
+  <p>Sized on a TB task workspace (<code>schemelike-metacircular-eval</code>) with bundlebox from <code>main</code> before this branch. One headless Claude Code call measured the total: 15,738 input tokens bare and 17,414 with the full install, so +1,676. The rows below are the injected texts. About 600 tokens of the total is Claude Code's own framing around them (section headers, schema wrappers), which a text size can't show.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>what</th><th class="n">size</th><th>what it's for</th><th>this branch</th></tr></thead>
+    <tbody>
+      <tr><td>CLAUDE.md instructions block</td><td class="n">751 chars</td><td class="long">five bullets pointing at pinpoint, the tables, <code>bb context</code> and findings</td><td><span class="tag">unchanged</span></td></tr>
+      <tr><td>skill descriptions (<code>antislop</code>, <code>bb-finish</code>)</td><td class="n">917 chars</td><td class="long">Claude Code lists every installed skill's description in the system prompt</td><td><span class="tag">unchanged</span></td></tr>
+      <tr><td><code>bb_pinpoint</code> schema, always loaded</td><td class="n">723 chars</td><td class="long">the locate, as a tool</td><td><span class="tag fixed">deferred when the prompt hook is wired</span></td></tr>
+      <tr><td><code>bb_context</code> schema, always loaded</td><td class="n">380 chars</td><td class="long">does a scope fit before opening it</td><td><span class="tag">unchanged</span></td></tr>
+      <tr><td>8 deferred tool names, server instructions</td><td class="n">~380 chars</td><td class="long">names only; a tool search loads one</td><td><span class="tag">unchanged</span></td></tr>
+      <tr><td>SessionStart context</td><td class="n">240–326 chars</td><td class="long">where the reference tables are, open findings count</td><td><span class="tag">unchanged</span></td></tr>
+      <tr><td>prompt brief (UserPromptSubmit)</td><td class="n">0 on most tasks</td><td class="long">The located map. Before this branch it fired on 2 of 8 TB 2.0 tasks, and its "only files to edit" list left out the file the task said to create. On TB 2.1 with this branch it fired on 3 of 12, and listed <code>report.jsonl</code>, <code>eval.scm</code> and <code>headless_terminal.py</code> as new.</td><td><span class="tag fixed">files to create now join the scope</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">57 of the 89 TB 2.1 task statements name a file to create, write, put or save. The brief now adds it to the scope, marked new, so the scope no longer tells the agent that file is off limits. The prompt hook already runs pinpoint on every task prompt, so the always-loaded <code>bb_pinpoint</code> schema was the same locate wired twice. On TB 2.0, with the brief already in its window, the agent called it twice in eight trials and neither call changed what it did.</p>
+
+</section>
+
+<section>
   <h2>Score vs cost per task</h2>
-  <p class="lead">Share of the shared tasks each run passed, against its average cost per task, on a log cost axis like the Artificial Analysis leaderboard. Up and to the left is better. The bars are 95% intervals: Wilson for the score, a bootstrap over tasks for the cost. These are Terminal-Bench 2.0 subset numbers and do not belong on a TB 4.0 chart.</p>
+  <p class="lead">Share of the shared tasks each run passed, against its average cost per task. Up and to the left is better. Bars are 95% intervals: Wilson for the score, a bootstrap over tasks for the cost.</p>
   <div class="legend" id="legend-sc"></div>
   <div class="plot" id="sc"></div>
   <p class="note" id="sc-note"></p>
@@ -141,355 +169,320 @@ footer{padding:32px 0 64px;border-top:1px solid var(--rule);color:var(--faint);f
 </section>
 
 <section>
-  <h2>Where Sonnet 5.5 + bundlebox would sit on Terminal-Bench 4.0</h2>
-  <p class="lead">An estimate, not a run. The other points are read by eye from Artificial Analysis' Terminal-Bench 4.0 score-vs-cost chart (screenshot taken 2026-09-30), so each is approximate: within about 2 points of score and 5% of cost. The violet points place Claude Sonnet 5.5 with bundlebox, using what the four runs above measured.</p>
-  <div class="legend" id="legend-tb4"></div>
-  <div class="plot" id="tb4"></div>
-  <div class="note" id="tb4-note"></div>
-  <details class="tv"><summary>Table view</summary><div class="scroll" id="tb4-table"></div></details>
-</section>
-
-<section>
   <h2>Context size at each model call</h2>
-  <p class="lead">Input tokens the model received on every call, one panel per task. A higher start means more text was loaded before the agent did anything.</p>
+  <p class="lead">Input tokens on every call, one panel per task. The gap at the first call is the install's fixed cost; the slope is what the agent read.</p>
   <div class="legend" id="legend-ctx"></div>
   <div class="multiples" id="ctx"></div>
-  <details class="tv"><summary>Table view</summary><div class="scroll" id="ctx-table"></div></details>
 </section>
 
 <section>
-  <h2>Running cost across tasks</h2>
-  <p class="lead">Cumulative estimated spend, adding one task at a time. Only tasks every run finished and was graded on are counted, in the same order.</p>
-  <div class="legend" id="legend-cost"></div>
-  <div class="plot" id="cost"></div>
-  <details class="tv"><summary>Table view</summary><div class="scroll" id="cost-table"></div></details>
+  <h2>What others measured</h2>
+  <p class="lead">Published results on cutting agent tokens in terminal tasks. Each row is what its source reports.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>source</th><th>setting</th><th>what changed</th><th>result</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://quesma.com/blog/does-rtk-make-ai-coding-cheaper">Quesma on rtk</a></td><td class="long">TB 2.1, Claude Code 2.1.220 + Fable 5.0, 5 attempts per task, 85 tasks</td><td class="long">rtk rewrites shell commands so their output comes back filtered and deduplicated</td><td class="long">pass rate 84% → 83%. Total $731 → $698, but cost per pass +1% task-weighted. Terminal output was 7% of input tokens, and cache reads 94%.</td></tr>
+      <tr><td><a href="https://arxiv.org/abs/2604.19572">TACO</a> (Ren et al.)</td><td class="long">TerminalBench, several models</td><td class="long">keep/remove rules for tool output, learned from trajectories</td><td class="long">accuracy +1 to +4 points across models, and +2 to +3 at the same token budget (abstract)</td></tr>
+      <tr><td><a href="https://arxiv.org/abs/2508.21433">The Complexity Trap</a> (Lindenbauer et al.)</td><td class="long">SWE-bench Verified</td><td class="long">mask old tool observations instead of keeping them or summarising them</td><td class="long">cost halved against the raw agent, and solve rate matched LLM summarisation</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">None of these reached 10x. Quesma's Claude Code numbers match this page's. Compressing tool output acts on a single-digit share of Claude Code's input, and the rest is its own prompt and conversation, re-read from the cache on every call. Masking old observations acts on the conversation itself, which a hook can't do: Claude Code hooks can replace a tool's output as it arrives, not one already in the conversation.</p>
 </section>
 
+
 <section>
-  <h2>Running agent time across tasks</h2>
-  <p class="lead">Cumulative minutes the agent spent working, same tasks and order as above. Setup and grading time are excluded.</p>
-  <div class="legend" id="legend-time"></div>
-  <div class="plot" id="time"></div>
-  <details class="tv"><summary>Table view</summary><div class="scroll" id="time-table"></div></details>
+  <h2>Could automations reach 10x?</h2>
+  <p class="lead">An automation replaces model calls with a script, so each run it replaces costs close to zero tokens. What it saves overall is the share of work that repeats, times what each replay saves. Measured on this repository's own 71 Claude Code sessions: 9,220 tool-calling turns and 2.2 billion input tokens.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>what an automation could replace</th><th class="n">share of turns</th><th class="n">share of input tokens</th><th>how often it repeats</th></tr></thead>
+    <tbody>
+      <tr><td class="long">the git/gh ritual: add, commit, push, open a PR, worktree</td><td class="n">11%</td><td class="n">13%</td><td class="long">every session. <code>bb lathe</code> found the same 10–14 command run 3–6 times</td></tr>
+      <tr><td class="long">test, lint and <code>bb</code> verbs</td><td class="n">4%</td><td class="n">4%</td><td class="long">every session</td></tr>
+      <tr><td class="long">a whole job, replayed as one script</td><td class="n">–</td><td class="n">–</td><td class="long">0 of 55 distinct task prompts repeats an earlier one. The closest pair scores 0.25 on word overlap, and the two are different jobs.</td></tr>
+      <tr><td class="long">everything else: builds, reads, edits, new code</td><td class="n">85%</td><td class="n">83%</td><td class="long">new each time</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Replacing every repeated ritual with one call saves at most about 15% of input tokens here, about 1.2x. 10x needs 90% or more of the work to be replays. Terminal-Bench can't show any of this, because each task is new and an automation written for a task would be the answer key.</p>
+  <h3>What replay has measured elsewhere</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>source</th><th>what it replays</th><th>result</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://arxiv.org/abs/2608.05784">Activity Frames</a> (Iyamu)</td><td class="long">one person's screen activity over 51 days, compiled into replay scripts</td><td class="long">60–343x fewer tokens for each routine it replaces. Only 7.7% of steps recurred out of sample, so the total saving is capped near that share.</td></tr>
+      <tr><td><a href="https://arxiv.org/abs/2506.14852">Agentic Plan Caching</a> (Zhang et al.)</td><td class="long">plan templates reused across similar requests</td><td class="long">cost −50.31% and latency −27.28% on average, with performance maintained (abstract)</td></tr>
+      <tr><td><a href="https://arxiv.org/abs/2504.06188">SkillFlow</a> (Li et al.)</td><td class="long">skills retrieved from a public corpus, on Terminal-Bench's 89 tasks</td><td class="long">agents used the skills 70.1% of the time, with no performance gain</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Total saving = 1 ÷ (1 − h × (1 − 1/R)), where <i>h</i> is the share of spend that a replay covers and <i>R</i> is what one replay saves. With R = 100, 10x needs h ≥ 0.91. At this repository's h of about 0.15 the answer is about 1.2x, whatever R is. Automations pay off on scheduled and repeated jobs, such as the nightly bench that cron already runs without an agent. They don't pay off on new work.</p>
+
 </section>
+
+
+<section>
+  <h2>What foreman and uptake flagged</h2>
+  <p class="lead"><code>bb foreman</code> scored the agent that ran this work, and <code>bb uptake</code> counted what past sessions reached for. Both run locally at 0 model tokens.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>finding</th><th>evidence</th><th>this branch</th></tr></thead>
+    <tbody>
+      <tr><td class="long">The output sieve cut what the agent asked to read</td><td class="long">Of the 173 Bash results the sieve cut in this workspace's own session transcripts, 168 came from a deliberate read: <code>cat</code>, <code>sed -n</code>, an <code>awk</code> line range, or output the agent had already capped with <code>head</code>/<code>tail</code>. In an earlier TB 2.1 run, before this fix, it cut 232 of 336 lines from five test programs the scheme agent had printed to learn the language. The agent never grepped the saved copy, and its evaluator then failed <code>closures.scm</code>.</td><td><span class="tag fixed">fixed: reads keep their text; logs are still cut</span></td></tr>
+      <tr><td class="long">A subagent's report was taken as the user's task</td><td class="long">7 of 9 foreman assessments in one session steered against a subagent's hand-back as "the job". The prompt hook located the same text and put a 1,000-token brief in the window.</td><td><span class="tag fixed">fixed: <code>&lt;agent-message&gt;</code> is harness text</span></td></tr>
+      <tr><td class="long">Foreman stops working sessions</td><td class="long">111 assessments across 12 sessions: 52 stop, 20 steer, 29 continue. 102 of them were decided on local evidence alone. Stops came from "no edit since" while the edits sat in a git worktree foreman doesn't watch.</td><td><span class="tag">open</span></td></tr>
+      <tr><td class="long">The MCP tools are rarely reached</td><td class="long">Reached in 4 of 71 sessions (6%) on this workspace, and the automations surface in 4 of 71. Pinpoint ran in 16 of the 63 sessions that opened five or more files.</td><td><span class="tag fixed"><code>bb_pinpoint</code> deferred under the hook</span></td></tr>
+      <tr><td class="long">The search guard blocks searches outside the tree</td><td class="long">A <code>grep</code> over Harbor trajectories in a scratch directory was refused as "already indexed", because the filter named a path outside the workspace.</td><td><span class="tag">open</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
 
 <section>
   <h2>Every trial</h2>
   <div class="scroll" id="all"></div>
-    <h2 style="margin-top:40px">How it was run</h2>
+  <h2 style="margin-top:40px">How it was run</h2>
   <ul class="plain">
-    <li><b>Harness.</b> Harbor 0.23.0 running the Terminal-Bench 2.0 tasks in local Docker, with its <code>claude-code</code> agent (Claude Code 2.1.285) on Claude Sonnet 5.5. One attempt per task per run, two trials at a time per run. The first three runs ran side by side; the fourth ran later the same day.</li>
-    <li><b>Bare Claude Code.</b> Claude Code with no bundlebox configuration. bundlebox was copied to <code>/opt/bb</code>, off the PATH, so every run had the same install step.</li>
-    <li><b>bundlebox MCP only (0.8.0).</b> The same, plus <code>bb mcp</code> registered as a user-scoped MCP server. The server connected and listed its 10 tools in every trial.</li>
-    <li><b>bundlebox full install (0.8.0).</b> <code>bb</code> on the PATH, then <code>bb init --apply</code>, <code>bb wire --apply</code> and <code>bb env up --apply</code> in the task directory before the agent started. That writes the CLAUDE.md instructions block, the hooks in <code>.claude/settings.json</code>, and 7 of 9 artefacts. The Rust index and memory were not built, which matches a normal install without cargo. <code>bb init</code> also edits <code>.gitignore</code> and adds files to the task directory; no task failed because of that.</li>
-    <li><b>bundlebox after #92/#93.</b> The same full install, with bundlebox packed from <code>main</code> after #93 (which includes #92). The grading time limit was doubled so the <code>fix-ocaml-gc</code> grader could finish cloning OCaml. That limit applies only to grading, not to the agent.</li>
-    <li><b>Tasks.</b> Eight tasks that start from existing code: fix-git, cobol-modernization, fix-code-vulnerability, build-cython-ext, custom-memory-heap-crash, git-leak-recovery, schemelike-metacircular-eval and fix-ocaml-gc.</li>
-    <li><b>Infrastructure failures.</b> The network link ran at about 0.9 MB/s. The bare run's first custom-memory-heap-crash trial timed out downloading its Docker image; it was re-run once the image was cached, and passed. The fix-ocaml-gc grader clones the 560 MB OCaml repository and then builds it. The bare run hit the one-hour grading limit twice, so its attempt has no score. fix-ocaml-gc is left out of the shared-task totals and running charts, and it's still counted in the context chart.</li>
-    <li><b>Cost.</b> Harbor's own estimate. For the same tokens it comes out about 16% below Sonnet 5.5 list prices, and the run used a Claude subscription token, so this is not what was billed.</li>
+    <li><b>Harness.</b> Harbor 0.23.0 ran the <a href="https://github.com/harbor-framework/terminal-bench-2-1">Terminal-Bench 2.1</a> tasks in local Docker. The agent was Claude Code 2.1.286 on Claude Sonnet 5.5, with one attempt per task per run and two trials at a time per run. Both runs went side by side on 2026-10-01.</li>
+    <li><b>Bare Claude Code.</b> No bundlebox configuration. bundlebox was copied to <code>/opt/bb</code>, off the PATH, so both runs had the same install step.</li>
+    <li><b>bundlebox, this branch.</b> <code>bb</code> on the PATH, then <code>bb init --apply</code>, <code>bb wire --apply</code> and <code>bb env up --apply</code> in the task directory, plus <code>bb mcp</code> as an MCP server. bundlebox was packed from branch <code>feat/tb21-lean</code>: <code>main</code> plus the four fixes above.</li>
+    <li><b>Tasks.</b> The eight TB 2.0 tasks from the earlier runs (only <code>fix-git</code> changed in 2.1), plus four with small images: cancel-async-tasks, build-pmars, sqlite-db-truncate and headless-terminal.</li>
+    <li><b>fix-ocaml-gc is ungraded.</b> Its grader clones the 560 MB OCaml repository over the network before running the tests. On this link the clone was reset mid-download in all three grading attempts (both runs, then a bare re-run), so the testsuite never ran. Both agents finished their work. The task counts in the token and context charts, and not in pass rates or the cost comparison.</li>
+    <li><b>Token mix.</b> From each call's prompt tokens in Harbor's trajectory. The fixed part is the first call's prompt times the number of calls. Tool output is its character count ÷ 4, times the calls that followed it.</li>
+    <li><b>Earlier runs.</b> Four TB 2.0 runs of the first eight tasks (bare, MCP only, 0.8.0 full install, after #92/#93) are embedded for the overhead chart. Every graded trial in them passed. A first TB 2.1 run on 2026-09-30 used an earlier build of this branch, without the sieve fix: bare passed 11 of 12 and bundlebox 10 of 12. Its trial files were lost, so it is not charted here.</li>
+    <li><b>Cost.</b> Harbor's estimate, about 16% below Sonnet 5.5 list prices for the same tokens. The runs used a subscription token.</li>
   </ul>
 
 </section>
 
-<footer>Data: Harbor's per-trial <code>result.json</code> and <code>trajectory.json</code> for the three arms, embedded in this page. Cost is Harbor's own estimate, about 16% below Sonnet 5.5 list prices for the same tokens; the runs used a subscription token.</footer>
+<footer>Data: Harbor's per-trial <code>result.json</code> and <code>trajectory.json</code>, embedded in this page. Cost is Harbor's own estimate, about 16% below Sonnet 5.5 list prices for the same tokens; the runs used a subscription token.</footer>
 </div>
 
-<script id="data" type="application/json">{"generated":"2026-09-30T20:51+03:00","trials":[{"arm":"control","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":869,"steps":20,"cost":0.245805,"prompt":481633,"completion":6410,"ctx":[15551,17623,18120,18798,19594,19800,20490,21547,22795,25161,27916,29163,30036,30992,31624,32229,32727,33336,34131],"tool_calls":19,"bb_calls":0,"rerun":false},{"arm":"control","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":34,"steps":6,"cost":0.100344,"prompt":98605,"completion":3225,"ctx":[15446,19469,19930,20833,22927],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"control","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":18,"steps":4,"cost":0.0380448,"prompt":51529,"completion":554,"ctx":[16700,17309,17520],"tool_calls":2,"bb_calls":0,"rerun":false},{"arm":"control","task":"fix-git","reward":1.0,"exception":null,"agent_sec":20,"steps":8,"cost":0.0651992,"prompt":116221,"completion":1088,"ctx":[15277,15578,15914,16205,16960,17914,18373],"tool_calls":6,"bb_calls":0,"rerun":false},{"arm":"control","task":"fix-ocaml-gc","reward":null,"exception":"VerifierTimeoutError","agent_sec":1296,"steps":15,"cost":0.1928838,"prompt":374581,"completion":2997,"ctx":[15127,15288,17020,19764,21002,27378,28313,29256,32394,32988,33481,33720,34025,34825],"tool_calls":14,"bb_calls":0,"rerun":false},{"arm":"control","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":20,"steps":5,"cost":0.0383082,"prompt":63401,"completion":748,"ctx":[15140,15603,16205,16453],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"control","task":"schemelike-metacircular-eval","reward":1.0,"exception":"AgentTimeoutError","agent_sec":2400,"steps":18,"cost":0.4845107,"prompt":663620,"completion":25516,"ctx":[15387,23200,26457,38953,39155,40274,40603,41285,41432,41600,41909,42282,42508,43514,44562,46833,53666],"tool_calls":17,"bb_calls":0,"rerun":false},{"arm":"control","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":66,"steps":10,"cost":0.1008386,"prompt":171406,"completion":2653,"ctx":[15410,16453,17874,18118,19235,19785,20740,21585,22206],"tool_calls":8,"bb_calls":0,"rerun":true,"infra_failures":1},{"arm":"bundlebox","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":506,"steps":16,"cost":0.189939,"prompt":357532,"completion":4581,"ctx":[15821,16328,18728,19248,19522,21814,22287,23616,25572,26908,28259,28912,29671,30068,30778],"tool_calls":14,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":46,"steps":7,"cost":0.10465379999999999,"prompt":121863,"completion":3640,"ctx":[15716,19739,20190,20617,22378,23223],"tool_calls":6,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":49,"steps":9,"cost":0.10114959999999999,"prompt":157205,"completion":2210,"ctx":[15680,16723,18144,18492,19491,20919,23554,24202],"tool_calls":7,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":19,"steps":4,"cost":0.0383168,"prompt":52330,"completion":466,"ctx":[16970,17579,17781],"tool_calls":2,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"fix-git","reward":1.0,"exception":null,"agent_sec":32,"steps":7,"cost":0.0547368,"prompt":99172,"completion":1145,"ctx":[15547,15841,16213,16482,17237,17852],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1125,"steps":13,"cost":0.169046,"prompt":310380,"completion":2604,"ctx":[15397,15562,17224,20031,21453,28765,31314,31467,31693,32102,32405,32967],"tool_calls":11,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":17,"steps":5,"cost":0.038231,"prompt":64021,"completion":699,"ctx":[15410,15866,16216,16529],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"bundlebox","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":342,"steps":6,"cost":0.45615039999999996,"prompt":170733,"completion":26318,"ctx":[15657,21992,27248,52364,53472],"tool_calls":4,"bb_calls":0,"rerun":false},{"arm":"full","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":404,"steps":17,"cost":0.217739,"prompt":419258,"completion":5528,"ctx":[17334,18725,20434,22323,23115,23789,26355,27246,27708,28221,28956,29992,30258,30993,31457,32352],"tool_calls":16,"bb_calls":0,"rerun":false},{"arm":"full","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":50,"steps":6,"cost":0.1002434,"prompt":108154,"completion":2989,"ctx":[17230,21508,22190,22728,24498],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"full","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":53,"steps":7,"cost":0.0848948,"prompt":120321,"completion":2051,"ctx":[17208,19423,19775,20302,21327,22286],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"full","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":28,"steps":4,"cost":0.0503486,"prompt":59908,"completion":549,"ctx":[19466,20112,20330],"tool_calls":2,"bb_calls":0,"rerun":false},{"arm":"full","task":"fix-git","reward":1.0,"exception":null,"agent_sec":44,"steps":8,"cost":0.0694964,"prompt":129639,"completion":1127,"ctx":[17224,17543,17882,18194,18956,19661,20179],"tool_calls":6,"bb_calls":0,"rerun":false},{"arm":"full","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1204,"steps":14,"cost":0.19772640000000002,"prompt":372231,"completion":2940,"ctx":[17710,19716,20047,23579,25271,29060,29573,32624,33792,34184,34513,35788,36374],"tool_calls":12,"bb_calls":0,"rerun":false},{"arm":"full","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":21,"steps":5,"cost":0.044696200000000005,"prompt":69567,"completion":733,"ctx":[16924,17281,17513,17849],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"full","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":573,"steps":11,"cost":0.4001506000000001,"prompt":387290,"completion":18279,"ctx":[17382,25595,29142,30111,46222,46784,47579,47812,48175,48488],"tool_calls":10,"bb_calls":0,"rerun":false},{"arm":"full2","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":810,"steps":19,"cost":0.22110559999999993,"prompt":453425,"completion":5629,"ctx":[17032,17285,19640,20194,21309,22888,23936,24704,24937,26025,26801,27379,28065,29358,30032,30841,31378,31621],"tool_calls":17,"bb_calls":0,"rerun":false},{"arm":"full2","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":44,"steps":5,"cost":0.07820940000000001,"prompt":81691,"completion":2201,"ctx":[16927,20835,21313,22616],"tool_calls":4,"bb_calls":0,"rerun":false},{"arm":"full2","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":64,"steps":7,"cost":0.08947840000000001,"prompt":124670,"completion":2137,"ctx":[16904,20271,20680,21217,22112,23486],"tool_calls":6,"bb_calls":1,"rerun":false},{"arm":"full2","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":35,"steps":5,"cost":0.058523799999999994,"prompt":79571,"completion":1047,"ctx":[19077,19725,20185,20584],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"full2","task":"fix-git","reward":1.0,"exception":null,"agent_sec":38,"steps":7,"cost":0.06436159999999999,"prompt":107403,"completion":1013,"ctx":[16851,17195,17526,17826,18741,19264],"tool_calls":5,"bb_calls":0,"rerun":false},{"arm":"full2","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1375,"steps":12,"cost":0.1998096,"prompt":281203,"completion":2264,"ctx":[16651,17221,19677,20741,26211,27605,29700,30094,30375,31113,31815],"tool_calls":12,"bb_calls":1,"rerun":false},{"arm":"full2","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":27,"steps":5,"cost":0.0426448,"prompt":68738,"completion":777,"ctx":[16621,17071,17360,17686],"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"full2","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":711,"steps":11,"cost":0.4420276000000001,"prompt":417022,"completion":20794,"ctx":[17198,26801,36141,45438,45897,46140,46400,49805,51428,51774],"tool_calls":10,"bb_calls":0,"rerun":false}]}</script>
+<script id="data" type="application/json">{"generated":"2026-10-01T13:36+03:00","run_date":"2026-10-01","order":["fix-git","cobol-modernization","fix-code-vulnerability","build-cython-ext","custom-memory-heap-crash","git-leak-recovery","schemelike-metacircular-eval","fix-ocaml-gc","cancel-async-tasks","build-pmars","sqlite-db-truncate","headless-terminal"],"short":{"fix-git":"fix-git","cobol-modernization":"cobol","fix-code-vulnerability":"vuln","build-cython-ext":"cython","custom-memory-heap-crash":"heap-crash","git-leak-recovery":"git-leak","schemelike-metacircular-eval":"scheme","fix-ocaml-gc":"ocaml-gc","cancel-async-tasks":"async-cancel","build-pmars":"pmars","sqlite-db-truncate":"sqlite-trunc","headless-terminal":"headless-term"},"trials":[{"bench":"2.1","arm":"control","task":"build-cython-ext","reward":0.0,"exception":"AgentTimeoutError","agent_sec":900,"cache_write":21899,"cache_read":431267,"steps":19,"cost":0.18654290000000004,"prompt":453202,"completion":4547,"ctx":[15639,17043,18405,19447,19819,20007,21210,22041,23380,25341,28214,29691,30656,31367,31877,32489,32996,33580],"calls":18,"tool_tok":14230,"tool_reread":135506,"sieved":0,"tool_calls":19,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"build-pmars","reward":1.0,"exception":null,"agent_sec":416,"cache_write":7157,"cache_read":160553,"steps":11,"cost":0.0764986,"prompt":167730,"completion":1572,"ctx":[15282,15466,15864,16223,16447,16838,16976,17592,18204,18838],"calls":10,"tool_tok":1504,"tool_reread":6507,"sieved":0,"tool_calls":9,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"cancel-async-tasks","reward":1.0,"exception":null,"agent_sec":111,"cache_write":1748,"cache_read":30188,"steps":3,"cost":0.0469474,"prompt":31940,"completion":1788,"ctx":[15096,16844],"calls":2,"tool_tok":387,"tool_reread":387,"sieved":0,"tool_calls":2,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":39,"cache_write":10415,"cache_read":86136,"steps":6,"cost":0.0865572,"prompt":96561,"completion":2765,"ctx":[15534,19007,19568,20356,22096],"calls":5,"tool_tok":4429,"tool_reread":15302,"sieved":0,"tool_calls":4,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":82,"cache_write":9925,"cache_read":120355,"steps":8,"cost":0.087239,"prompt":130294,"completion":2344,"ctx":[15498,16710,17962,18664,19377,20477,21606],"calls":7,"tool_tok":4430,"tool_reread":18986,"sieved":0,"tool_calls":6,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":22,"cache_write":5918,"cache_read":45860,"steps":4,"cost":0.037946,"prompt":51784,"completion":509,"ctx":[16788,17397,17599],"calls":3,"tool_tok":765,"tool_reread":1413,"sieved":0,"tool_calls":2,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"fix-git","reward":1.0,"exception":null,"agent_sec":19,"cache_write":8380,"cache_read":108412,"steps":8,"cost":0.0647604,"prompt":116806,"completion":953,"ctx":[15365,15654,15965,16179,16932,18129,18582],"calls":7,"tool_tok":2874,"tool_reread":7705,"sieved":0,"tool_calls":6,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":16,"cache_write":4717,"cache_read":58674,"steps":5,"cost":0.0380488,"prompt":63399,"completion":743,"ctx":[15228,15691,16082,16398],"calls":4,"tool_tok":572,"tool_reread":1284,"sieved":0,"tool_calls":3,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"headless-terminal","reward":1.0,"exception":null,"agent_sec":28,"cache_write":7008,"cache_read":58198,"steps":5,"cost":0.0596276,"prompt":65214,"completion":1994,"ctx":[15318,15483,15724,18689],"calls":4,"tool_tok":1192,"tool_reread":1500,"sieved":0,"tool_calls":3,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"schemelike-metacircular-eval","reward":1.0,"exception":"AgentTimeoutError","agent_sec":2400,"cache_write":50779,"cache_read":1139782,"steps":24,"cost":0.6791459000000002,"prompt":1190607,"completion":32415,"ctx":[15475,22321,27152,45983,46578,46748,46958,47306,48152,57777,58084,58608,58777,59005,59516,60451,60946,61133,61262,61369,62193,62353,62460],"calls":23,"tool_tok":16424,"tool_reread":342276,"sieved":0,"tool_calls":23,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"sqlite-db-truncate","reward":1.0,"exception":null,"agent_sec":44,"cache_write":6681,"cache_read":61085,"steps":5,"cost":0.049467000000000004,"prompt":67774,"completion":1051,"ctx":[15166,16556,17690,18362],"calls":4,"tool_tok":1783,"tool_reread":4207,"sieved":0,"tool_calls":3,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"control","task":"fix-ocaml-gc","reward":null,"exception":"GraderCloneFailed","agent_sec":1338,"cache_write":19865,"cache_read":221636,"steps":11,"cost":0.1458672,"prompt":241521,"completion":2204,"ctx":[15215,15383,17746,20811,22462,26546,30133,30536,31143,31546],"calls":10,"tool_tok":15319,"tool_reread":87526,"sieved":0,"tool_calls":10,"bb_calls":0,"rerun":true,"infra_failures":1},{"bench":"2.1","arm":"full","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":839,"cache_write":21322,"cache_read":413302,"steps":18,"cost":0.21859640000000002,"prompt":434658,"completion":5058,"ctx":[16865,18924,19373,20018,21025,21917,23002,24612,26068,27523,28314,29754,30131,30470,31061,32423,33178],"calls":17,"tool_tok":11852,"tool_reread":113701,"sieved":0,"tool_calls":17,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"build-pmars","reward":1.0,"exception":null,"agent_sec":532,"cache_write":8915,"cache_read":195144,"steps":12,"cost":0.0904228,"prompt":204081,"completion":1569,"ctx":[16508,17059,17672,17889,18231,18425,18563,19157,19711,20095,20771],"calls":11,"tool_tok":2110,"tool_reread":12016,"sieved":0,"tool_calls":10,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"cancel-async-tasks","reward":1.0,"exception":null,"agent_sec":32,"cache_write":6258,"cache_read":46315,"steps":4,"cost":0.05227700000000001,"prompt":52579,"completion":1797,"ctx":[16471,17994,18114],"calls":3,"tool_tok":385,"tool_reread":737,"sieved":0,"tool_calls":3,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":46,"cache_write":10559,"cache_read":71361,"steps":5,"cost":0.0783342,"prompt":81928,"completion":2181,"ctx":[16760,20668,22085,22415],"calls":4,"tool_tok":3616,"tool_reread":10674,"sieved":0,"tool_calls":4,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":269,"cache_write":20959,"cache_read":345749,"steps":15,"cost":0.19757180000000002,"prompt":366736,"completion":4453,"ctx":[16737,19478,19893,20576,23746,24692,25596,26999,28722,29688,31524,32282,33230,33573],"calls":14,"tool_tok":12784,"tool_reread":109494,"sieved":0,"tool_calls":14,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":31,"cache_write":7992,"cache_read":50406,"steps":4,"cost":0.047521200000000006,"prompt":58404,"completion":546,"ctx":[18921,19635,19848],"calls":3,"tool_tok":864,"tool_reread":1612,"sieved":0,"tool_calls":2,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"fix-git","reward":1.0,"exception":null,"agent_sec":42,"cache_write":9455,"cache_read":117142,"steps":8,"cost":0.0739964,"prompt":126611,"completion":1272,"ctx":[16684,17023,17409,17695,18753,19215,19832],"calls":7,"tool_tok":2340,"tool_reread":6997,"sieved":0,"tool_calls":6,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"fix-ocaml-gc","reward":null,"exception":"GraderCloneFailed","agent_sec":1598,"cache_write":35886,"cache_read":300715,"steps":13,"cost":0.23370499999999997,"prompt":336625,"completion":2997,"ctx":[16484,16907,19828,20910,26339,29356,33290,33840,34105,34388,35290,35888],"calls":12,"tool_tok":17092,"tool_reread":128380,"sieved":0,"tool_calls":12,"bb_calls":1,"rerun":false},{"bench":"2.1","arm":"full","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":91,"cache_write":5584,"cache_read":62167,"steps":5,"cost":0.0413354,"prompt":67759,"completion":655,"ctx":[16305,16937,17077,17440],"calls":4,"tool_tok":322,"tool_reread":755,"sieved":0,"tool_calls":3,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"headless-terminal","reward":1.0,"exception":null,"agent_sec":32,"cache_write":7429,"cache_read":46036,"steps":4,"cost":0.0554352,"prompt":53471,"completion":1650,"ctx":[16823,17363,19285],"calls":3,"tool_tok":1566,"tool_reread":1958,"sieved":0,"tool_calls":4,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":1308,"cache_write":62239,"cache_read":662090,"steps":13,"cost":0.792672,"prompt":724353,"completion":41125,"ctx":[17041,25269,31626,70334,71296,71752,72000,72197,72354,72534,73855,74095],"calls":12,"tool_tok":21540,"tool_reread":215416,"sieved":0,"tool_calls":12,"bb_calls":0,"rerun":false},{"bench":"2.1","arm":"full","task":"sqlite-db-truncate","reward":1.0,"exception":null,"agent_sec":214,"cache_write":17897,"cache_read":73846,"steps":5,"cost":0.0978532,"prompt":91751,"completion":1148,"ctx":[16392,16741,28865,29753],"calls":4,"tool_tok":8426,"tool_reread":16884,"sieved":0,"tool_calls":3,"bb_calls":0,"rerun":false},{"arm":"control","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":869,"steps":20,"cost":0.245805,"prompt":481633,"completion":6410,"ctx":[15551,17623,18120,18798,19594,19800,20490,21547,22795,25161,27916,29163,30036,30992,31624,32229,32727,33336,34131],"tool_calls":19,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":34,"steps":6,"cost":0.100344,"prompt":98605,"completion":3225,"ctx":[15446,19469,19930,20833,22927],"tool_calls":5,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":18,"steps":4,"cost":0.0380448,"prompt":51529,"completion":554,"ctx":[16700,17309,17520],"tool_calls":2,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"fix-git","reward":1.0,"exception":null,"agent_sec":20,"steps":8,"cost":0.0651992,"prompt":116221,"completion":1088,"ctx":[15277,15578,15914,16205,16960,17914,18373],"tool_calls":6,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"fix-ocaml-gc","reward":null,"exception":"VerifierTimeoutError","agent_sec":1296,"steps":15,"cost":0.1928838,"prompt":374581,"completion":2997,"ctx":[15127,15288,17020,19764,21002,27378,28313,29256,32394,32988,33481,33720,34025,34825],"tool_calls":14,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":20,"steps":5,"cost":0.0383082,"prompt":63401,"completion":748,"ctx":[15140,15603,16205,16453],"tool_calls":3,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"schemelike-metacircular-eval","reward":1.0,"exception":"AgentTimeoutError","agent_sec":2400,"steps":18,"cost":0.4845107,"prompt":663620,"completion":25516,"ctx":[15387,23200,26457,38953,39155,40274,40603,41285,41432,41600,41909,42282,42508,43514,44562,46833,53666],"tool_calls":17,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"control","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":66,"steps":10,"cost":0.1008386,"prompt":171406,"completion":2653,"ctx":[15410,16453,17874,18118,19235,19785,20740,21585,22206],"tool_calls":8,"bb_calls":0,"rerun":true,"infra_failures":1,"bench":"2.0"},{"arm":"bundlebox","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":506,"steps":16,"cost":0.189939,"prompt":357532,"completion":4581,"ctx":[15821,16328,18728,19248,19522,21814,22287,23616,25572,26908,28259,28912,29671,30068,30778],"tool_calls":14,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":46,"steps":7,"cost":0.10465379999999999,"prompt":121863,"completion":3640,"ctx":[15716,19739,20190,20617,22378,23223],"tool_calls":6,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":49,"steps":9,"cost":0.10114959999999999,"prompt":157205,"completion":2210,"ctx":[15680,16723,18144,18492,19491,20919,23554,24202],"tool_calls":7,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":19,"steps":4,"cost":0.0383168,"prompt":52330,"completion":466,"ctx":[16970,17579,17781],"tool_calls":2,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"fix-git","reward":1.0,"exception":null,"agent_sec":32,"steps":7,"cost":0.0547368,"prompt":99172,"completion":1145,"ctx":[15547,15841,16213,16482,17237,17852],"tool_calls":5,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1125,"steps":13,"cost":0.169046,"prompt":310380,"completion":2604,"ctx":[15397,15562,17224,20031,21453,28765,31314,31467,31693,32102,32405,32967],"tool_calls":11,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":17,"steps":5,"cost":0.038231,"prompt":64021,"completion":699,"ctx":[15410,15866,16216,16529],"tool_calls":3,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"bundlebox","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":342,"steps":6,"cost":0.45615039999999996,"prompt":170733,"completion":26318,"ctx":[15657,21992,27248,52364,53472],"tool_calls":4,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":404,"steps":17,"cost":0.217739,"prompt":419258,"completion":5528,"ctx":[17334,18725,20434,22323,23115,23789,26355,27246,27708,28221,28956,29992,30258,30993,31457,32352],"tool_calls":16,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":50,"steps":6,"cost":0.1002434,"prompt":108154,"completion":2989,"ctx":[17230,21508,22190,22728,24498],"tool_calls":5,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":53,"steps":7,"cost":0.0848948,"prompt":120321,"completion":2051,"ctx":[17208,19423,19775,20302,21327,22286],"tool_calls":5,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":28,"steps":4,"cost":0.0503486,"prompt":59908,"completion":549,"ctx":[19466,20112,20330],"tool_calls":2,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"fix-git","reward":1.0,"exception":null,"agent_sec":44,"steps":8,"cost":0.0694964,"prompt":129639,"completion":1127,"ctx":[17224,17543,17882,18194,18956,19661,20179],"tool_calls":6,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1204,"steps":14,"cost":0.19772640000000002,"prompt":372231,"completion":2940,"ctx":[17710,19716,20047,23579,25271,29060,29573,32624,33792,34184,34513,35788,36374],"tool_calls":12,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":21,"steps":5,"cost":0.044696200000000005,"prompt":69567,"completion":733,"ctx":[16924,17281,17513,17849],"tool_calls":3,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":573,"steps":11,"cost":0.4001506000000001,"prompt":387290,"completion":18279,"ctx":[17382,25595,29142,30111,46222,46784,47579,47812,48175,48488],"tool_calls":10,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"build-cython-ext","reward":1.0,"exception":null,"agent_sec":810,"steps":19,"cost":0.22110559999999993,"prompt":453425,"completion":5629,"ctx":[17032,17285,19640,20194,21309,22888,23936,24704,24937,26025,26801,27379,28065,29358,30032,30841,31378,31621],"tool_calls":17,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"cobol-modernization","reward":1.0,"exception":null,"agent_sec":44,"steps":5,"cost":0.07820940000000001,"prompt":81691,"completion":2201,"ctx":[16927,20835,21313,22616],"tool_calls":4,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"custom-memory-heap-crash","reward":1.0,"exception":null,"agent_sec":64,"steps":7,"cost":0.08947840000000001,"prompt":124670,"completion":2137,"ctx":[16904,20271,20680,21217,22112,23486],"tool_calls":6,"bb_calls":1,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"fix-code-vulnerability","reward":1.0,"exception":null,"agent_sec":35,"steps":5,"cost":0.058523799999999994,"prompt":79571,"completion":1047,"ctx":[19077,19725,20185,20584],"tool_calls":3,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"fix-git","reward":1.0,"exception":null,"agent_sec":38,"steps":7,"cost":0.06436159999999999,"prompt":107403,"completion":1013,"ctx":[16851,17195,17526,17826,18741,19264],"tool_calls":5,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"fix-ocaml-gc","reward":1.0,"exception":null,"agent_sec":1375,"steps":12,"cost":0.1998096,"prompt":281203,"completion":2264,"ctx":[16651,17221,19677,20741,26211,27605,29700,30094,30375,31113,31815],"tool_calls":12,"bb_calls":1,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"git-leak-recovery","reward":1.0,"exception":null,"agent_sec":27,"steps":5,"cost":0.0426448,"prompt":68738,"completion":777,"ctx":[16621,17071,17360,17686],"tool_calls":3,"bb_calls":0,"rerun":false,"bench":"2.0"},{"arm":"full2","task":"schemelike-metacircular-eval","reward":1.0,"exception":null,"agent_sec":711,"steps":11,"cost":0.4420276000000001,"prompt":417022,"completion":20794,"ctx":[17198,26801,36141,45438,45897,46140,46400,49805,51428,51774],"tool_calls":10,"bb_calls":0,"rerun":false,"bench":"2.0"}]}</script>
 <script>
 const DATA = JSON.parse(document.getElementById('data').textContent);
+const T = DATA.trials.filter(t => t.bench === '2.1');
+const OLD = DATA.trials.filter(t => t.bench === '2.0');
 const ARMS = [
-  {id:'control',   cls:'bare', label:'Bare Claude Code'},
-  {id:'bundlebox', cls:'mcp',  label:'bundlebox MCP only'},
-  {id:'full',      cls:'bb',   label:'bundlebox full install'},
-  {id:'full2',     cls:'bb2',  label:'bundlebox after #92/#93'},
+  {id: 'control', cls: 'bare', label: 'Bare Claude Code'},
+  {id: 'full', cls: 'bb', label: 'bundlebox, this branch'},
 ];
-const ORDER = ['fix-git','cobol-modernization','fix-code-vulnerability','build-cython-ext',
-  'custom-memory-heap-crash','git-leak-recovery','schemelike-metacircular-eval','fix-ocaml-gc'];
-const SHORT = {'fix-git':'fix-git','cobol-modernization':'cobol','fix-code-vulnerability':'vuln','build-cython-ext':'cython',
-  'custom-memory-heap-crash':'heap-crash','git-leak-recovery':'git-leak','schemelike-metacircular-eval':'scheme','fix-ocaml-gc':'ocaml-gc'};
-const T = DATA.trials;
-const get = (arm, task) => T.find(t => t.arm === arm && t.task === task);
+const ORDER = DATA.order;
+const SHORT = t => DATA.short[t] || t;
+const get = (arm, task, rows = T) => rows.find(t => t.arm === arm && t.task === task);
 const scored = t => t && t.reward !== null && t.reward !== undefined;
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
-const fmtK = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'K' : String(n);
+const fmtK = n => Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(2).replace(/0$/, '') + 'M' : Math.abs(n) >= 1000 ? (n / 1000).toFixed(Math.abs(n) >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'K' : String(Math.round(n));
 const fmt$ = n => '$' + n.toFixed(2);
-const fmtMin = n => n === 0 ? '0' : n < 10 ? n.toFixed(1) : Math.round(n).toString();
-
-function legend(id) {
-  document.getElementById(id).innerHTML = ARMS.map(a => `<span><i class="key ${a.cls}"></i>${a.label}</span>`).join('');
+const pct = x => Math.round(x * 100) + '%';
+const mean = xs => xs.reduce((s, x) => s + x, 0) / (xs.length || 1);
+function table(id, head, rows, numeric = []) {
+  document.getElementById(id).innerHTML = `<table><thead><tr>${head.map((h, i) => `<th${numeric.includes(i) ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td${numeric.includes(i) ? ' class="n"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
+function niceStep(v) { const p = Math.pow(10, Math.floor(Math.log10(v || 1))), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
 
-function niceStep(v) {
-  const p = Math.pow(10, Math.floor(Math.log10(v || 1))), m = v / p;
-  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
-}
-
-// series: [{cls,label,pts:[[xIndex,y]]}]; xs: labels for each x index.
-function lineChart(host, series, xs, o) {
-  const W = o.w || 760, H = o.h || 300, m = {t: 14, r: o.endLabels ? 205 : 16, b: 36, l: 52};
-  const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': o.aria}, host);
-  const iw = W - m.l - m.r, ih = H - m.t - m.b;
-  const ymax = 4 * niceStep(Math.max(...series.flatMap(s => s.pts.map(p => p[1]))) * 1.05 / 4);
-  const n = xs.length, x = i => m.l + (n > 1 ? i * iw / (n - 1) : iw / 2), y = v => m.t + ih - v / ymax * ih;
-  for (let k = 0; k <= 4; k++) {
-    const v = ymax * k / 4, yy = y(v);
-    el('line', {class: k ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: yy, y2: yy}, svg);
-    el('text', {class: 'tick', x: m.l - 8, y: yy + 3.5, 'text-anchor': 'end'}, svg).textContent = o.yFmt(v);
-  }
-  const every = Math.ceil(n / (o.maxXTicks || 10));
-  xs.forEach((lab, i) => { if ((i % every === 0 && (n - 1 - i >= every / 2 || i === n - 1)) || i === n - 1) el('text', {class: 'tick', x: x(i), y: m.t + ih + 16, 'text-anchor': 'middle'}, svg).textContent = lab; });
-  if (o.xTitle) el('text', {class: 'tick', x: m.l + iw / 2, y: H - 4, 'text-anchor': 'middle'}, svg).textContent = o.xTitle;
-  const xh = el('line', {class: 'xh', y1: m.t, y2: m.t + ih}, svg);
-  for (const s of series) {
-    if (!s.pts.length) continue;
-    el('path', {class: `ln ${s.cls}`, d: s.pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1)).join('')}, svg);
-    const last = s.pts[s.pts.length - 1];
-    el('circle', {class: `dot ${s.cls}`, cx: x(last[0]), cy: y(last[1]), r: 4}, svg);
-    s.end = [x(last[0]), y(last[1])];
-  }
-  if (o.endLabels) {
-    // Direct labels at the right edge, spread only as far as needed to avoid overlap, with leader lines.
-    const ls = series.filter(s => s.end).map(s => ({s, y: s.end[1]})).sort((a, b) => a.y - b.y);
-    for (let i = 1; i < ls.length; i++) if (ls[i].y - ls[i - 1].y < 15) ls[i].y = ls[i - 1].y + 15;
-    for (const l of ls) {
-      const lx = m.l + iw + 14;
-      el('line', {class: 'grid', x1: l.s.end[0] + 6, y1: l.s.end[1], x2: lx - 3, y2: l.y}, svg);
-      el('text', {class: 'lab', x: lx, y: l.y + 4}, svg).textContent = `${l.s.label} · ${o.yFmt(l.s.pts[l.s.pts.length - 1][1])}`;
-    }
-  }
-  // Hover: nearest x index, crosshair, one tooltip listing every series.
-  const plot = host.closest('.plot') || host;
-  let tip = plot.querySelector(':scope > .tip');
-  if (!tip) { tip = document.createElement('div'); tip.className = 'tip'; plot.appendChild(tip); }
-  const hit = el('rect', {x: m.l - 10, y: m.t, width: iw + 20, height: ih, fill: 'transparent'}, svg);
-  const move = ev => {
-    const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) * W / r.width;
-    const i = Math.max(0, Math.min(n - 1, Math.round((sx - m.l) / (n > 1 ? iw / (n - 1) : 1))));
-    xh.setAttribute('x1', x(i)); xh.setAttribute('x2', x(i)); xh.style.opacity = .6;
-    const rows = series.map(s => { const p = s.pts.find(p => p[0] === i); return p ? `<div class="r"><i class="key ${s.cls}"></i>${s.label}<b>${o.yFmt(p[1])}</b></div>` : ''; }).join('');
-    tip.innerHTML = `<div class="t">${o.tipTitle ? o.tipTitle(i) : xs[i]}</div>${rows || '<div class="r">no data</div>'}`;
-    const pr = plot.getBoundingClientRect(), px = x(i) * r.width / W + r.left - pr.left + plot.scrollLeft;
-    tip.style.opacity = 1; tip.style.top = (r.top - pr.top + 8) + 'px';
-    tip.style.left = Math.min(px + 12, plot.scrollWidth - tip.offsetWidth - 8) + 'px';
-  };
-  hit.addEventListener('pointermove', move);
-  hit.addEventListener('pointerleave', () => { tip.style.opacity = 0; xh.style.opacity = 0; });
-}
-
-function table(id, head, rows) {
-  document.getElementById(id).innerHTML = `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => typeof c === 'object' ? `<td class="${c.cls}">${c.v}</td>` : `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-}
-
-// ── header, tiles ──
-const tasks = ORDER.filter(t => T.some(r => r.task === t));
-const common = tasks.filter(t => ARMS.every(a => scored(get(a.id, t))));
+// tasks both arms graded / finished / passed, in page order
+const common = ORDER.filter(t => ARMS.every(a => scored(get(a.id, t))));
+const finished = ORDER.filter(t => ARMS.every(a => get(a.id, t) && get(a.id, t).ctx));
+const bothPassed = ORDER.filter(t => ARMS.every(a => get(a.id, t) && get(a.id, t).reward === 1 && get(a.id, t).ctx));
+const sum = (arm, k, tasks) => tasks.reduce((s, t) => s + (get(arm, t)[k] || 0), 0);
+const first = (arm, tasks, rows = T) => mean(tasks.map(t => get(arm, t, rows).ctx[0]));
+const overhead = (bbArm, tasks, rows = T) => mean(tasks.map(t => get(bbArm, t, rows).ctx[0] - get('control', t, rows).ctx[0]));
 const pass = a => T.filter(t => t.arm === a && t.reward === 1).length;
-const nScored = a => T.filter(t => t.arm === a && scored(t)).length;
-const firstCtx = a => { const v = T.filter(t => t.arm === a && t.ctx && t.ctx.length).map(t => t.ctx[0]); return v.reduce((s, x) => s + x, 0) / v.length; };
-const sum = (a, k, set) => set.reduce((s, task) => s + (get(a, task)[k] || 0), 0);
-document.getElementById('stamp').textContent = `Run 2026-09-30 · page built ${DATA.generated} · ${T.length} finished trials across 4 runs`;
-document.getElementById('tagline').textContent = `The same agent and model on ${tasks.length} Terminal-Bench tasks, four ways: bare, with the bundlebox 0.8.0 MCP server registered, with the full bundlebox 0.8.0 install (instructions, hooks, prebuilt tables), and with the full install rebuilt from main after the fixes in #92 and #93.`;
-const perArm = f => ARMS.map(a => `<span><i class="key ${a.cls}"></i>${f(a.id)}</span>`).join('');
-document.getElementById('tiles').innerHTML = [
-  ['Tasks passed', perArm(a => `${pass(a)} of ${nScored(a)}`), 'bare, MCP only, full install, after #92/#93 · out of graded trials'],
-  ['bundlebox tool calls', perArm(a => a === 'control' ? '–' : String(T.filter(t => t.arm === a).reduce((s, t) => s + (t.bb_calls || 0), 0))), 'bare, MCP only, full install, after #92/#93 · every trial'],
-  ['Extra context at start', perArm(a => a === 'control' ? '–' : '+' + fmtK(Math.round(firstCtx(a) - firstCtx('control')))), 'vs bare, first model call, mean'],
-  ['Spend on shared tasks', perArm(a => fmt$(sum(a, 'cost', common))), `bare, MCP only, full install, after #92/#93 · ${common.length} tasks all four graded`],
-].map(([k, v, s]) => `<div class="tile"><p class="k">${k}</p><p class="v${v.startsWith('<span') ? ' multi' : ''}">${v}</p><p class="s">${s}</p></div>`).join('');
+const graded = a => T.filter(t => t.arm === a && scored(t)).length;
 
-// ── score vs cost per task ──
-// Deterministic PRNG so the bootstrap interval is the same on every load.
-function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function wilson(k, n, z = 1.96) {
-  const p = k / n, d = 1 + z * z / n, c = (p + z * z / (2 * n)) / d, h = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d;
-  return [Math.max(0, c - h), Math.min(1, c + h)];
+document.getElementById('stamp').textContent = `Run ${DATA.run_date} · page built ${DATA.generated} · ${T.length} finished trials, ${OLD.length} earlier TB 2.0 trials`;
+
+// ── token mix ──
+function mix(arm, tasks) {
+  let base = 0, bb = 0, tool = 0, turn = 0, total = 0;
+  for (const t of tasks) {
+    const r = get(arm, t), c = get('control', t);
+    const n = r.ctx.length, fixed = r.ctx[0] * n, add = arm === 'control' ? 0 : Math.max(0, r.ctx[0] - c.ctx[0]) * n;
+    const tot = r.ctx.reduce((s, x) => s + x, 0), growth = tot - fixed, tr = Math.min(r.tool_reread || 0, growth);
+    base += fixed - add; bb += add; tool += tr; turn += growth - tr; total += tot;
+  }
+  return {base, bb, tool, turn, total};
 }
+(function mixChart() {
+  const SEG = [['base', 'seg-base', "Claude Code's own prompt, every call"], ['bb', 'seg-bb', 'bundlebox additions, every call'],
+    ['tool', 'seg-tool', 'tool output, re-read on later calls'], ['turn', 'seg-turn', "the agent's own turns, re-read"]];
+  document.getElementById('legend-mix').innerHTML = SEG.map(([, c, l]) => `<span><i class="sw ${c}"></i>${l}</span>`).join('');
+  const rows = ARMS.map(a => ({...a, ...mix(a.id, bothPassed)}));
+  const W = 760, bh = 34, gap = 30, m = {t: 8, r: 70, b: 26, l: 150}, H = m.t + rows.length * (bh + gap) - gap + m.b + 18;
+  const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Input tokens by source, per run'}, document.getElementById('mix'));
+  const iw = W - m.l - m.r, xmax = 4 * niceStep(Math.max(...rows.map(r => r.total)) * 1.02 / 4), x = v => m.l + v / xmax * iw;
+  for (let k = 0; k <= 4; k++) {
+    const v = xmax * k / 4;
+    el('line', {class: k ? 'grid' : 'axis', x1: x(v), x2: x(v), y1: m.t, y2: H - m.b - 14}, svg);
+    el('text', {class: 'tick', x: x(v), y: H - m.b + 2, 'text-anchor': 'middle'}, svg).textContent = fmtK(v);
+  }
+  el('text', {class: 'tick', x: m.l + iw / 2, y: H - 4, 'text-anchor': 'middle'}, svg).textContent = `input tokens, the ${bothPassed.length} tasks both runs passed`;
+  rows.forEach((r, i) => {
+    const y = m.t + i * (bh + gap);
+    el('text', {class: 'lab', x: m.l - 10, y: y + bh / 2 + 4, 'text-anchor': 'end'}, svg).textContent = r.label;
+    let at = 0;
+    for (const [k, c] of SEG) {
+      if (!r[k]) continue;
+      el('rect', {class: c, x: x(at), y, width: Math.max(0, x(at + r[k]) - x(at) - 1), height: bh, rx: 2}, svg);
+      if (r[k] / r.total > 0.07) el('text', {class: 'val', x: x(at) + 6, y: y + bh / 2 + 4, style: k === 'base' ? '' : 'fill:#fff'}, svg).textContent = pct(r[k] / r.total);
+      at += r[k];
+    }
+    el('text', {class: 'val', x: x(r.total) + 8, y: y + bh / 2 + 4}, svg).textContent = fmtK(r.total);
+  });
+  const b = rows[0], f = rows[1];
+  document.getElementById('mix-note').textContent = `On bare Claude Code, ${pct(b.base / b.total)} of all input is the first call's prompt re-sent, tool output re-read is ${pct(b.tool / b.total)}, and the agent's own turns are ${pct(b.turn / b.total)}. bundlebox's share in its run is ${pct(f.bb / f.total)}. Tool output is estimated at 4 characters per token.`;
+  table('mix-table', ['run', "Claude Code's prompt", 'bundlebox', 'tool output', 'own turns', 'total'],
+    rows.map(r => [r.label, fmtK(r.base), fmtK(r.bb), fmtK(r.tool), fmtK(r.turn), fmtK(r.total)]), [1, 2, 3, 4, 5]);
+})();
+
+// ── overhead by version ──
+(function overChart() {
+  const oldTasks = ORDER.filter(t => ['control', 'full', 'full2'].every(a => get(a, t, OLD) && get(a, t, OLD).ctx));
+  const bars = [
+    {label: 'bundlebox 0.8.0 · TB 2.0', v: overhead('full', oldTasks, OLD), cls: 'bar-old', n: oldTasks.length},
+    {label: 'after #92/#93 · TB 2.0', v: overhead('full2', oldTasks, OLD), cls: 'bar-old', n: oldTasks.length},
+    {label: 'this branch · TB 2.1', v: overhead('full', finished), cls: 'bar-bb', n: finished.length},
+  ];
+  const W = 760, bh = 26, gap = 14, m = {t: 6, r: 90, b: 30, l: 190}, H = m.t + bars.length * (bh + gap) - gap + m.b;
+  const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Extra input tokens per call, by bundlebox version'}, document.getElementById('over'));
+  const iw = W - m.l - m.r, xmax = 2500, x = v => m.l + v / xmax * iw;
+  for (const v of [0, 500, 1000, 1500, 2000, 2500]) {
+    el('line', {class: v ? 'grid' : 'axis', x1: x(v), x2: x(v), y1: m.t, y2: H - m.b}, svg);
+    el('text', {class: 'tick', x: x(v), y: H - m.b + 16, 'text-anchor': 'middle'}, svg).textContent = fmtK(v);
+  }
+  bars.forEach((b, i) => {
+    const y = m.t + i * (bh + gap);
+    el('text', {class: 'lab', x: m.l - 10, y: y + bh / 2 + 4, 'text-anchor': 'end'}, svg).textContent = b.label;
+    el('rect', {class: b.cls, x: x(0), y, width: x(b.v) - x(0), height: bh, rx: 2}, svg);
+    el('text', {class: 'val', x: x(b.v) + 8, y: y + bh / 2 + 4}, svg).textContent = `+${Math.round(b.v).toLocaleString()} / call`;
+  });
+  const now = bars[2].v, base = first('control', finished);
+  document.getElementById('over-note').textContent = `On TB 2.1 bare Claude Code's first call is ${Math.round(base).toLocaleString()} tokens on average, so the full install now adds ${(now / base * 100).toFixed(1)}% to every call. The TB 2.0 bars average over the ${bars[0].n} tasks all three TB 2.0 runs finished.`;
+})();
+
+// ── score vs cost ──
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function wilson(k, n, z = 1.96) { const p = k / n, d = 1 + z * z / n, c = (p + z * z / (2 * n)) / d, h = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d; return [Math.max(0, c - h), Math.min(1, c + h)]; }
 function bootMean(xs, reps = 2000, seed = 7) {
-  const r = mulberry(seed), means = [];
-  for (let i = 0; i < reps; i++) { let s = 0; for (let j = 0; j < xs.length; j++) s += xs[Math.floor(r() * xs.length)]; means.push(s / xs.length); }
-  means.sort((a, b) => a - b);
-  return [means[Math.floor(reps * 0.025)], means[Math.floor(reps * 0.975)]];
+  const r = mulberry(seed), ms = [];
+  for (let i = 0; i < reps; i++) { let s = 0; for (let j = 0; j < xs.length; j++) s += xs[Math.floor(r() * xs.length)]; ms.push(s / xs.length); }
+  ms.sort((a, b) => a - b); return [ms[Math.floor(reps * .025)], ms[Math.floor(reps * .975)]];
 }
 (function scoreCost() {
-  const host = document.getElementById('sc');
   const pts = ARMS.map(a => {
-    const rows = common.map(t => get(a.id, t));
-    const costs = rows.map(r => r.cost || 0), k = rows.filter(r => r.reward === 1).length, n = rows.length;
-    return { ...a, cost: costs.reduce((s, c) => s + c, 0) / n, cLo: bootMean(costs)[0], cHi: bootMean(costs)[1], score: k / n, sLo: wilson(k, n)[0], sHi: wilson(k, n)[1], k, n };
+    const rows = common.map(t => get(a.id, t)), costs = rows.map(r => r.cost || 0), k = rows.filter(r => r.reward === 1).length, n = rows.length;
+    const [cLo, cHi] = bootMean(costs), [sLo, sHi] = wilson(k, n);
+    return {...a, cost: mean(costs), cLo, cHi, score: k / n, sLo, sHi, k, n};
   });
-  document.getElementById('legend-sc').innerHTML = pts.map(p => `<span><i class="dotkey ${p.cls}"></i>${p.label}</span>`).join('')
-    + `<span><i class="qkey"></i>cheaper than bare, scoring at least half</span><span><i class="pkey"></i>Pareto line</span>`;
-  const W = 760, H = 380, m = { t: 16, r: 220, b: 44, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
-  const svg = el('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Score against average cost per task, one point per run' }, host);
-  const NICE = [0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10];
-  const lo = Math.min(...pts.map(p => p.cLo)) / 1.25, hi = Math.max(...pts.map(p => p.cHi)) * 1.25;
+  document.getElementById('legend-sc').innerHTML = pts.map(p => `<span><i class="dotkey ${p.cls}"></i>${p.label}</span>`).join('');
+  const W = 760, H = 340, m = {t: 16, r: 200, b: 44, l: 52}, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Score against average cost per task'}, document.getElementById('sc'));
+  const NICE = [0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5];
+  const lo = Math.min(...pts.map(p => p.cLo)) / 1.3, hi = Math.max(...pts.map(p => p.cHi)) * 1.3;
   const x = c => m.l + (Math.log(c) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)) * iw, y = v => m.t + ih - v * ih;
-  const bare = pts.find(p => p.id === 'control');
-  // the attractive region, as on the leaderboard: at least half the tasks, for less than bare Claude Code spends
-  el('rect', { class: 'quad', x: m.l, y: y(1), width: x(bare.cost) - m.l, height: y(0.5) - y(1) }, svg);
-  el('text', { class: 'quadlab', x: m.l + 8, y: y(0.5) - 8 }, svg).textContent = 'cheaper than bare';
-  for (const v of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
-    el('line', { class: v ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v) }, svg);
-    el('text', { class: 'tick', x: m.l - 8, y: y(v) + 3.5, 'text-anchor': 'end' }, svg).textContent = `${Math.round(v * 100)}%`;
+  for (const v of [0, .2, .4, .6, .8, 1]) {
+    el('line', {class: v ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v)}, svg);
+    el('text', {class: 'tick', x: m.l - 8, y: y(v) + 3.5, 'text-anchor': 'end'}, svg).textContent = pct(v);
   }
   for (const c of NICE.filter(c => c >= lo && c <= hi)) {
-    el('line', { class: 'grid', x1: x(c), x2: x(c), y1: m.t, y2: m.t + ih }, svg);
-    el('text', { class: 'tick', x: x(c), y: m.t + ih + 16, 'text-anchor': 'middle' }, svg).textContent = `$${c}`;
+    el('line', {class: 'grid', x1: x(c), x2: x(c), y1: m.t, y2: m.t + ih}, svg);
+    el('text', {class: 'tick', x: x(c), y: m.t + ih + 16, 'text-anchor': 'middle'}, svg).textContent = `$${c}`;
   }
-  el('text', { class: 'tick', x: m.l + iw / 2, y: H - 6, 'text-anchor': 'middle' }, svg).textContent = 'average cost per task (USD, log scale) — Harbor estimate';
-  // Pareto line: the runs no cheaper run matches or beats on score
-  const frontier = [...pts].sort((a, b) => a.cost - b.cost).filter((p, i, arr) => arr.slice(0, i).every(q => q.score < p.score));
-  if (frontier.length > 1) el('path', { class: 'pareto', d: frontier.map((p, i) => `${i ? 'L' : 'M'}${x(p.cost).toFixed(1)},${y(p.score).toFixed(1)}`).join('') }, svg);
-  // Cost intervals are stacked under their points, one row per run, so runs
-  // that tie on score stay distinguishable; the points stay at their score.
+  el('text', {class: 'tick', x: m.l + iw / 2, y: H - 6, 'text-anchor': 'middle'}, svg).textContent = 'average cost per task (USD, log scale), Harbor estimate';
   pts.forEach((p, i) => {
     const yy = y(p.score) + 10 + i * 6;
-    el('line', { class: `err ${p.cls}`, x1: x(p.cLo), x2: x(p.cHi), y1: yy, y2: yy }, svg);
-    for (const c of [p.cLo, p.cHi]) el('line', { class: `err ${p.cls}`, x1: x(c), x2: x(c), y1: yy - 2.5, y2: yy + 2.5 }, svg);
+    el('line', {class: `err ${p.cls}`, x1: x(p.cLo), x2: x(p.cHi), y1: yy, y2: yy}, svg);
+    el('line', {class: `err ${p.cls}`, x1: x(p.cost), x2: x(p.cost), y1: y(p.sLo), y2: y(p.sHi)}, svg);
   });
-  for (const p of pts) {
-    el('line', { class: `err ${p.cls}`, x1: x(p.cost), x2: x(p.cost), y1: y(p.sLo), y2: y(p.sHi) }, svg);
+  for (const p of pts) el('circle', {class: `pt ${p.cls}`, cx: x(p.cost), cy: y(p.score), r: 5.5}, svg);
+  // labels in a column to the right, top to bottom by score, never closer than 18px
+  const labs = [...pts].sort((a, b) => b.score - a.score || a.cost - b.cost).map(p => ({p, y: y(p.score) + 4}));
+  for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 18) labs[i].y = labs[i - 1].y + 18;
+  for (const {p, y: ly} of labs) {
+    const lx = m.l + iw + 14;
+    el('line', {class: 'grid', x1: x(p.cost) + 6, y1: y(p.score), x2: lx - 3, y2: ly - 4}, svg);
+    el('text', {class: 'lab', x: lx, y: ly}, svg).textContent = `${p.label.replace(', this branch', '')} · ${p.k}/${p.n} · ${fmt$(p.cost)}`;
   }
-  for (const p of pts) el('circle', { class: `pt ${p.cls}`, cx: x(p.cost), cy: y(p.score), r: 5.5 }, svg);
-  // labels in a column to the right, leader lines back to their points, cheapest first
-  const byCost = [...pts].sort((a, b) => a.cost - b.cost);
-  byCost.forEach((p, i) => {
-    const ly = y(p.score) + 52 + i * 17, lx = m.l + iw + 14;
-    el('line', { class: 'grid', x1: x(p.cost) + 6, y1: y(p.score) + 3, x2: lx - 3, y2: ly - 4 }, svg);
-    el('text', { class: 'lab', x: lx, y: ly }, svg).textContent = `${p.label} · ${Math.round(p.score * 100)}% · $${p.cost.toFixed(3)}`;
-  });
-  const plot = host; const tip = document.createElement('div'); tip.className = 'tip'; plot.appendChild(tip);
-  for (const p of pts) {
-    const hit = el('circle', { cx: x(p.cost), cy: y(p.score), r: 12, fill: 'transparent' }, svg);
-    hit.addEventListener('pointerenter', () => {
-      tip.innerHTML = `<div class="t">${p.label}</div><div class="r">passed<b>${p.k} of ${p.n}</b></div><div class="r">score 95%<b>${Math.round(p.sLo * 100)}–${Math.round(p.sHi * 100)}%</b></div><div class="r">cost per task<b>$${p.cost.toFixed(3)}</b></div><div class="r">cost 95%<b>$${p.cLo.toFixed(3)}–$${p.cHi.toFixed(3)}</b></div>`;
-      const r = svg.getBoundingClientRect(), pr = plot.getBoundingClientRect();
-      tip.style.opacity = 1; tip.style.left = (x(p.cost) * r.width / W + r.left - pr.left + 14) + 'px'; tip.style.top = (y(p.score) * r.height / H + r.top - pr.top + 10) + 'px';
-    });
-    hit.addEventListener('pointerleave', () => { tip.style.opacity = 0; });
-  }
-  const spread = Math.max(...pts.map(p => p.cost)) / Math.min(...pts.map(p => p.cost));
-  document.getElementById('sc-note').textContent = `Every run passed all ${common.length} shared tasks, so the Pareto line collapses to its cheapest run (${frontier[0].label}). The runs' average costs are within ${Math.round((spread - 1) * 100)}% of each other, but bare Claude Code's own 95% cost interval runs from $${bare.cLo.toFixed(2)} to $${bare.cHi.toFixed(2)} per task. The runs differ by far less than the noise in any one of them.`;
-  table('sc-table', ['run', 'passed', 'score 95%', 'cost per task', 'cost 95%'], pts.map(p => [p.label, `${p.k} of ${p.n}`, `${Math.round(p.sLo * 100)}–${Math.round(p.sHi * 100)}%`, `$${p.cost.toFixed(3)}`, `$${p.cLo.toFixed(3)}–$${p.cHi.toFixed(3)}`]));
+  const [b, f] = pts;
+  const pc = (a) => mean(bothPassed.map(t => get(a, t).cost));
+  const failing = common.filter(t => get('control', t).reward !== get('full', t).reward).length;
+  document.getElementById('sc-note').textContent = `On the ${common.length} tasks both runs graded, bare passed ${b.k} and bundlebox ${f.k}. Average cost is ${fmt$(b.cost)} and ${fmt$(f.cost)} per task. ${failing ? `${failing} task${failing === 1 ? '' : 's'} passed in one run and not the other, so the like-for-like comparison is the tasks both passed. ` : ''}On those ${bothPassed.length} tasks the averages are ${fmt$(pc('control'))} and ${fmt$(pc('full'))}. Bare Claude Code's own 95% cost interval runs from ${fmt$(b.cLo)} to ${fmt$(b.cHi)}, and one attempt per task can't separate gaps smaller than that.`;
+  table('sc-table', ['run', 'passed', 'score 95%', 'cost per task', 'cost 95%'], pts.map(p => [p.label, `${p.k} of ${p.n}`, `${pct(p.sLo)}–${pct(p.sHi)}`, `$${p.cost.toFixed(3)}`, `$${p.cLo.toFixed(3)}–$${p.cHi.toFixed(3)}`]), [1, 3]);
 })();
 
-// ── Terminal-Bench 4.0, with the estimate ──
-// Read by eye from Artificial Analysis' TB 4.0 score-vs-cost chart (screenshot,
-// 2026-09-30), from the axis gridlines: cost = 10^((x - x$1) / px per decade),
-// score = (y0% - y) / px per point. Approximate; the table view says so.
-const TB4 = [
-  ["Claude Sonnet 5.5 (max with fallback)", "Anthropic", 18.6, 63.5], ["Claude Sonnet 5.5 (xhigh with fallback)", "Anthropic", 8.74, 59.6],
-  ["Claude Opus 5.5 (max with fallback)", "Anthropic", 13.0, 59.6], ["Claude Opus 5.5 (xhigh with fallback)", "Anthropic", 8.74, 57.1],
-  ["Claude Opus 5.5 (high with fallback)", "Anthropic", 5.10, 56.4], ["Claude Fable 5.1 (xhigh with fallback)", "Anthropic", 15.6, 54.8],
-  ["Claude Fable 5.1 (max with fallback)", "Anthropic", 19.1, 51.8],
-  ["GPT-6.1 Sol (max)", "OpenAI", 1.83, 55.9], ["GPT-6 Astra (xhigh)", "OpenAI", 5.83, 59.6], ["GPT-6 Astra (max)", "OpenAI", 8.46, 58.9],
-  ["GPT-6 Sol (max)", "OpenAI", 4.00, 43.8], ["GPT-6 Luna (max)", "OpenAI", 0.238, 12.6],
-  ["GLM-5.3 (max)", "Z AI", 8.01, 41.8], ["GLM-5.3-Flash", "Z AI", 0.79, 32.6], ["Qwen3.8 Max (0902)", "Alibaba", 18.5, 38.8],
-  ["Qwen3.8 27B (xhigh)", "Alibaba", 3.93, 5.5], ["Step 5 Preview", "StepFun", 3.47, 33.3], ["Muse Spark 1.3 (max)", "Meta", 6.90, 33.3],
-  ["Muse Glimmer (high)", "Meta", 0.27, 0.2], ["Grok 4.7 (xhigh)", "SpaceXAI", 14.5, 25.6], ["Gemini 3.8 Flash (high)", "Google", 5.83, 19.6],
-  ["Gemini 3.5 Flash-Lite", "Google", 0.707, 0.9], ["Kimi K3 (max)", "Kimi", 5.07, 12.6], ["MiMo-V2.6-Pro", "Xiaomi", 0.44, 34.7],
-  ["DeepSeek V4.1 Flash (max)", "DeepSeek", 1.16, 26.7], ["Mistral Medium 3.5", "Mistral", 2.13, 0.5], ["MiniMax-M3", "MiniMax", 3.03, 2.1],
-  ["Nemotron 3 Ultra", "NVIDIA", 3.06, 0.2],
-].map(([name, org, cost, score]) => ({ name, org, cost, score: score / 100 }));
-// The estimate. Score: unchanged, inside the leaderboard's ~±3-point bars, because
-// no run above moved one. Cost: the measured extra input per call after #92/#93,
-// written to the cache once and re-read on each call, over 100 to 1,000 calls.
-const EXTRA_TOK = 1653, WRITE = 4.00e-6, READ = 0.20e-6;
-const overhead = (calls) => EXTRA_TOK * WRITE + calls * EXTRA_TOK * READ;
-const EST = ["Claude Sonnet 5.5 (max with fallback)", "Claude Sonnet 5.5 (xhigh with fallback)"].map((n) => {
-  const b = TB4.find((p) => p.name === n);
-  const lo = b.cost + overhead(100), hi = b.cost + overhead(1000);
-  return { name: n.replace("Claude ", "").replace(" with fallback", "") + " + bundlebox (estimate)", base: b, cost: Math.sqrt(lo * hi), cLo: lo, cHi: hi, score: b.score, sLo: b.score - 0.035, sHi: b.score + 0.035 };
-});
-(function tb4() {
-  const host = document.getElementById('tb4');
-  document.getElementById('legend-tb4').innerHTML = `<span><i class="dotkey claude"></i>Claude models, as listed</span><span><i class="dotkey other"></i>other labs</span><span><i class="dotkey est"></i>Sonnet 5.5 + bundlebox, estimated</span><span><i class="qkey"></i>at least 50% for $5 a task or less</span><span><i class="pkey"></i>Pareto line of the points shown</span>`;
-  const W = 760, H = 440, m = { t: 16, r: 250, b: 44, l: 52 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
-  const svg = el('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Terminal-Bench 4.0 score against cost per task, with the estimated Sonnet 5.5 plus bundlebox points' }, host);
-  const lo = 0.2, hi = 40;
-  const x = c => m.l + (Math.log(c) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)) * iw, y = v => m.t + ih - v * ih;
-  el('rect', { class: 'quad', x: m.l, y: y(1), width: x(5) - m.l, height: y(0.5) - y(1) }, svg);
-  for (const v of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
-    el('line', { class: v ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v) }, svg);
-    el('text', { class: 'tick', x: m.l - 8, y: y(v) + 3.5, 'text-anchor': 'end' }, svg).textContent = `${Math.round(v * 100)}%`;
+// ── context per call ──
+(function ctxChart() {
+  document.getElementById('legend-ctx').innerHTML = ARMS.map(a => `<span><i class="key ${a.cls}"></i>${a.label}</span>`).join('');
+  const host = document.getElementById('ctx');
+  for (const t of ORDER) {
+    const rows = ARMS.map(a => ({...a, r: get(a.id, t)})).filter(x => x.r && x.r.ctx && x.r.ctx.length);
+    if (!rows.length) continue;
+    const p = document.createElement('div'); p.className = 'panel';
+    const res = rows.map(x => x.r.reward === 1 ? '✓' : scored(x.r) ? '✗' : '–').join(' ');
+    p.innerHTML = `<h4><span>${SHORT(t)}</span><i>${res}</i></h4>`;
+    host.appendChild(p);
+    const W = 260, H = 130, m = {t: 6, r: 6, b: 18, l: 34}, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const svg = el('svg', {class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `Context per call, ${t}`}, p);
+    const n = Math.max(...rows.map(x => x.r.ctx.length)), ymax = 2 * niceStep(Math.max(...rows.flatMap(x => x.r.ctx)) * 1.05 / 2);
+    const x = i => m.l + (n > 1 ? i * iw / (n - 1) : iw / 2), y = v => m.t + ih - v / ymax * ih;
+    for (const v of [0, ymax / 2, ymax]) {
+      el('line', {class: v ? 'grid' : 'axis', x1: m.l, x2: m.l + iw, y1: y(v), y2: y(v)}, svg);
+      el('text', {class: 'tick', x: m.l - 4, y: y(v) + 3.5, 'text-anchor': 'end'}, svg).textContent = fmtK(v);
+    }
+    el('text', {class: 'tick', x: m.l + iw, y: H - 4, 'text-anchor': 'end'}, svg).textContent = `${n} calls`;
+    for (const s of rows) el('path', {class: `ln ${s.cls}`, d: s.r.ctx.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1)).join('')}, svg);
   }
-  for (const c of [0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30]) {
-    el('line', { class: 'grid', x1: x(c), x2: x(c), y1: m.t, y2: m.t + ih }, svg);
-    el('text', { class: 'tick', x: x(c), y: m.t + ih + 16, 'text-anchor': 'middle' }, svg).textContent = `$${c}`;
-  }
-  el('text', { class: 'tick', x: m.l + iw / 2, y: H - 6, 'text-anchor': 'middle' }, svg).textContent = 'cost per task (USD, log scale)';
-  const frontier = [...TB4].sort((a, b) => a.cost - b.cost).filter((p, i, arr) => arr.slice(0, i).every(q => q.score < p.score));
-  el('path', { class: 'pareto', d: frontier.map((p, i) => `${i ? 'L' : 'M'}${x(p.cost).toFixed(1)},${y(p.score).toFixed(1)}`).join('') }, svg);
-  for (const p of TB4) el('circle', { class: `lb ${p.org === 'Anthropic' ? 'claude' : ''}`, cx: x(p.cost), cy: y(p.score), r: p.org === 'Anthropic' ? 5 : 4 }, svg);
-  // Inline names for the frontier points below $3; the cluster above $5 is labelled in the column.
-  for (const p of frontier.filter(p => p.org !== 'Anthropic' && p.cost < 3)) {
-    const left = p.cost > 0.3 && p.cost < 1;
-    el('text', { class: 'lab small', x: x(p.cost) + (left ? -8 : 7), y: y(p.score) + (left ? -6 : 12), 'text-anchor': left ? 'end' : 'start' }, svg).textContent = p.name;
-  }
-  for (const e of EST) {
-    el('line', { class: 'err est', x1: x(e.cost), x2: x(e.cost), y1: y(e.sLo), y2: y(e.sHi) }, svg);
-    el('line', { class: 'err est', x1: x(e.cLo), x2: x(e.cHi), y1: y(e.score), y2: y(e.score) }, svg);
-    el('circle', { class: 'estring', cx: x(e.cost), cy: y(e.score), r: 9 }, svg);
-    el('circle', { class: 'est', cx: x(e.cost), cy: y(e.score), r: 4.5 }, svg);
-  }
-  // labels for the Claude points and the estimates, in a column at the right
-  const labelled = [...EST.map(e => ({ ...e, est: true })), ...TB4.filter(p => p.org === 'Anthropic')].sort((a, b) => b.score - a.score || a.cost - b.cost);
-  const top = y(0.72);
-  labelled.forEach((p, i) => {
-    const ly = top + i * 16, lx = m.l + iw + 14;
-    el('line', { class: 'grid', x1: x(p.cost) + 6, y1: y(p.score), x2: lx - 3, y2: ly - 4 }, svg);
-    const tx = el('text', { class: 'lab', x: lx, y: ly }, svg);
-    tx.textContent = `${p.name.replace(' with fallback', '').replace('Claude ', '').replace(' (estimate)', '')} · ${Math.round(p.score * 100)}% · $${p.cost.toFixed(2)}`;
-    if (p.est) tx.setAttribute('style', 'fill:var(--ink);font-weight:600');
-  });
-  const tip = document.createElement('div'); tip.className = 'tip'; host.appendChild(tip);
-  const show = (p, html) => {
-    const hit = el('circle', { cx: x(p.cost), cy: y(p.score), r: 9, fill: 'transparent' }, svg);
-    hit.addEventListener('pointerenter', () => {
-      tip.innerHTML = html;
-      const r = svg.getBoundingClientRect(), pr = host.getBoundingClientRect();
-      tip.style.opacity = 1; tip.style.left = Math.min(x(p.cost) * r.width / W + r.left - pr.left + 14, host.scrollWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (y(p.score) * r.height / H + r.top - pr.top + 10) + 'px';
-    });
-    hit.addEventListener('pointerleave', () => { tip.style.opacity = 0; });
+})();
+
+// ── tiles ──
+(function tiles() {
+  const b = mix('control', bothPassed), f = mix('full', bothPassed);
+  const two = (fa, fb) => `<span><i class="dotkey bare"></i>${fa}</span><span><i class="dotkey bb"></i>${fb}</span>`;
+  document.getElementById('tiles').innerHTML = [
+    ['Tasks passed', two(`${pass('control')} of ${graded('control')}`, `${pass('full')} of ${graded('full')}`), 'bare, bundlebox · graded trials'],
+    ['Input tokens', two(fmtK(b.total), fmtK(f.total)), `bare, bundlebox · the ${bothPassed.length} tasks both passed`],
+    ['Spend', two(fmt$(sum('control', 'cost', bothPassed)), fmt$(sum('full', 'cost', bothPassed))), 'Harbor estimate, same tasks'],
+    ['Fixed prompt share', two(pct(b.base / b.total), pct((f.base + f.bb) / f.total)), "first call's prompt × calls, of all input"],
+  ].map(([k, v, s]) => `<div class="tile"><p class="k">${k}</p><p class="v">${v}</p><p class="s">${s}</p></div>`).join('');
+})();
+
+// ── numbers the prose quotes ──
+(function fill() {
+  const bp = bothPassed;
+  const tot = (a, k) => bp.reduce((s, t) => s + (get(a, t)[k] || 0), 0);
+  const fixed = a => bp.reduce((s, t) => s + get(a, t).ctx[0] * get(a, t).ctx.length, 0);
+  const over = overhead('full', finished), baseFirst = first('control', finished);
+  const fullRows = T.filter(t => t.arm === 'full');
+  const v = {
+    nBoth: bp.length, inBare: fmtK(tot('control', 'prompt')), inBb: fmtK(tot('full', 'prompt')),
+    costBare: fmt$(tot('control', 'cost')), costBb: fmt$(tot('full', 'cost')),
+    baseFirst: fmtK(Math.round(baseFirst / 100) * 100), fixedShare: pct(fixed('control') / tot('control', 'prompt')),
+    toolShare: pct(tot('control', 'tool_reread') / tot('control', 'prompt')),
+    overNow: Math.round(over).toLocaleString(), overPct: (over / baseFirst * 100).toFixed(1) + '%',
+    nBb: fullRows.length, bbCalls: fullRows.reduce((s, t) => s + (t.bb_calls || 0), 0),
+    sieved: fullRows.reduce((s, t) => s + (t.sieved || 0), 0),
+    passBare: `${pass('control')} of ${graded('control')}`, passBb: `${pass('full')} of ${graded('full')}`,
   };
-  for (const p of TB4) show(p, `<div class="t">${p.org}</div><div class="r">${p.name}</div><div class="r">score (approx.)<b>${Math.round(p.score * 100)}%</b></div><div class="r">cost per task (approx.)<b>$${p.cost.toFixed(2)}</b></div>`);
-  for (const e of EST) show(e, `<div class="t">estimate</div><div class="r">${e.name}</div><div class="r">score<b>${Math.round(e.sLo * 100)}–${Math.round(e.sHi * 100)}%</b></div><div class="r">cost per task<b>$${e.cLo.toFixed(2)}–$${e.cHi.toFixed(2)}</b></div><div class="r">vs ${e.base.name.replace('Claude ', '').replace(' with fallback', '')} alone<b>+${((e.cLo / e.base.cost - 1) * 100).toFixed(1)}% to +${((e.cHi / e.base.cost - 1) * 100).toFixed(1)}%</b></div>`);
-  const [mx, xh] = EST;
-  document.getElementById('tb4-note').innerHTML = `<p><b>How the estimate is made.</b> <b>Score:</b> the same as Sonnet 5.5 alone, drawn with the leaderboard's own ±3-point spread. No run on this page moved a score, and the agent called bundlebox twice in eight trials without changing what it did. <b>Cost:</b> Sonnet 5.5's cost plus bundlebox's measured overhead: ${EXTRA_TOK.toLocaleString()} extra input tokens per call, written to the cache once at $4 per million and re-read on every call at $0.20 per million. How many calls a TB 4.0 task takes is not known here; over 100 to 1,000 calls the overhead is +$${overhead(100).toFixed(2)} to +$${overhead(1000).toFixed(2)} a task. That is +${((mx.cLo / mx.base.cost - 1) * 100).toFixed(1)}% to +${((mx.cHi / mx.base.cost - 1) * 100).toFixed(1)}% on the max run and +${((xh.cLo / xh.base.cost - 1) * 100).toFixed(1)}% to +${((xh.cHi / xh.base.cost - 1) * 100).toFixed(1)}% on the xhigh run, both narrower than a dot on this axis.</p><p><b>What would move the point up or left:</b> a brief that lets the agent find the right code in fewer calls, on tasks where finding it is hard. None of the runs here measured that. <b>What could move it down:</b> a confidently wrong scope on a tree pinpoint indexes only partly, or <code>bb init</code>'s edits to the task directory on a task graded on the directory's state.</p>`;
-  table('tb4-table', ['model', 'lab', 'score', 'cost per task', 'source'],
-    [...EST.map(e => [e.name, 'estimate', `${Math.round(e.sLo * 100)}–${Math.round(e.sHi * 100)}%`, `$${e.cLo.toFixed(2)}–$${e.cHi.toFixed(2)}`, 'this page']),
-     ...[...TB4].sort((a, b) => b.score - a.score).map(p => [p.name, p.org, `≈${Math.round(p.score * 100)}%`, `≈$${p.cost.toFixed(2)}`, 'Artificial Analysis chart, read by eye'])]);
+  // what the cost difference on shared passes is made of
+  const cb = tot('control', 'cost'), cf = tot('full', 'cost'), d = cf / cb - 1;
+  const swing = bp.map(t => ({t, r: get('full', t).calls / get('control', t).calls})).sort((a, b) => Math.abs(Math.log(b.r)) - Math.abs(Math.log(a.r)))[0];
+  v.costLine = Math.abs(d) < 0.05
+    ? `On the tasks both runs passed it cost about the same as bare (${d >= 0 ? '+' : ''}${Math.round(d * 100)}%), so nothing here paid that overhead back.`
+    : `On the tasks both runs passed it cost ${Math.round(Math.abs(d) * 100)}% ${d > 0 ? 'more' : 'less'} than bare. It read ${fmtK(tot('full', 'cache_read'))} tokens from the cache against bare's ${fmtK(tot('control', 'cache_read'))}, but wrote ${fmtK(tot('full', 'cache_write'))} to it against ${fmtK(tot('control', 'cache_write'))} and produced ${fmtK(tot('full', 'completion'))} output tokens against ${fmtK(tot('control', 'completion'))}. Both of those are priced far above a cache read. The overhead explains about ${Math.round(over / baseFirst * 100)} points of the gap. The rest follows how many calls each run happened to take: on ${SHORT(swing.t)} bundlebox made ${get('full', swing.t).calls} calls and bare ${get('control', swing.t).calls}.`;
+  const diff = common.filter(t => get('control', t).reward !== get('full', t).reward);
+  v.passLine = diff.length ? diff.map(t => {
+    const won = get('control', t).reward === 1 ? 'bare' : 'bundlebox', lost = won === 'bare' ? 'bundlebox' : 'bare';
+    const timedOut = get(lost === 'bare' ? 'control' : 'full', t).exception === 'AgentTimeoutError';
+    return `On ${SHORT(t)}, ${won} passed and ${lost} ${timedOut ? 'ran out of time' : 'did not'}.`;
+  }).join(' ') : 'Every task went the same way in both runs.';
+  v.bbCalls = `${v.bbCalls} time${v.bbCalls === 1 ? '' : 's'}`;
+  document.querySelectorAll('[data-fill]').forEach(e => { e.textContent = v[e.dataset.fill]; });
 })();
-
-// ── context per call, small multiples ──
-legend('legend-ctx');
-const ctxHost = document.getElementById('ctx');
-for (const task of tasks) {
-  const series = ARMS.map(a => { const t = get(a.id, task); return {cls: a.cls, label: a.label, pts: (t && t.ctx || []).map((v, i) => [i, v])}; });
-  const n = Math.max(0, ...series.map(s => s.pts.length));
-  if (!n) continue;
-  const panel = document.createElement('div'); panel.className = 'panel plot';
-  panel.innerHTML = `<h4>${task}</h4>`; ctxHost.appendChild(panel);
-  lineChart(panel, series, Array.from({length: n}, (_, i) => String(i + 1)), {w: 380, h: 210, yFmt: v => fmtK(Math.round(v)), maxXTicks: 6, xTitle: 'model call', tipTitle: i => `${task} · call ${i + 1}`, aria: `Input tokens per model call for ${task}`});
-}
-table('ctx-table', ['task', 'arm', 'calls', 'first call', 'last call', 'total input'], tasks.flatMap(task => ARMS.map(a => { const t = get(a.id, task); return t && t.ctx ? [task, a.label, t.ctx.length, fmtK(t.ctx[0]), fmtK(t.ctx[t.ctx.length - 1]), fmtK(t.prompt)] : null; }).filter(Boolean)));
-
-// ── cumulative cost and time ──
-function cumulative(id, key, scale, yFmt, legendId, tableId, unit) {
-  legend(legendId);
-  const series = ARMS.map(a => { let acc = 0; return {cls: a.cls, label: a.label, pts: common.map((task, i) => [i, acc += (get(a.id, task)[key] || 0) * scale])}; });
-  lineChart(document.getElementById(id), series, common.map(t => SHORT[t] || t), {yFmt, endLabels: true, xTitle: 'running total after each task', tipTitle: i => `after ${common[i]}`, aria: `Cumulative ${unit} across tasks`});
-  table(tableId, ['#', 'task', ...ARMS.map(a => a.label + ' ' + unit)], common.map((task, i) => [i + 1, task, ...ARMS.map(a => yFmt((get(a.id, task)[key] || 0) * scale))]));
-}
-cumulative('cost', 'cost', 1, fmt$, 'legend-cost', 'cost-table', '$');
-cumulative('time', 'agent_sec', 1 / 60, v => fmtMin(v) + ' min', 'legend-time', 'time-table', 'min');
 
 // ── every trial ──
-table('all', ['task', 'arm', 'result', 'agent min', 'steps', 'cost', 'bb calls'], tasks.flatMap(task => ARMS.map(a => {
-  const t = get(a.id, task); if (!t) return [task, a.label, 'not run', '', '', '', ''];
-  const res = scored(t) ? {cls: t.reward === 1 ? 'pass' : '', v: t.reward === 1 ? 'pass' + (t.exception ? ' (hit time limit)' : '') : 'fail'} : 'not scored: ' + (t.exception || 'unknown');
-  return [task, a.label, res, t.agent_sec != null ? fmtMin(t.agent_sec / 60) : '', t.steps ?? '', t.cost != null ? fmt$(t.cost) : '', t.bb_calls ?? ''];
-})));
+table('all', ['task', 'run', 'result', 'calls', 'first call', 'input', 'output', 'cost', 'agent min', 'bb calls'],
+  ORDER.flatMap(t => ARMS.map(a => ({a, r: get(a.id, t)})).filter(x => x.r).map(({a, r}) => [
+    SHORT(t), a.label, r.reward === 1 ? '<span style="color:var(--accent)">pass</span>' : scored(r) ? `<span style="color:var(--s-bare)">${r.exception === 'AgentTimeoutError' ? 'timed out' : 'fail'}</span>` : (r.exception || '–'),
+    r.calls ?? '–', r.ctx ? fmtK(r.ctx[0]) : '–', r.prompt ? fmtK(r.prompt) : '–', r.completion ? fmtK(r.completion) : '–',
+    r.cost != null ? fmt$(r.cost) : '–', r.agent_sec != null ? (r.agent_sec / 60).toFixed(1) : '–', a.id === 'control' ? '–' : (r.bb_calls ?? 0)])),
+  [3, 4, 5, 6, 7, 8, 9]);
 </script>
 </body>
 </html>
