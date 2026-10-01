@@ -85,12 +85,30 @@ const NEGATED = /\b(do not|don't|dont|must not|mustn't|should not|shouldn't|shal
 const FIRST_PATH = /`?(?:\.{1,2}\/|\/)?[\w@-][\w.@-]*(?:\/[\w.@-]+)*\.[A-Za-z][A-Za-z0-9]{0,7}`?/;
 const pathsIn = (s) => [...String(s).matchAll(PATHISH)].map((m) => m[1]).filter((p) => /[A-Za-z]/.test(path.basename(p).split(".")[0]) && !/^\d/.test(path.basename(p)));
 const upToBreak = (s) => s.split(/\bbut\b|\binstead\b|,(?!\s*(?:(?:or|and)\s+)?`?(?:\.{1,2}\/|\/)?[\w@-][\w.@/-]*\.[A-Za-z])|\band then\b/i)[0];
+// "Write a file eval.scm that …", "create a /app/report.jsonl file", "put it in a
+// file called /app/headless_terminal.py": a path the task says to make. On
+// Terminal-Bench 2.0 and 2.1 all three briefs the hook emitted listed "the only
+// files to edit" without the one file the task was graded on.
+const CREATE_VERB = /\b(create|creates|write|writes|save|saves|generate|produce|output|put|place|store)\b/i;
+// A statement also names things that only look like paths: "e.g.", an email
+// address, `re.findall`, `shape.seq`, a `<name>_pb2.py` template. Over the 89
+// TB 2.1 statements those were the only false hits, and a file extension a
+// task could actually be graded on separates them.
+const FILE_EXT = new Set(("py js mjs cjs ts tsx jsx c h cc cpp hpp rs go java kt rb php sh bash zsh R r jl scm lisp ml hs lua pl swift " +
+  "txt md rst json jsonl csv tsv parquet yaml yml toml ini cfg conf env xml html css sql sparql proto stan red vim tex bib log out " +
+  "pem crt key npy npz pt pth pkl bin db sqlite ics ppm bmp png jpg svg pdf fasta fa mat comp cbl cob asm s wasm").split(" "));
+const creatable = (t) => {
+  const base = path.basename(t), ext = base.split(".").pop();
+  return !t.includes("@") && /^[A-Za-z0-9]/.test(base) && base.includes(".") && FILE_EXT.has(ext);
+};
 export function bounds(problem) {
-  const only = [], keepOut = [];
+  const only = [], keepOut = [], create = [];
   // A wrapped line is one sentence; a list item is its own.
   const text = String(problem || "").replace(/\r/g, "").replace(/\n(?=[ \t]*(?:[-*+]|\d+\.)\s)/g, "\n\n");
   const clauses = text.split(/\n\s*\n/).flatMap((block) => block.replace(/\s*\n\s*/g, " ").split(/;\s+|(?<=[.!?])\s+(?=[A-Z`*(-])/));
   for (const clause of clauses) {
+    const verb = CREATE_VERB.exec(clause);
+    if (verb && !NEGATED.test(clause)) create.push(...pathsIn(clause.slice(verb.index)).filter(creatable));
     if (!pathsIn(clause).length || !EDIT_VERB.test(clause)) continue;
     if (/\bread-only\b|\bmust not be (modified|edited|changed)\b/i.test(clause)) { keepOut.push(...pathsIn(clause)); continue; }
     const neg = NEGATED.exec(clause);
@@ -112,7 +130,7 @@ export function bounds(problem) {
     if (lead) { only.push(...pathsIn(upToBreak(clause.slice(lead.index + lead[0].length)))); continue; }
     for (const m of clause.matchAll(/`?((?:\.{1,2}\/|\/)?[\w@-][\w.@-]*(?:\/[\w.@-]+)*\.[A-Za-z][A-Za-z0-9]{0,7})`?\s+only\b/g)) only.push(m[1]);
   }
-  return { only: [...new Set(only)], keepOut: [...new Set(keepOut)] };
+  return { only: [...new Set(only)], keepOut: [...new Set(keepOut)], create: [...new Set(create)] };
 }
 /** The tree file a statement's path names: the path itself when it resolves
  *  under the root (so `/app/user.cpp` is `user.cpp` in a tree rooted at /app),
@@ -401,6 +419,16 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
     for (const f of allowed) if (!scope.includes(f)) scope.push(f);
   }
   if (held.length || allowed.length) ev = evalOf();
+  // Files the task says to make and the tree does not hold yet. Joined to the
+  // scope after the budget is settled: a file that does not exist costs nothing
+  // to read, and a scope without it tells the session the file is off limits.
+  const creates = [];
+  for (const t of bound.create) {
+    let r = ""; try { r = rel(abs(t)); } catch { /* not a path this tree can hold */ }
+    if (!r || r.startsWith("..") || path.isAbsolute(r) || fs.existsSync(abs(r)) || held.includes(r) || scope.includes(r)) continue;
+    creates.push(r);
+  }
+  scope.push(...creates);
   // ── the candidates the budget could not afford ────────────────────────────
   //
   // Everything below the scope used to be thrown away. That is wrong by an
@@ -422,7 +450,7 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
 
   const gates = detectGates(ROOT);
   const b = {
-    problem: String(problem).trim(), kind, terms: ts, scope, cut, grown, candidates, held, ranked: ranked.length, anchors,
+    problem: String(problem).trim(), kind, terms: ts, scope, creates, cut, grown, candidates, held, ranked: ranked.length, anchors,
     symbols: sym.filter((h) => scope.includes(h.file)).slice(0, 12), grep: grep.slice(0, 6),
     evidence: evidence(scope, ts), gates, traps: traps(scope, ts), oversight: oversight(scope, ts), process: processRules(),
     projected: ev.projected, ceiling: ev.ceiling, verdict: ev.verdict, headroom: ev.headroom, payload_saved: ev.payload_saved,
@@ -457,7 +485,7 @@ export async function build(problem, { files = [], maxFiles = MAX_FILES, kind = 
   // caller's own file list (or the file the task itself says is the only one to change): the one bb_pinpoint call on the Terminal-Bench
   // re-run got exactly that, for two C++ files the index cannot read. Such a
   // brief is two lines, and the prompt hook emits nothing for it.
-  const told = new Set([...explicit, ...allowed]);
+  const told = new Set([...explicit, ...allowed, ...creates]);
   b.adds = !b.abstain && (b.symbols.length > 0 || b.grep.length > 0 || b.anchors.length > 0 || b.scope.some((f) => !told.has(f)));
   b.prompt = b.abstain ? abstainPrompt(b) : b.adds ? prompt(b) : nothingPrompt(b);
   b.path = write(b);
@@ -589,7 +617,7 @@ export function prompt(b) {
     for (const p of b.proposals) L.push("", `\`${p.file}:${p.line}\`${p.symbol ? ` in \`${p.symbol}\`` : ""}: \`${p.from}\` → \`${p.to}\`, from the statement, one occurrence in the located regions.`, "```diff", p.diff, "```");
   }
   L.push("", "## Scope — the only files you may edit");
-  for (const f of b.scope) L.push(`- \`${f}\` (~${human(estimate.file(abs(f)))} tokens)`);
+  for (const f of b.scope) L.push((b.creates || []).includes(f) ? `- \`${f}\` (new: the task says to create it)` : `- \`${f}\` (~${human(estimate.file(abs(f)))} tokens)`);
   if (b.cut.length) L.push(`- ask before opening these: ${b.cut.map((c) => `\`${c}\``).join(", ")} (cut for budget)`);
   if (b.held && b.held.length) L.push(`- read, do not edit — the task holds these: ${b.held.map((c) => `\`${c}\``).join(", ")}`);
   if (b.candidates && b.candidates.length) {

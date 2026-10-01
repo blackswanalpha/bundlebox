@@ -345,8 +345,11 @@ export function taskScore(prompt, head = taskHead()) {
  *  command echo, a reminder. It reaches UserPromptSubmit like a prompt, and it
  *  carries paths, verbs and backticks like one, so both the regex and the head
  *  score it as work. 31 of the last 100 briefs on this workspace located a
- *  `<task-notification>`, each one a scope handed to a turn that had no task. */
-const HARNESS = /^\s*<(task-notification|system-reminder|local-command-stdout|local-command-stderr|command-name|command-message)>/;
+ *  `<task-notification>`, each one a scope handed to a turn that had no task.
+ *  A subagent's hand-back arrives as `<agent-message from="…">`: located, it
+ *  cost this workspace a 1,000-token band and handed foreman the report as the
+ *  job it then steered against. */
+const HARNESS = /^\s*<(task-notification|system-reminder|local-command-stdout|local-command-stderr|command-name|command-message|agent-message|teammate-message)[\s>]/;
 export const isTask = (p) => {
   const s = String(p);
   if (HARNESS.test(s)) return false;

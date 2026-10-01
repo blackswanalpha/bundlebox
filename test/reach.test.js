@@ -61,3 +61,21 @@ test("G1: bb_pinpoint and bb_context load at session start; the rest stay deferr
   assert.ok(tools.length > always.length, "the others are listed, deferred");
   input.end();
 });
+
+test("G1: with the prompt hook wired, bb_pinpoint is deferred: the hook already ran it", async () => {
+  const { promptHookWired } = await import("../src/mcp/server.js");
+  assert.equal(promptHookWired(), false);
+  w(".claude/settings.json", JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "bb hook prompt", timeout: 15 }] }] } }));
+  try {
+    assert.equal(promptHookWired(), true);
+    const input = new PassThrough(), output = new PassThrough();
+    const lines = [];
+    output.on("data", (d) => lines.push(...String(d).split("\n").filter(Boolean)));
+    serve({ input, output });
+    input.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) + "\n");
+    for (let i = 0; i < 50 && !lines.length; i++) await new Promise((r) => setTimeout(r, 20));
+    const always = JSON.parse(lines[0]).result.tools.filter((t) => t._meta?.["anthropic/alwaysLoad"]).map((t) => t.name);
+    assert.deepEqual(always, ["bb_context"]);
+    input.end();
+  } finally { fs.rmSync(path.join(root, ".claude"), { recursive: true, force: true }); }
+});

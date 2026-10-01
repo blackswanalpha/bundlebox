@@ -33,6 +33,7 @@ test("a harness notification is not a task, however task-shaped its body", () =>
   const note = "<task-notification>\n<task-id>b1</task-id>\n<summary>fix the build in src/login.js and update the tests</summary>\n</task-notification>";
   assert.equal(hooks.isTask(note), false);
   assert.equal(hooks.isTask("<system-reminder>update the refreshToken tests in src/login.js</system-reminder>"), false);
+  assert.equal(hooks.isTask('<agent-message from="a70">\n[Subagent hand-back] fix the refreshToken expiry in src/login.js next\n</agent-message>'), false);
   assert.equal(hooks.isTask("fix the refreshToken expiry in src/login.js so a stale session is refused"), true, "a person's task still is one");
 });
 
