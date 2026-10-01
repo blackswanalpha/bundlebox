@@ -109,7 +109,7 @@ function decide(g, st, row, { ctx, model, lift, apply, prev }) {
 }
 
 /** Run the stage's verb in-process and record what it produced. */
-async function execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, fp, fpKey, inputCount, gearName }) {
+async function execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, fp, fpKey, inputCount, gearName, ownMode = true }) {
   const cmd = cmdTable[st.verb];
   // What this stage's artefact held BEFORE it ran. Without it the label is a
   // function of the verb (C32): every `scan` claims to produce findings whether
@@ -119,13 +119,16 @@ async function execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, fp, fp
   if (!cmd) { row.state = "error"; row.rc = 2; row.why = `no verb \`${st.verb}\` on this install`; }
   else {
     // Silence the verb's own output unless --verbose: a gear prints one line per stage.
-    setMode({ quiet: !verbose, json: false });
+    // `ownMode` false: the graph runner set the mode once for every stage in
+    // flight, because the mode is one global and a stage restoring it would
+    // un-silence a sibling that is still running.
+    if (ownMode) setMode({ quiet: !verbose, json: false });
     try {
       const rc = await cmd.run({ _: [...st.args], flags: { ...st.flags, quiet: true }, rest: [] });
       row.rc = typeof rc === "number" ? rc : 0;
       row.state = "ran";
     } catch (e) { row.state = "error"; row.rc = 2; row.why = String((e && e.message) || e).split("\n")[0]; }
-    finally { setMode({ quiet, json: wasJson }); }
+    finally { if (ownMode) setMode({ quiet, json: wasJson }); }
   }
   row.seconds = round2((Date.now() - t1) / 1000);
   if (row.state !== "ran") return;
@@ -146,6 +149,72 @@ async function commandTable(table) {
   if (table) return table;
   try { return (await (await import("../cli.js")).loadCommands()).table; }
   catch (e) { warn(`cli table unavailable: ${e.message}`); return {}; }
+}
+
+// ── a gear with `needs`: a graph, run a wave at a time ──────────────────────
+//
+// Stages run in-process, so concurrency here overlaps a stage's awaits (child
+// processes, file reads), not its CPU. Two things are shared and are handled:
+//
+//   the log mode   one global; set once for the whole graph run, not per stage.
+//   the artefacts  two stages whose yield-table entries overlap (one produces
+//                  what the other reads or produces) never run at once, so two
+//                  writers of `findings` are serialised whatever the needs say.
+//                  A verb with no yield entry claims its own key as the
+//                  artefact, so two stages of the same unknown verb serialise.
+//
+// Everything else a verb touches is its own business, and `needs` is the
+// author's statement that two stages do not depend on each other.
+export const MAX_PARALLEL = 4;
+
+const failedRow = (r) => r.state === "error" || (r.state === "ran" && r.rc === 2);
+
+/** Does running `a` and `b` together risk one reading what the other is writing? */
+export function clash(a, b) {
+  const ya = yieldOf(a), yb = yieldOf(b);
+  const touches = (y) => new Set([...(y.reads || []), ...(y.produces || [])]);
+  const ta = touches(ya), tb = touches(yb);
+  return (ya.produces || []).some((x) => tb.has(x)) || (yb.produces || []).some((x) => ta.has(x));
+}
+
+async function runGraph(g, { decideStage, runStage, parallel = MAX_PARALLEL, quiet, verbose, wasJson }) {
+  const rows = new Array(g.stages.length);
+  const byName = new Map(g.stages.map((st, i) => [st.name, i]));
+  const pending = new Set(g.stages.keys());
+  const running = new Map();   // index -> promise
+  setMode({ quiet: !verbose, json: false });
+  try {
+    while (pending.size || running.size) {
+      // Block before launching: a stage whose need failed or was blocked never
+      // runs. Repeated to a fixed point, because a need can be declared after
+      // the stage that needs it and a block has to reach every descendant.
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const i of [...pending]) {
+          const bad = (g.stages[i].needs || []).find((n) => { const r = rows[byName.get(n)]; return r && (failedRow(r) || r.state === "blocked"); });
+          if (!bad) continue;
+          const st = g.stages[i];
+          rows[i] = { stage: st.name, verb: verbKey(st), state: "blocked", why: `blocked-by-${bad}`, rc: 0, seconds: 0, produced: null, changed: null, turns: 0, p_useful: null };
+          pending.delete(i);
+          runStage.blocked(i, rows[i]);
+          changed = true;
+        }
+      }
+      for (const i of [...pending]) {
+        if (running.size >= parallel) break;
+        const st = g.stages[i];
+        if (!(st.needs || []).every((n) => rows[byName.get(n)] && !running.has(byName.get(n)))) continue;
+        if ([...running.keys()].some((j) => clash(st, g.stages[j]))) continue;
+        pending.delete(i);
+        const row = { stage: st.name, verb: verbKey(st), state: "", why: "", rc: 0, seconds: 0, produced: null, changed: null, turns: 0, p_useful: null };
+        const d = decideStage(i, row);
+        running.set(i, (async () => { if (!row.state) await runStage(i, row, d); rows[i] = row; runStage.done(i, row, d); })().finally(() => running.delete(i)));
+      }
+      if (running.size) await Promise.race(running.values());
+      else if (pending.size) break;   // unreachable with a checked spec; never spin
+    }
+  } finally { setMode({ quiet, json: wasJson }); }
+  return rows;
 }
 
 const empty = (gear, extra) => ({ gear, stages: [], chained: [], ran: 0, skipped: 0, failed: 0, turns_saved: 0, seconds: 0, ...extra });
@@ -171,28 +240,42 @@ export async function runGear(name, opts = {}) {
   const rows = [], eps = [];
   let prev = "";
 
-  for (const st of g.stages) {
-    const key = verbKey(st);
-    const row = { stage: st.name, verb: key, state: "", why: "", rc: 0, seconds: 0, produced: null, changed: null, turns: 0, p_useful: null };
-    const d = decide(g, st, row, { ctx, model, lift, apply, prev });
-    if (!row.state) await execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, gearName: g.name, ...d });
+  const episode = (st, row, d, before) => eps.push(episodes.write({ kind: "stage", verb: verbKey(st), stage: st.name, gear: g.name, prev: before, features: d.feats, rc: row.rc, seconds: row.seconds,
+    produced: row.produced, changed: row.changed, reads: row.reads || [], produces: row.produces || [], turns_saved: row.turns, run_id, useful: -1, state: row.state,
+    detail: { why: row.why, p_useful: row.p_useful, gate_note: row.gate_note || "", produced_before: row.before ?? null } }));
 
-    eps.push(episodes.write({ kind: "stage", verb: key, stage: st.name, gear: g.name, prev, features: d.feats, rc: row.rc, seconds: row.seconds,
-      produced: row.produced, changed: row.changed, reads: row.reads || [], produces: row.produces || [], turns_saved: row.turns, run_id, useful: -1, state: row.state,
-      detail: { why: row.why, p_useful: row.p_useful, gate_note: row.gate_note || "", produced_before: row.before ?? null } }));
-    rows.push(row);
-    prev = key;
+  if (!g.graph) {
+    for (const st of g.stages) {
+      const key = verbKey(st);
+      const row = { stage: st.name, verb: key, state: "", why: "", rc: 0, seconds: 0, produced: null, changed: null, turns: 0, p_useful: null };
+      const d = decide(g, st, row, { ctx, model, lift, apply, prev });
+      if (!row.state) await execute(st, row, { cmdTable, ctx, verbose, quiet, wasJson, gearName: g.name, ...d });
+      episode(st, row, d, prev);
+      rows.push(row);
+      prev = key;
+    }
+  } else {
+    // In a graph "the stage before" is the last need, the one whose output this
+    // stage was waiting on; a root has none.
+    const prevOf = (st) => (st.needs && st.needs.length ? verbKey(g.stages.find((s) => s.name === st.needs[st.needs.length - 1])) : "");
+    const runStage = (i, row, d) => execute(g.stages[i], row, { cmdTable, ctx, verbose, quiet, wasJson, gearName: g.name, ownMode: false, ...d });
+    runStage.done = (i, row, d) => episode(g.stages[i], row, d, prevOf(g.stages[i]));
+    // A blocked stage is not an episode: nothing was decided about it, so there is no row to learn from.
+    runStage.blocked = () => {};
+    const decideStage = (i, row) => decide(g, g.stages[i], row, { ctx, model, lift, apply, prev: prevOf(g.stages[i]) });
+    rows.push(...await runGraph(g, { decideStage, runStage, parallel: opts.parallel || MAX_PARALLEL, quiet, verbose, wasJson }));
   }
 
   const ran = rows.filter((r) => r.state === "ran");
   const failed = rows.filter((r) => r.state === "error" || (r.state === "ran" && r.rc === 2));
   const skipped = rows.filter((r) => ["gated", "fresh", "predicted-idle", "refused"].includes(r.state));
+  const blocked = rows.filter((r) => r.state === "blocked");
   // Labels are decided once the whole run is visible: what a stage produced is
   // only worth something if a LATER stage read it.
   episodes.autolabel(eps, { completed: true });
   const result = {
     gear: g.name, description: g.description, run_id, trigger, stages: rows, seconds: round2((Date.now() - t0) / 1000),
-    ran: ran.length, skipped: skipped.length, failed: failed.length, would_run: rows.filter((r) => r.state === "would-run").length,
+    ran: ran.length, skipped: skipped.length, failed: failed.length, blocked: blocked.length, would_run: rows.filter((r) => r.state === "would-run").length,
     turns_saved: sum(ran.map((r) => r.turns)), tokens: 0, context: ctx, chained: [],
     verdict: failed.length ? "partial" : apply ? "clean" : "dry",
     rc: failed.length ? 2 : 0,
