@@ -72,8 +72,8 @@ export function serve({ input = process.stdin, output = process.stdout, name = "
       if (method === "tools/list") {
         const always = new Set((load({ fresh: true }).wire?.always_load_tools || []).map(String));
         if (promptHookWired()) always.delete("bb_pinpoint");
-        return reply(id, { tools: listed().map(({ name, description, inputSchema }) =>
-          ({ name, description, inputSchema, ...(always.has(name) ? { _meta: { "anthropic/alwaysLoad": true } } : {}) })) });
+        return reply(id, { tools: listed().map(({ name, description, inputSchema, annotations }) =>
+          ({ name, description, inputSchema, ...(annotations ? { annotations } : {}), ...(always.has(name) ? { _meta: { "anthropic/alwaysLoad": true } } : {}) })) });
       }
       if (method === "tools/call") {
         const tool = TOOLS.find((t) => t.name === params.name);

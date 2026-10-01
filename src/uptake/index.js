@@ -184,6 +184,13 @@ export function surfaces(cfg = load()) {
       chance: (o) => o.searches > 0,
       fired: (o) => o.snapgen > 0,
       detail: (o) => `${o.searches} search(es)` },
+    // The chance is any session that ran shell commands: each one was a turn
+    // an existing automation might have answered.
+    { id: "automations", what: "list or run an existing automation instead of scripting it", observable: true,
+      installed: () => true,
+      chance: (o) => o.shell > 0,
+      fired: (o) => o.mcp.includes("bb_automations") || o.mcp.includes("bb_automation_run") || o.bbVerbs.includes("automations") || o.bbVerbs.includes("scripts"),
+      detail: (o) => `${o.shell} shell call(s)` },
     { id: "auto", what: "the locator run FOR the session by UserPromptSubmit", observable: true,
       installed: () => Boolean(cfg.wire?.auto_pinpoint),
       chance: () => true,

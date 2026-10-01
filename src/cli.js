@@ -53,6 +53,7 @@ export const MODULES = [
   ["situation", "./situation/index.js"],
   ["bridge", "./bridge/index.js"],
   ["scripts", "./scripts/index.js"],
+  ["automations", "./automations/index.js"],
   ["wire", "./wire/index.js"],
   ["uptake", "./uptake/index.js"],
   ["grapple", "./grapple/index.js"],
@@ -101,7 +102,7 @@ export async function loadCommands() {
 const SPENDS = { run: "--apply", bridge: "--run --spend", sprint: "--apply", sentinel: "--spend" };
 // Verbs that can change a file a human wrote. Everything here is a dry run
 // until --apply; that is the whole contract and the column states it once.
-const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs", "janitor", "finish"]);
+const WRITES = new Set(["init", "fix", "wire", "unwire", "git", "kernel", "update", "cron", "designlabs", "janitor", "finish", "automations"]);
 // Verbs that only ever write under .bundlebox/. They need no flag because
 // nothing they touch was written by hand.
 const RECORDS = new Set(["scan", "compile", "route", "snapgen", "arc", "pinpoint", "bench", "genesis", "cookbook",
@@ -113,7 +114,7 @@ const CHAPTERS = [
   ["pack", "What goes in the window?", ["compile", "context", "gates", "route", "snapgen", "arc", "pinpoint", "intent", "tokens", "sieve", "janitor", "slop", "bench"]],
   ["prove", "What does the running system do?", ["genesis", "cookbook", "simulate", "runbook", "viewport", "recom", "dotty", "mainboard", "frames", "failsafe"]],
   ["spend", "What costs money, and how much is left?", ["run", "sprint", "bridge", "monitor", "session", "headroom", "agents"]],
-  ["ship", "What closes the loop?", ["sentinel", "foreman", "finish", "git", "fix", "pipeline", "scripts", "cron", "buckmaster", "lathe", "console"]],
+  ["ship", "What closes the loop?", ["sentinel", "foreman", "finish", "git", "fix", "pipeline", "scripts", "automations", "cron", "buckmaster", "lathe", "console"]],
   ["wire", "How do agents reach it?", ["wire", "unwire", "uptake", "hook", "mcp", "kernel", "selftest", "update", "version", "help"]],
 ];
 
@@ -192,7 +193,7 @@ function help(cmds, broken, verb) {
 // Verbs that write their own episode, with features this hook cannot see. A
 // second, thinner row for the same work would be double counting in the one
 // place that must not double count.
-const SELF_RECORDED = new Set(["run", "pipeline", "bridge", "scripts", "cookbook",
+const SELF_RECORDED = new Set(["run", "pipeline", "bridge", "scripts", "automations", "cookbook",
   "genesis", "simulate", "mainboard", "frames", "auditor"]);
 
 /** One row per verb that did work a session would otherwise have done. The free

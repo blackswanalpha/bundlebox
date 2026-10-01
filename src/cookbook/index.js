@@ -116,7 +116,7 @@ export async function runCorpus(id, opts = {}) {
   if (opts.write !== false) store.mergeFindings(f.rows, { detectors: new Set([f.detector]) });
   const steps = board.totals.passed + board.totals.failed + board.totals.blocked + board.totals.error + board.totals.empty;
   episodes.write({ kind: "stage", verb: "cookbook", stage: `cookbook:${id}`, run_id: opts.runId || "",
-    features: { corpus_scenarios: input.scenarios.length, engine: board.engine, rpm: input.rpm, paced: input.rpm > 0 },
+    features: { ...(opts.features || {}), corpus_scenarios: input.scenarios.length, engine: board.engine, rpm: input.rpm, paced: input.rpm > 0 },
     rc: board.totals.failed + board.totals.error ? 1 : 0, seconds: (Date.now() - t0) / 1000,
     produced: f.rows.length, produces: ["findings", "board"],
     turns_saved: episodes.turns({ commands: steps, rows: steps }),

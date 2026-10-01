@@ -108,7 +108,9 @@ export function missing(row) {
   return out;
 }
 
-export const one = (tag) => store.get("scripts", []).find((r) => r && r.tag === tag) || null;
+// A tag first, then a path: every script lathe applies is tagged `lathe`, so
+// a tag alone reaches only the first of them.
+export const one = (tag) => { const rows = store.get("scripts", []); return rows.find((r) => r && r.tag === tag) || rows.find((r) => r && r.path === tag) || null; };
 
 export function check(tag) {
   const row = one(tag);
@@ -120,7 +122,7 @@ export function check(tag) {
 
 /** Dry unless --apply. Needs are checked first: a refused run costs nothing
  *  and names what is missing; by hand it is a failed run and a read of the error. */
-export function run(tag, { args = [], apply = false, timeout = 1800000, gear = "", runId = "" } = {}) {
+export function run(tag, { args = [], apply = false, timeout = 1800000, gear = "", runId = "", features = {} } = {}) {
   const c = check(tag);
   if (c.rc) return { tag, rc: c.rc, ran: false, why: c.why, missing: c.missing || [] };
   const row = c.row;
@@ -130,7 +132,7 @@ export function run(tag, { args = [], apply = false, timeout = 1800000, gear = "
   const r = exec(cmd, { cwd: ROOT, timeout });
   const seconds = Math.round((Date.now() - t0) / 10) / 100;
   const ep = episodes.write({ kind: "script", verb: `script:${tag}`, stage: tag, gear, run_id: runId,
-    features: { needs: row.needs.length, safe: row.safe ? 1 : 0, declared_turns: row.turns, declared_turns_kind: "ESTIMATE" },
+    features: { ...features, needs: row.needs.length, safe: row.safe ? 1 : 0, declared_turns: row.turns, declared_turns_kind: "ESTIMATE" },
     rc: r.rc, seconds, produced: r.rc === 0 ? 1 : 0, produces: row.produces, reads: row.needs, turns_saved: 0,
     detail: { cmd: cmd.slice(0, 4).join(" "), tail: (r.out || r.err).slice(-600), declared_turns: row.turns, declared_turns_kind: "ESTIMATE" } });
   const prior = store.get("scripts", []);
