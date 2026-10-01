@@ -98,6 +98,7 @@ export function record(b, { sessionId = "", briefPath = "" } = {}) {
     verdict: b.verdict || "",
     projected: b.projected || 0,
     scope: (b.scope || []).map(String),
+    creates: (b.creates || []).map(String),
     cut: (b.cut || []).map(String),
     candidates: (b.candidates || []).map((c) => String(c.file || c)),
     symbols: (b.symbols || []).slice(0, 24).map((h) => ({ file: String(h.file), symbol: String(h.symbol), line: Number(h.line) || 0 })),
@@ -253,7 +254,7 @@ export function band(rec) {
     for (const a of rec.anchors.slice(0, 8)) L.push(`  ${a.path}:${a.line_start}-${a.line_end}${a.symbol ? ` (${a.symbol})` : ""}`);
   }
   L.push("", "scope — the only files to edit:");
-  for (const f of rec.scope) L.push(`  ${f}`);
+  for (const f of rec.scope) L.push(`  ${f}${(rec.creates || []).includes(f) ? " (new)" : ""}`);
   if (rec.cut.length) L.push(`opening these needs a reason first: ${rec.cut.join(", ")}`);
   if (rec.candidates.length) L.push(`not in scope, use only if the scope does not hold it: ${rec.candidates.slice(0, 6).join(", ")}`);
   for (const p of rec.proposals || []) L.push("", `proposed change, as a diff in the brief: ${p.file}:${p.line} — \`${p.from}\` → \`${p.to}\`. Apply it, then run the gate.`);

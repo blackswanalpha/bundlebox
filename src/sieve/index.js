@@ -21,7 +21,7 @@ import { load, readJson, writeJson } from "../core/config.js";
 import { out, warn, emit } from "../core/log.js";
 import { human, now, sha1, pad, table } from "../core/util.js";
 import * as store from "../core/store.js";
-import { limitsFor, allowed, transform, rebuild, extractText, duplicateMarker, DEDUP_MIN } from "./compress.js";
+import { limitsFor, allowed, asked, transform, rebuild, extractText, duplicateMarker, DEDUP_MIN } from "./compress.js";
 import { text as estimateText } from "../tokens/estimate.js";
 import { replay } from "./replay.js";
 
@@ -104,7 +104,8 @@ export function decide(payload, cfg = load()) {
       return { text: marker, tier: "dedup", tool, before: body.length, after: marker.length };
     }
   }
-  const got = transform(body, limits, { spill, tool });
+  const keep = tool === "Bash" && asked(payload.tool_input?.command);
+  const got = transform(body, limits, { spill, tool, keep });
   return got ? { ...got, tool } : null;
 }
 

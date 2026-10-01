@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  scrub, elide, transform, rebuild, duplicateMarker, limitsFor, allowed, extractText,
+  scrub, elide, transform, rebuild, duplicateMarker, limitsFor, allowed, extractText, asked,
   SAFE_TOOLS, REPEAT_MIN, MIN_WIN, SCRUB_MIN,
 } from "../src/sieve/compress.js";
 import { replaySession, measuredRatio } from "../src/sieve/replay.js";
@@ -184,4 +184,14 @@ test("the replay splits the saving by tier, because lossless and lossy are diffe
   const both = replaySession([turnOf([result("Bash", repeated), result("Grep", huge)])], limits);
   const tiers = both.by_tier.scrub + both.by_tier.dedup + both.by_tier.elide;
   assert.equal(tiers, both.before - both.after + both.dedup_chars);
+});
+
+test("a file the agent printed keeps its middle; a log it did not cap is still cut", () => {
+  for (const c of ["cat interp.py", "cd /app/test; cat README.md calculator.scm; grep -ho x *.scm | sort", "sed -n 197,330p page.html",
+    "gh repo view x 2>&1 | head -150", "cd src && nl -ba a.js", "awk 'NR>=100 && NR<=204' runner.js", "npm test 2>&1 | tail -40"]) assert.equal(asked(c), true, c);
+  for (const c of ["npm test", "make -j8", "pip install -e .", "cat > out.txt <<'EOF'", "ls catalog/", "./headless-run.sh", ""]) assert.equal(asked(c), false, c);
+  const big = Array.from({ length: 400 }, (_, i) => `line ${i} of the program the agent asked to read`).join("\n");
+  assert.equal(transform(big, limits).tier, "elide");
+  const kept = transform(big, limits, { keep: true });
+  assert.ok(kept === null || kept.tier === "scrub", "no elide on a deliberate read");
 });

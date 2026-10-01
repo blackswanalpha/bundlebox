@@ -24,6 +24,7 @@ w(".bundlebox/var/findings.json", JSON.stringify([
 ]));
 
 const pinpoint = await import("../src/pinpoint/index.js");
+const brief = await import("../src/wire/brief.js");
 
 test("G18: the task's own 'only' and 'do not modify' bound the scope; held files are named, not offered", async () => {
   const b = await pinpoint.build("It crashes in release. You shall not modify any other existing files in the system\nexcept for `/tmp/x/user.cpp` or `user.cpp`.", { files: ["user.cpp", "main.cpp"] });
@@ -39,9 +40,26 @@ test("G18: bounds reads the phrasings task statements use and ignores the ones t
   assert.deepEqual(pinpoint.bounds("Do not modify `/app/a.ics`, `/app/b.ics`, or `/app/c.ics`.").keepOut, ["/app/a.ics", "/app/b.ics", "/app/c.ics"]);
   assert.deepEqual(pinpoint.bounds("In doing so, the only edits you may make are to input.tex").only, ["input.tex"]);
   assert.deepEqual(pinpoint.bounds("The following files are read-only and must NOT be modified: `x/types.py`, `x/DESIGN.md`").keepOut, ["x/types.py", "x/DESIGN.md"]);
-  assert.deepEqual(pinpoint.bounds("Do not remove, restore, or replace the shim in `megatron_parallel.py`"), { only: [], keepOut: [] }, "the shim is protected, not the file");
-  assert.deepEqual(pinpoint.bounds("Don't modify the tests, fix src/foo.py"), { only: [], keepOut: [] });
-  assert.deepEqual(pinpoint.bounds("Use /app/packet as the only source of rules; API.md lists the services"), { only: [], keepOut: [] });
+  assert.deepEqual(pinpoint.bounds("Do not remove, restore, or replace the shim in `megatron_parallel.py`"), { only: [], keepOut: [], create: [] }, "the shim is protected, not the file");
+  assert.deepEqual(pinpoint.bounds("Don't modify the tests, fix src/foo.py"), { only: [], keepOut: [], create: [] });
+  assert.deepEqual(pinpoint.bounds("Use /app/packet as the only source of rules; API.md lists the services"), { only: [], keepOut: [], create: [] });
+  assert.deepEqual(pinpoint.bounds("Write a file eval.scm that is a metacircular evaluator for interp.py").create, ["eval.scm", "interp.py"], "the tree decides which one is new");
+  assert.deepEqual(pinpoint.bounds("create a /app/report.jsonl file in /app folder. Format: {\"file_path\": \"/app/example.cpp\"}").create, ["/app/report.jsonl"]);
+  assert.deepEqual(pinpoint.bounds("Do not write to out.txt").create, [], "a negated write makes nothing");
+  assert.deepEqual(pinpoint.bounds("Call it HeadlessTerminal and put it in a file called `/app/headless_terminal.py`").create, ["/app/headless_terminal.py"]);
+  assert.deepEqual(pinpoint.bounds("Write the answer, e.g. 42, to /app/answer.txt and email alice@example.com").create, ["/app/answer.txt"], "not e.g, not an address");
+  assert.deepEqual(pinpoint.bounds("Save <name>_pb2.py beside it and match with re.findall").create, [], "a template or an attribute is not a file");
+});
+
+test("G21: a file the task says to create joins the scope, marked new, and adds nothing on its own", async () => {
+  const b = await pinpoint.build("fix refreshToken in src/session.js and write the expiry report to reports/expiry.json");
+  assert.ok(b.scope.includes("reports/expiry.json"), b.scope.join(", "));
+  assert.deepEqual(b.creates, ["reports/expiry.json"]);
+  assert.match(b.prompt, /`reports\/expiry\.json` \(new: the task says to create it\)/);
+  const rec = brief.record(b);
+  assert.match(brief.band(rec), /reports\/expiry\.json \(new\)/);
+  const existing = await pinpoint.build("write the refreshToken fix into src/session.js");
+  assert.deepEqual(existing.creates, [], "a file the tree holds is not new");
 });
 
 test("G17/G20: a locate that adds nothing to the named files is two lines, and says so", async () => {
